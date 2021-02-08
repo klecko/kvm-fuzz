@@ -1,0 +1,187 @@
+#include <iostream>
+#include <fstream>
+#include <sys/mman.h>
+#include <linux/kvm.h>
+#include <string.h>
+#include "mmu.h"
+#include "kvm_aux.h"
+
+using namespace std;
+
+// out 16, al; sysret
+const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
+
+Mmu::Mmu(int vm_fd, size_t mem_size):
+	memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
+	                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0)),
+	memory_len(mem_size),
+	ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR)),
+	next_page_alloc(PAGE_TABLE_PADDR + 0x1000),
+	brk(0), min_brk(0)
+{
+	if (memory == MAP_FAILED)
+		die("mmap mmu memory");
+
+	madvise(memory, memory_len, MADV_MERGEABLE);
+
+	struct kvm_userspace_memory_region memreg = {
+		.slot = 0,
+		.flags = 0,
+		.guest_phys_addr = 0,
+		.memory_size = mem_size,
+		.userspace_addr = (unsigned long)memory
+	};
+	ioctl_chk(vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
+
+	// Set syscall handler
+	memcpy(memory + SYSCALL_HANDLER_ADDR, SYSCALL_HANDLER, sizeof(SYSCALL_HANDLER));
+
+	init_page_table();
+}
+
+psize_t Mmu::size() const {
+	return memory_len;
+}
+
+paddr_t Mmu::alloc_frame() {
+	paddr_t ret = next_page_alloc;
+	next_page_alloc += PAGE_SIZE;
+	if (next_page_alloc > memory_len)
+		die("OOM");
+	return ret;
+}
+
+paddr_t* Mmu::get_pte(vaddr_t vaddr) {
+	// Go over the page table, allocating entries when needed
+	int flags = PDE64_PRESENT | PDE64_RW | PDE64_USER;
+
+	int ptl4_i = PTL4_INDEX(vaddr);
+	if (!ptl4[ptl4_i]) {
+		ptl4[ptl4_i] = alloc_frame() | flags;
+	}
+
+	paddr_t* ptl3 = (paddr_t*)(memory + (ptl4[ptl4_i] & PTL1_MASK));
+	int ptl3_i = PTL3_INDEX(vaddr);
+	if (!ptl3[ptl3_i]) {
+		ptl3[ptl3_i] = alloc_frame() | flags;
+	}
+
+	paddr_t* ptl2 = (paddr_t*)(memory + (ptl3[ptl3_i] & PTL1_MASK));
+	int ptl2_i = PTL2_INDEX(vaddr);
+	if (!ptl2[ptl2_i]) {
+		ptl2[ptl2_i] = alloc_frame() | flags;
+	}
+
+	paddr_t* ptl1 = (paddr_t*)(memory + (ptl2[ptl2_i] & PTL1_MASK));
+	int ptl1_i = PTL1_INDEX(vaddr);
+	return &ptl1[ptl1_i];
+}
+
+paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {
+	paddr_t* pte = get_pte(vaddr);
+	if (!*pte) {
+		*pte = alloc_frame() | PDE64_PRESENT | PDE64_RW | PDE64_USER;
+		dbgprintf("Alloc frame: %p mapped to %p\n", vaddr, *pte & PTL1_MASK);
+	}
+	return (*pte & PTL1_MASK) + PAGE_OFFSET(vaddr);
+}
+
+vaddr_t Mmu::get_brk() {
+	return brk;
+}
+
+bool Mmu::set_brk(vaddr_t new_brk) {
+	if (new_brk < min_brk)
+		return false;
+
+	// Allocate space if needed
+	if (new_brk >= brk)
+		alloc(brk, (new_brk - brk + 0xFFF) & ~0xFFF);
+
+	dbgprintf("brk set to %lX\n", new_brk);
+	brk = new_brk;
+	return true;
+}
+
+void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
+	vsize_t offset = 0, size;
+	paddr_t paddr;
+	while (offset < len) {
+		// Read memory by pages. Each iteration, copy until the end of the page
+		// or until the end of dst.
+		size = min(PAGE_SIZE - PAGE_OFFSET(src + offset), len - offset);
+		paddr = virt_to_phys(src + offset);
+		memcpy(dst + offset, memory + paddr, size);
+		offset += size;
+	}
+}
+
+void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len){
+	vsize_t offset = 0, size;
+	paddr_t paddr;
+	while (offset < len) {
+		// Copy memory by pages. Each iteration, copy until the end of the page
+		// or until the end of src.
+		size = min(PAGE_SIZE - PAGE_OFFSET(dst + offset), len - offset);
+		paddr = virt_to_phys(dst + offset);
+		memcpy(memory + paddr, src + offset, size);
+		offset += size;
+	}
+}
+
+void Mmu::set_mem(vaddr_t addr, int c, vsize_t len){
+	vsize_t offset = 0, size;
+	paddr_t paddr;
+	while (offset < len) {
+		// Set memory by pages. Each iteration, set until the end of the page
+		// or until the end of the memory we want to set.
+		size = min(PAGE_SIZE - PAGE_OFFSET(addr + offset), len - offset);
+		paddr = virt_to_phys(addr + offset);
+		memset(memory + paddr, c, size);
+		offset += size;
+	}
+}
+
+void Mmu::alloc(vaddr_t start, vsize_t len) {
+	assert((len & PTL1_MASK) == len);
+	assert((start & PTL1_MASK) == start);
+	for (vaddr_t vaddr = start; vaddr < start + len; vaddr += PAGE_SIZE) {
+		virt_to_phys(vaddr);
+	}
+}
+
+void Mmu::init_page_table() {
+	// Identity map the first 4K, without PDE64_USER
+	paddr_t* pte = get_pte(0);
+	*pte = 0 | PDE64_PRESENT | PDE64_RW;
+}
+
+void Mmu::load_elf(const vector<segment_t>& segments) {
+	for (const segment_t& segm : segments) {
+		if (segm.type != "LOAD")
+			continue;
+		dbgprintf("Loading at 0x%X\n", segm.virtaddr);
+
+		// Write segment data into memory
+		write_mem(segm.virtaddr, segm.data, segm.filesize);
+
+		// Fill padding, if any
+		set_mem(segm.virtaddr + segm.filesize, 0, segm.memsize - segm.filesize);
+
+		// Update brk beyond any segment we load
+		brk = max(brk, (segm.virtaddr + segm.memsize + 0xFFF) & ~0xFFF);
+	}
+	min_brk = brk;
+}
+
+void* Mmu::translate(vaddr_t guest) {
+	return memory + virt_to_phys(guest);
+}
+
+void Mmu::dump_memory(psize_t len) const {
+	ofstream out("dump");
+	assert(len <= memory_len);
+	out.write((char*)memory, len);
+	out.close();
+	cout << "Dumped " << len << " bytes of memory" << endl;
+}
