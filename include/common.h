@@ -33,7 +33,7 @@ typedef paddr_t psize_t;
 #define ioctl_chk(fd, req, arg)         \
 	({                                  \
 		int ret = ioctl(fd, req, arg);  \
-		if (ret == 1)                   \
+		if (ret == -1)                  \
 			die(#req);                  \
 		ret;                            \
 	})

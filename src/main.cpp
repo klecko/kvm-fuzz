@@ -5,7 +5,7 @@ using namespace std;
 
 int main(int argc, char** argv) {
 	init_kvm();
-	Vm vm(1024 * 1024, "../target_ez", {"../target"});
+	Vm vm(1024 * 1024, "../target", {"../target"});
 
 	cout << "[BEFORE RUNNING]" << endl;
 	vm.dump_regs();

@@ -94,6 +94,14 @@ void Vm::setup_long_mode() {
 		.data = 0x3f7fd5
 	};
 	ioctl_chk(vcpu.fd, KVM_SET_MSRS, msrs);
+
+	// Setup cpuid, not sure if needed
+	sz = sizeof(kvm_cpuid2) + sizeof(kvm_cpuid_entry2)*100;
+	kvm_cpuid2* cpuid = (kvm_cpuid2*)alloca(sz);
+	memset(cpuid, 0, sz);
+	cpuid->nent = 100;
+	ioctl_chk(kvm_fd, KVM_GET_SUPPORTED_CPUID, cpuid);
+	ioctl_chk(vcpu.fd, KVM_SET_CPUID2, cpuid);
 }
 
 void Vm::load_elf(const std::vector<std::string>& argv) {
@@ -148,7 +156,8 @@ void Vm::run() {
 		ioctl_chk(vcpu.fd, KVM_RUN, 0);
 		switch (vcpu.run->exit_reason) {
 			case KVM_EXIT_HLT:
-				printf("HLT\n");
+				dump_regs();
+				die("HLT\n");
 				break;
 
 			case KVM_EXIT_IO:
