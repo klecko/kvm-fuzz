@@ -1,3 +1,4 @@
+#include <linux/kvm.h>
 
 /* 64-bit page * entry bits */
 #define PDE64_PRESENT 1
@@ -7,6 +8,7 @@
 #define PDE64_DIRTY (1U << 6)
 #define PDE64_PS (1U << 7)
 #define PDE64_G (1U << 8)
+#define PDE64_NX (1U << 63)
 
 /* CR0 bits */
 #define CR0_PE 1u

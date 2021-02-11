@@ -9,13 +9,15 @@ int main(int argc, char** argv) {
 
 	cout << "[BEFORE RUNNING]" << endl;
 	vm.dump_regs();
-	vm.dump_memory();
+	cout << endl;
+	//vm.dump_memory();
 
 	vm.run();
 
 	cout << endl << "[AFTER RUNNING]" << endl;
 	vm.dump_regs();
-	vm.dump_memory();
+	cout << endl;
+	//vm.dump_memory();
 
 	return 0;
 }

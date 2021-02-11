@@ -91,12 +91,13 @@ vaddr_t Mmu::get_brk() {
 }
 
 bool Mmu::set_brk(vaddr_t new_brk) {
+	dbgprintf("trying to set brk to %lX\n", new_brk);
 	if (new_brk < min_brk)
 		return false;
 
 	// Allocate space if needed
 	if (new_brk >= brk)
-		alloc(brk, (new_brk - brk + 0xFFF) & ~0xFFF);
+		alloc(brk, new_brk - brk);
 
 	dbgprintf("brk set to %lX\n", new_brk);
 	brk = new_brk;
@@ -143,8 +144,15 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len){
 }
 
 void Mmu::alloc(vaddr_t start, vsize_t len) {
-	assert((len & PTL1_MASK) == len);
-	assert((start & PTL1_MASK) == start);
+	// Normalize args
+	if (PAGE_OFFSET(start)) {
+		len += PAGE_OFFSET(start);
+		start &= PTL1_MASK;
+	}
+	if (PAGE_OFFSET(len)) {
+		len = (len + 0xFFF) & PTL1_MASK;
+	}
+
 	for (vaddr_t vaddr = start; vaddr < start + len; vaddr += PAGE_SIZE) {
 		virt_to_phys(vaddr);
 	}

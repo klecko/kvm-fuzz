@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "elf_parser.hpp"
 #include "common.h"
+#include "kvm_aux.h"
 
 void init_kvm();
 
@@ -33,6 +34,7 @@ private:
 	void setup_long_mode();
 	void load_elf(const std::vector<std::string>& argv);
 	void handle_syscall();
+	uint64_t do_sys_arch_prctl(const kvm_regs& regs);
 };
 
 #endif

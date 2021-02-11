@@ -4,11 +4,8 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <string.h>
-#include <linux/kvm.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 #include "vm.h"
-#include "kvm_aux.h"
 
 using namespace std;
 
@@ -57,21 +54,23 @@ void Vm::setup_long_mode() {
 	sregs.efer = EFER_LME | EFER_LMA | EFER_SCE;
 
 	// Setup segments
+	// https://wiki.osdev.org/Global_Descriptor_Table
+	// https://wiki.osdev.org/GDT_Tutorial
 	kvm_segment seg = {
-		.base = 0,
-		.limit = 0xffffffff,
-		.selector = 1 << 3,
-		.type = 11,
-		.present = 1,
-		.dpl = 3, // user mode
-		.db = 0,
-		.s = 1,
-		.l = 1,
-		.g = 1
+		.base     = 0,          // base address
+		.limit    = 0xffffffff, // limit
+		.selector = 0x8,        // index 1 (index 0 is null segment descriptor)
+		.type     = 11,         // execute, read, accessed, idk why ???
+		.present  = 1,          // bit P
+		.dpl      = 3,          // Descriptor Privilege Level. 3 = user mode
+		.db       = 0,          // Default operand size / Big
+		.s        = 1,          // Descriptor type
+		.l        = 1,          // Long: 64-bit segment. db must be zero
+		.g        = 1           // Granularity: limit unit is byte and not page
 	};
 	sregs.cs = seg;
-	seg.type = 3;
-	seg.selector = 2 << 3;
+	seg.type     = 3;    // read, write, accessed, idk why ???
+	seg.selector = 0x10; // index 2
 	sregs.ds = sregs.es = sregs.fs = sregs.gs = sregs.ss = seg;
 	ioctl_chk(vcpu.fd, KVM_SET_SREGS, &sregs);
 
@@ -105,6 +104,7 @@ void Vm::setup_long_mode() {
 }
 
 void Vm::load_elf(const std::vector<std::string>& argv) {
+	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
 	mmu.load_elf(elf.get_segments());
 
 	struct kvm_regs regs;
@@ -117,8 +117,15 @@ void Vm::load_elf(const std::vector<std::string>& argv) {
 	regs.rsp = stack_init;
 
 	// NULL
-	regs.rsp -= 8;
+	regs.rsp -= 16;
 	mmu.write<vaddr_t>(regs.rsp, 0);
+	mmu.write<vaddr_t>(regs.rsp + 8, 0);
+
+	// Random bytes for auxv. Seed is not initialized
+	regs.rsp -= 16;
+	vaddr_t random_bytes = regs.rsp;
+	for (int i = 0; i < 16; i++)
+		mmu.write<uint8_t>(random_bytes + i, rand());
 
 	// Write argv strings saving pointers to each arg
 	vector<vaddr_t> argv_addrs;
@@ -127,20 +134,42 @@ void Vm::load_elf(const std::vector<std::string>& argv) {
 		mmu.write_mem(regs.rsp, arg.c_str(), arg.size()+1);
 		argv_addrs.push_back(regs.rsp);
 	}
-	argv_addrs.push_back(0);
+	argv_addrs.push_back(0); // null ptr, end of argv
 
 	// Align rsp
 	regs.rsp &= ~0x7;
+	//regs.rsp = (regs.rsp - 0x7) & ~0x7;
+
+	// Set up auxp
+	/* phinfo_t phinfo    = elf.get_phinfo();
+	vaddr_t  load_addr = elf.get_load_addr();
+	Elf64_auxv_t auxv[] = {
+		{AT_RANDOM, {random_bytes}},               // Address of 16 random bytes
+		{AT_EXECFN, {argv_addrs[0]}},              // Filename of the program
+		{AT_PHDR,   {load_addr + phinfo.e_phoff}}, // Pointer to program headers
+		{AT_PHENT,  {phinfo.e_phentsize}},         // Size of each entry
+		{AT_PHNUM,  {phinfo.e_phnum}},             // Number of entries
+		{AT_PAGESZ, {4096}},                       // Page size
+		{AT_NULL,   {0}},                          // Auxv end
+	}; */
+	Elf64_auxv_t auxv[] = {
+		{AT_RANDOM, {random_bytes}},
+		{AT_NULL,   {0}}
+	};
+	regs.rsp -= sizeof(auxv);
+	mmu.write_mem(regs.rsp, auxv, sizeof(auxv));
 
 	// Set up envp
 	regs.rsp -= 8;
 	mmu.write<vaddr_t>(regs.rsp, 0);
 
-	// Set up argv and argc
-	for (vaddr_t addr : argv_addrs) {
+	// Set up argv
+	for (auto it = argv_addrs.rbegin(); it != argv_addrs.rend(); ++it) {
 		regs.rsp -= 8;
-		mmu.write<vaddr_t>(regs.rsp, addr);
+		mmu.write<vaddr_t>(regs.rsp, *it);
 	}
+
+	// Set up argc
 	regs.rsp -= 8;
 	mmu.write<uint64_t>(regs.rsp, argv.size());
 
@@ -179,8 +208,7 @@ void Vm::run() {
 			case KVM_EXIT_SHUTDOWN:
 				cout << endl << endl << "[KVM_EXIT_SHUTDOWN]" << endl;
 				dump_regs();
-				dump_memory();
-				printf("0x%lX\n", mmu.virt_to_phys(0x00007FFFFFFFFE48));
+				//dump_memory();
 				die("KVM_EXIT_SHUTDOWN");
 
 			default:
@@ -189,45 +217,6 @@ void Vm::run() {
 	}
 }
 
-void Vm::handle_syscall() {
-	uint64_t ret = 0;
-	kvm_regs regs;
-	ioctl_chk(vcpu.fd, KVM_GET_REGS, &regs);
-	dbgprintf("Handling syscall %lld\n", regs.rax);
-	switch (regs.rax) {
-		case SYS_write:
-			ret = syscall(SYS_write, regs.rdi, mmu.translate(regs.rsi), regs.rdx);
-			break;
-		case SYS_brk:
-			ret = (mmu.set_brk(regs.rdi) ? regs.rdi : mmu.get_brk());
-			break;
-		case SYS_exit:
-			running = false;
-			break;
-		case SYS_getuid:
-			ret = 0;
-			break;
-		case SYS_getgid:
-			ret = 0;
-			break;
-		case SYS_geteuid:
-			ret = 0; //syscall(SYS_geteuid);
-			break;
-		case SYS_getegid:
-			ret = 0;
-			break;
-		case SYS_arch_prctl:
-			ret = -1;
-			break;
-		default:
-			dump_regs();
-			die("Unknown syscall: %lld\n", regs.rax);
-	}
-
-	dbgprintf("syscall %lld return %lX\n", regs.rax, ret);
-	regs.rax = ret;
-	ioctl_chk(vcpu.fd, KVM_SET_REGS, &regs);
-}
 
 void Vm::dump_regs() {
 	kvm_regs regs;
@@ -238,13 +227,13 @@ void Vm::dump_regs() {
 	printf("r8:  0x%016llX  r9:  0x%016llX  r10: 0x%016llX  r11: 0x%016llX\n", regs.r8, regs.r9, regs.r10, regs.r11);
 	printf("r12: 0x%016llX  r13: 0x%016llX  r14: 0x%016llX  r15: 0x%016llX\n", regs.r12, regs.r13, regs.r14, regs.r15);
 
-	kvm_fpu fregs;
+	/* kvm_fpu fregs;
 	ioctl_chk(vcpu.fd, KVM_GET_FPU, &regs);
 	for (int i = 0; i < 16; i++) {
 		printf("xmm%02d: %08Lf  ", i, *(long double*)&fregs.xmm[i]);
 		if ((i+1)%4 == 0)
 			printf("\n");
-	}
+	} */
 }
 
 void Vm::dump_memory() const {
