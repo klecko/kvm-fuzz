@@ -16,15 +16,17 @@ public:
 	void* translate(vaddr_t guest);
 	void dump_memory(psize_t len) const;
 
-	// Allocate a physical page, no vaddr associated
+	// Allocate a physical page
 	paddr_t alloc_frame();
 
-	// Get page table entry of given virtual address, allocating entries
-	// if needed
+	// Get page table entry of given virtual address, performing a page walk and
+	// allocating entries if needed
 	paddr_t* get_pte(vaddr_t vaddr);
 
-	// Translate a virtual address to a physical address, allocating a frame
-	// if needed
+	// Allocate and map given userspace virtual memory region to physical memory
+	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
+
+	// Translate a virtual address to a physical address
 	paddr_t virt_to_phys(vaddr_t vaddr);
 
 	// Get brk
@@ -36,7 +38,6 @@ public:
 	void read_mem(void* dst, vaddr_t src, vsize_t len);
 	void write_mem(vaddr_t dst, const void* src, vsize_t len);
 	void set_mem(vaddr_t addr, int c, vsize_t len);
-	void alloc(vaddr_t start, vsize_t len);
 
 	template<class T>
 	T read(vaddr_t addr);

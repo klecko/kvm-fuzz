@@ -13,10 +13,11 @@ int kvm_fd = -1;
 
 void init_kvm() {
 	kvm_fd = open("/dev/kvm", O_RDWR);
-	assert(kvm_fd != -1);
+	ERROR_ON(kvm_fd == -1, "open /dev/kvm");
 
 	int api_ver = ioctl(kvm_fd, KVM_GET_API_VERSION, 0);
-	assert(api_ver == KVM_API_VERSION);
+	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
+	       KVM_API_VERSION, api_ver);
 }
 
 Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv):
@@ -31,8 +32,7 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv):
 	running(false)
 {
 	// Check if mmap failed
-	if (vcpu.run == MAP_FAILED)
-		die("mmap kvm_run");
+	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
 
 	setup_long_mode();
 
@@ -110,10 +110,10 @@ void Vm::load_elf(const std::vector<std::string>& argv) {
 	struct kvm_regs regs;
 	memset(&regs, 0, sizeof(regs));
 
-	// Allocate stack
+	// Allocate stack as writable and not executable
 	vaddr_t stack_init = 0x800000000000;
 	vsize_t stack_size = 0x10000;
-	mmu.alloc(stack_init - stack_size, stack_size);
+	mmu.alloc(stack_init - stack_size, stack_size, PDE64_RW | PDE64_NX);
 	regs.rsp = stack_init;
 
 	// NULL
@@ -185,8 +185,7 @@ void Vm::run() {
 		ioctl_chk(vcpu.fd, KVM_RUN, 0);
 		switch (vcpu.run->exit_reason) {
 			case KVM_EXIT_HLT:
-				dump_regs();
-				die("HLT\n");
+				vm_err("HLT");
 				break;
 
 			case KVM_EXIT_IO:
@@ -195,24 +194,21 @@ void Vm::run() {
 				{
 					handle_syscall();
 				} else {
-					die("IO\n");
+					vm_err("IO");
 				}
 				break;
 
 			case KVM_EXIT_FAIL_ENTRY:
-				die("KVM_EXIT_FAIL_ENTRY");
+				vm_err("KVM_EXIT_FAIL_ENTRY");
 
 			case KVM_EXIT_INTERNAL_ERROR:
-				die("KVM_EXIT_INTERNAL_ERROR");
+				vm_err("KVM_EXIT_INTERNAL_ERROR");
 
 			case KVM_EXIT_SHUTDOWN:
-				cout << endl << endl << "[KVM_EXIT_SHUTDOWN]" << endl;
-				dump_regs();
-				//dump_memory();
-				die("KVM_EXIT_SHUTDOWN");
+				vm_err("KVM_EXIT_SHUTDOWN");
 
 			default:
-				die("UNKNOWN EXIT");
+				vm_err("UNKNOWN EXIT");
 		}
 	}
 }
@@ -242,4 +238,11 @@ void Vm::dump_memory() const {
 
 void Vm::dump_memory(psize_t len) const {
 	mmu.dump_memory(len);
+}
+
+void Vm::vm_err(const string& msg) {
+	cout << endl << "[VM ERROR]" << endl;
+	dump_regs();
+	dump_memory();
+	die("%s\n", msg.c_str());
 }

@@ -35,6 +35,7 @@ private:
 	void load_elf(const std::vector<std::string>& argv);
 	void handle_syscall();
 	uint64_t do_sys_arch_prctl(const kvm_regs& regs);
+	void vm_err(const std::string& err);
 };
 
 #endif

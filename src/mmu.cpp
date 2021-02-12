@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 #include <linux/kvm.h>
 #include <string.h>
+#include <stdexcept>
 #include "mmu.h"
 #include "kvm_aux.h"
 
@@ -19,8 +20,7 @@ Mmu::Mmu(int vm_fd, size_t mem_size):
 	next_page_alloc(PAGE_TABLE_PADDR + 0x1000),
 	brk(0), min_brk(0)
 {
-	if (memory == MAP_FAILED)
-		die("mmap mmu memory");
+	ERROR_ON(memory == MAP_FAILED, "mmap mmu memory");
 
 	madvise(memory, memory_len, MADV_MERGEABLE);
 
@@ -44,10 +44,9 @@ psize_t Mmu::size() const {
 }
 
 paddr_t Mmu::alloc_frame() {
+	ASSERT(next_page_alloc <= memory_len - PAGE_SIZE, "OOM");
 	paddr_t ret = next_page_alloc;
 	next_page_alloc += PAGE_SIZE;
-	if (next_page_alloc > memory_len)
-		die("OOM");
 	return ret;
 }
 
@@ -79,11 +78,32 @@ paddr_t* Mmu::get_pte(vaddr_t vaddr) {
 
 paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {
 	paddr_t* pte = get_pte(vaddr);
-	if (!*pte) {
-		*pte = alloc_frame() | PDE64_PRESENT | PDE64_RW | PDE64_USER;
-		dbgprintf("Alloc frame: %p mapped to %p\n", vaddr, *pte & PTL1_MASK);
-	}
+	ASSERT(*pte, "Trying to translate not mapped virtual address: 0x%lx", vaddr);
 	return (*pte & PTL1_MASK) + PAGE_OFFSET(vaddr);
+}
+
+void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
+	// Normalize args
+	flags |= PDE64_PRESENT | PDE64_USER;
+	if (PAGE_OFFSET(start)) {
+		len += PAGE_OFFSET(start);
+		start &= PTL1_MASK;
+	}
+	if (PAGE_OFFSET(len)) {
+		len = (len + 0xFFF) & PTL1_MASK;
+	}
+
+	paddr_t* pte;
+	for (vaddr_t vaddr = start; vaddr < start + len; vaddr += PAGE_SIZE) {
+		pte = get_pte(vaddr);
+		if (!*pte)
+			*pte = alloc_frame() | flags;
+		else
+			ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with"
+			       "different flags");
+
+		dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx\n", vaddr, *pte & PTL1_MASK);
+	}
 }
 
 vaddr_t Mmu::get_brk() {
@@ -97,7 +117,7 @@ bool Mmu::set_brk(vaddr_t new_brk) {
 
 	// Allocate space if needed
 	if (new_brk >= brk)
-		alloc(brk, new_brk - brk);
+		alloc(brk, new_brk - brk, PDE64_RW);
 
 	dbgprintf("brk set to %lX\n", new_brk);
 	brk = new_brk;
@@ -112,7 +132,7 @@ void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
 		// or until the end of dst.
 		size = min(PAGE_SIZE - PAGE_OFFSET(src + offset), len - offset);
 		paddr = virt_to_phys(src + offset);
-		memcpy(dst + offset, memory + paddr, size);
+		memcpy((uint8_t*)dst + offset, memory + paddr, size);
 		offset += size;
 	}
 }
@@ -125,7 +145,7 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len){
 		// or until the end of src.
 		size = min(PAGE_SIZE - PAGE_OFFSET(dst + offset), len - offset);
 		paddr = virt_to_phys(dst + offset);
-		memcpy(memory + paddr, src + offset, size);
+		memcpy(memory + paddr, (const uint8_t*)src + offset, size);
 		offset += size;
 	}
 }
@@ -143,32 +163,29 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len){
 	}
 }
 
-void Mmu::alloc(vaddr_t start, vsize_t len) {
-	// Normalize args
-	if (PAGE_OFFSET(start)) {
-		len += PAGE_OFFSET(start);
-		start &= PTL1_MASK;
-	}
-	if (PAGE_OFFSET(len)) {
-		len = (len + 0xFFF) & PTL1_MASK;
-	}
-
-	for (vaddr_t vaddr = start; vaddr < start + len; vaddr += PAGE_SIZE) {
-		virt_to_phys(vaddr);
-	}
-}
-
 void Mmu::init_page_table() {
-	// Identity map the first 4K, without PDE64_USER
+	// Identity map the first 4K, as writable without PDE64_USER
 	paddr_t* pte = get_pte(0);
 	*pte = 0 | PDE64_PRESENT | PDE64_RW;
+}
+
+uint64_t parse_perms(const string& perms) {
+	uint64_t flags = 0;
+	if (perms.find("W") != string::npos)
+		flags |= PDE64_RW;
+	if (perms.find("E") == string::npos)
+		flags |= PDE64_NX;
+	return flags;
 }
 
 void Mmu::load_elf(const vector<segment_t>& segments) {
 	for (const segment_t& segm : segments) {
 		if (segm.type != "LOAD")
 			continue;
-		dbgprintf("Loading at 0x%X\n", segm.virtaddr);
+		dbgprintf("Loading at 0x%lx, len 0x%lx\n", segm.virtaddr, segm.memsize);
+
+		// Allocate memory region as user
+		alloc(segm.virtaddr, segm.memsize, parse_perms(segm.flags));
 
 		// Write segment data into memory
 		write_mem(segm.virtaddr, segm.data, segm.filesize);

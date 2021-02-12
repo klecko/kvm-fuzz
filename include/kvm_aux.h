@@ -8,7 +8,7 @@
 #define PDE64_DIRTY (1U << 6)
 #define PDE64_PS (1U << 7)
 #define PDE64_G (1U << 8)
-#define PDE64_NX (1U << 63)
+#define PDE64_NX 0 // (1LU << 63) // TODO
 
 /* CR0 bits */
 #define CR0_PE 1u

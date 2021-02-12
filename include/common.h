@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <err.h>
 #include <sys/ioctl.h>
+#include <string.h>
 
 #define DEBUG 1
 
@@ -28,13 +29,37 @@ typedef paddr_t psize_t;
 #define dbgprintf(...) ((void)0)
 #endif
 
-#define die(...) err(-1, __VA_ARGS__)
+#define err_header(type)                                         \
+	fprintf(stderr, type " at `%s` %s:%d\n", __ASSERT_FUNCTION,  \
+	        __FILE__, __LINE__);
+
+
+#define ASSERT(expr, ...) do {                                   \
+	if (!(expr)) {                                               \
+		err_header("Assertion failed");                          \
+		fprintf(stderr, "%s: ", __func__);                       \
+		fprintf(stderr, __VA_ARGS__);                            \
+		die("\nExpected: `%s`\n", #expr);                        \
+	}                                                            \
+} while (0)
+
+#define ERROR_ON(expr, ...) do {                                 \
+	if (expr) {                                                  \
+		err_header("Error");                                     \
+		fprintf(stderr, __VA_ARGS__);                            \
+		die(": %s (-%d)\n", strerror(errno), errno);             \
+	}                                                            \
+} while (0)
+
+#define die(...) do {                   \
+	fprintf(stderr, __VA_ARGS__);       \
+	exit(EXIT_FAILURE);                 \
+} while(0)
 
 #define ioctl_chk(fd, req, arg)         \
 	({                                  \
 		int ret = ioctl(fd, req, arg);  \
-		if (ret == -1)                  \
-			die(#req);                  \
+		ERROR_ON(ret == -1, #req);      \
 		ret;                            \
 	})
 
