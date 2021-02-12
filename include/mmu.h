@@ -13,7 +13,7 @@ public:
 
 	psize_t size() const;
 	void load_elf(const std::vector<segment_t>& segments);
-	void* translate(vaddr_t guest);
+	uint8_t* get(vaddr_t guest);
 	void dump_memory(psize_t len) const;
 
 	// Allocate a physical page

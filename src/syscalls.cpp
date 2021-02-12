@@ -33,7 +33,7 @@ void Vm::handle_syscall() {
 	dbgprintf("Handling syscall %lld\n", regs.rax);
 	switch (regs.rax) {
 		case SYS_write:
-			ret = syscall(SYS_write, regs.rdi, mmu.translate(regs.rsi), regs.rdx);
+			ret = syscall(SYS_write, regs.rdi, mmu.get(regs.rsi), regs.rdx);
 			break;
 		case SYS_brk:
 			ret = (mmu.set_brk(regs.rdi) ? regs.rdi : mmu.get_brk());
@@ -58,17 +58,17 @@ void Vm::handle_syscall() {
 			ret = do_sys_arch_prctl(regs);
 			break;
 		case SYS_uname:
-			ret = syscall(SYS_uname, mmu.translate(regs.rdi));
+			ret = syscall(SYS_uname, mmu.get(regs.rdi));
 			break;
 		case SYS_readlink:
-			ret = syscall(SYS_readlink, mmu.translate(regs.rdi),
-			              mmu.translate(regs.rsi), regs.rdx);
+			ret = syscall(SYS_readlink, mmu.get(regs.rdi),
+			              mmu.get(regs.rsi), regs.rdx);
 			break;
 		case SYS_mprotect:
 			ret = 0; // TODO
 			break;
 		case SYS_fstat:
-			ret = syscall(SYS_fstat, regs.rdi, mmu.translate(regs.rsi));
+			ret = syscall(SYS_fstat, regs.rdi, mmu.get(regs.rsi));
 			break;
 		default:
 			dump_regs();

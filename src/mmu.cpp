@@ -199,7 +199,7 @@ void Mmu::load_elf(const vector<segment_t>& segments) {
 	min_brk = brk;
 }
 
-void* Mmu::translate(vaddr_t guest) {
+uint8_t* Mmu::get(vaddr_t guest) {
 	return memory + virt_to_phys(guest);
 }
 

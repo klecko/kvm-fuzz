@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 #include "mmu.h"
 #include "elf_parser.hpp"
 #include "common.h"
@@ -20,6 +21,8 @@ public:
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
+	void set_breakpoint(vaddr_t addr);
+	void remove_breakpoint(vaddr_t addr);
 
 private:
 	int vm_fd;
@@ -30,6 +33,7 @@ private:
 	Elf_parser elf;
 	Mmu mmu;
 	bool running;
+	std::unordered_map<vaddr_t, uint8_t> breakpoints_original_bytes;
 
 	void setup_long_mode();
 	void load_elf(const std::vector<std::string>& argv);

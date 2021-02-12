@@ -37,6 +37,8 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv):
 	setup_long_mode();
 
 	load_elf(argv);
+
+	set_breakpoint(0x401d35);
 }
 
 psize_t Vm::memsize() const {
@@ -101,6 +103,12 @@ void Vm::setup_long_mode() {
 	cpuid->nent = 100;
 	ioctl_chk(kvm_fd, KVM_GET_SUPPORTED_CPUID, cpuid);
 	ioctl_chk(vcpu.fd, KVM_SET_CPUID2, cpuid);
+
+	// Set debug
+	kvm_guest_debug debug;
+	memset(&debug, 0, sizeof(debug));
+	debug.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP | KVM_GUESTDBG_USE_SW_BP;
+	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug);
 }
 
 void Vm::load_elf(const std::vector<std::string>& argv) {
@@ -198,6 +206,11 @@ void Vm::run() {
 				}
 				break;
 
+			case KVM_EXIT_DEBUG:
+				printf("breakpoint hit\n");
+				remove_breakpoint(0x401d35);
+				break;
+
 			case KVM_EXIT_FAIL_ENTRY:
 				vm_err("KVM_EXIT_FAIL_ENTRY");
 
@@ -213,6 +226,97 @@ void Vm::run() {
 	}
 }
 
+#ifdef HW_BPS
+void Vm::set_breakpoint(vaddr_t addr) {
+	kvm_debugregs debug;
+	memset(&debug, 0, sizeof(debug));
+	ioctl_chk(vcpu.fd, KVM_GET_DEBUGREGS, &debug);
+
+	// Check if breakpoint is already set
+	bool bp_activated;
+	int j = -1;
+	for (int i = 0; i < 4; i++) {
+		bp_activated = (debug.dr7 & (1 << (i*2))) != 0;
+		if (bp_activated && debug.db[i] == addr)
+			return;
+		else if (!bp_activated)
+			j = i;
+	}
+
+	// Set breakpoint
+	ASSERT(j != -1, "No breakpoint slot left, trying to set bp 0x%lx\n", addr);
+	dbgprintf("Setting bp 0x%lx to slot %d\n", addr, j);
+	debug.dr7 |= 1 << (j*2);
+	debug.db[j] = addr;
+	ioctl_chk(vcpu.fd, KVM_SET_DEBUGREGS, &debug);
+
+	// I have no idea why I have to do this despite having already used
+	// KVM_SET_GUEST_DEBUG. It looks like setting registers with
+	// KVM_SET_DEBUGREGS saves registers (they can be retrieved with
+	// KVM_GET_DEBUGREGS) but they actually don't work, whereas with
+	// KVM_SET_GUEST_DEBUG they work, but they can not be retrieved.
+	kvm_guest_debug debug2;
+	memset(&debug2, 0, sizeof(debug2));
+	debug2.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP;
+	for (int i = 0; i < 4; i++)
+		debug2.arch.debugreg[i] = debug.db[i];
+	debug2.arch.debugreg[7] = debug.dr7;
+	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug2);
+}
+
+void Vm::remove_breakpoint(vaddr_t addr) {
+	kvm_debugregs debug;
+	memset(&debug, 0, sizeof(debug));
+	ioctl_chk(vcpu.fd, KVM_GET_DEBUGREGS, &debug);
+
+	// Check if breakpoint is already set
+	bool bp_activated;
+	int j = -1;
+	for (int i = 0; i < 4; i++) {
+		bp_activated = (debug.dr7 & (1 << (i*2))) != 0;
+		if (bp_activated && debug.db[i] == addr) {
+			j = i;
+			break;
+		}
+	}
+
+	// Remove breakpoint
+	ASSERT(j != -1, "Trying to remove breakpoint not set: 0x%lx\n", addr);
+	dbgprintf("Removing bp 0x%lx from slot %d\n", addr, j);
+	debug.dr7 &= ~(1 << (j*2));
+	ioctl_chk(vcpu.fd, KVM_SET_DEBUGREGS, &debug);
+
+	// I have no idea why I have to do this despite having already used
+	// KVM_SET_GUEST_DEBUG. It looks like setting registers with
+	// KVM_SET_DEBUGREGS saves registers (they can be retrieved with
+	// KVM_GET_DEBUGREGS) but they actually don't work, whereas with
+	// KVM_SET_GUEST_DEBUG they work, but they can not be retrieved.
+	kvm_guest_debug debug2;
+	memset(&debug2, 0, sizeof(debug2));
+	debug2.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP;
+	for (int i = 0; i < 4; i++)
+		debug2.arch.debugreg[i] = debug.db[i];
+	debug2.arch.debugreg[7] = debug.dr7;
+	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug2);
+}
+#endif
+
+#define SW_BPS
+#ifdef SW_BPS
+void Vm::set_breakpoint(vaddr_t addr) {
+	uint8_t* p = mmu.get(addr);
+	ASSERT(*p != 0xCC, "Trying to set breakpoint twice: 0x%lx", addr);
+	breakpoints_original_bytes[addr] = *p;
+	*p = 0xCC;
+}
+
+void Vm::remove_breakpoint(vaddr_t addr) {
+	uint8_t* p = mmu.get(addr);
+	ASSERT(*p == 0xCC, "Trying to remove not existing breakpoint: 0x%lx", addr);
+	*p = breakpoints_original_bytes[addr];
+	breakpoints_original_bytes.erase(addr);
+}
+#endif
 
 void Vm::dump_regs() {
 	kvm_regs regs;
