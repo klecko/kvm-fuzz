@@ -33,7 +33,8 @@ void Vm::handle_syscall() {
 	dbgprintf("Handling syscall %lld\n", regs.rax);
 	switch (regs.rax) {
 		case SYS_write:
-			ret = syscall(SYS_write, regs.rdi, mmu.get(regs.rsi), regs.rdx);
+			//ret = syscall(SYS_write, regs.rdi, mmu.get(regs.rsi), regs.rdx);
+			ret = regs.rdx;
 			break;
 		case SYS_brk:
 			ret = (mmu.set_brk(regs.rdi) ? regs.rdi : mmu.get_brk());
