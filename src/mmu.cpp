@@ -90,16 +90,19 @@ void Mmu::reset(const Mmu& other) {
 	ioctl_chk(vm_fd, KVM_GET_DIRTY_LOG, &dirty);
 
 	// Reset pages
+	size_t count = 0;
 	uint8_t byte, bit;
 	paddr_t paddr;
 	for (size_t i = 0; i < bits; i++) {
 		byte = dirty_bitmap[i/8];
 		bit = byte & (1 << (i%8));
 		if (bit) {
+			count++;
 			paddr = i*PAGE_SIZE;
 			memcpy(memory + paddr, other.memory + paddr, PAGE_SIZE);
 		}
 	}
+	//printf("resetted %lu pages\n", count);
 
 	// Reset bitmap
 	memset(dirty.dirty_bitmap, 0, bits/8);

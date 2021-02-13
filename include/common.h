@@ -30,7 +30,7 @@ typedef paddr_t psize_t;
 #endif
 
 #define err_header(type)                                         \
-	fprintf(stderr, type " at `%s` %s:%d\n", __ASSERT_FUNCTION,  \
+	fprintf(stderr, type " at `%s` %s:%d\n", __PRETTY_FUNCTION__,\
 	        __FILE__, __LINE__);
 
 

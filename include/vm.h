@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <unordered_map>
+#include "stats.h"
 #include "mmu.h"
 #include "elf_parser.hpp"
 #include "common.h"
@@ -17,10 +18,10 @@ public:
 	   const std::vector<std::string>& argv);
 	Vm(const Vm& other);
 
-	void reset(const Vm& other);
+	void reset(const Vm& other, Stats& stats);
 	psize_t memsize() const;
-	void run();
-	void run_until(vaddr_t pc);
+	void run(Stats& stats);
+	void run_until(vaddr_t pc, Stats& stats);
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
@@ -33,6 +34,8 @@ private:
 		int fd;
 		struct kvm_run* run;
 	} vcpu;
+	kvm_regs* regs;
+	kvm_sregs* sregs;
 	Elf_parser elf;
 	Mmu mmu;
 	bool running;
@@ -41,7 +44,7 @@ private:
 	void setup_long_mode();
 	void load_elf(const std::vector<std::string>& argv);
 	void handle_syscall();
-	uint64_t do_sys_arch_prctl(const kvm_regs& regs);
+	uint64_t do_sys_arch_prctl(const kvm_regs* regs);
 	void vm_err(const std::string& err);
 };
 
