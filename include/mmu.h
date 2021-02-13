@@ -10,6 +10,9 @@ public:
 	static const paddr_t PAGE_TABLE_PADDR = 0x1000;
 	static const paddr_t SYSCALL_HANDLER_ADDR = 0x0; // both paddr and vaddr
 	Mmu(int vm_fd, size_t mem_size);
+	Mmu(int vm_fd, const Mmu& other);
+
+	void reset(const Mmu& other);
 
 	psize_t size() const;
 	void load_elf(const std::vector<segment_t>& segments);
@@ -46,6 +49,8 @@ public:
 	void write(vaddr_t addr, T value);
 
 private:
+	int vm_fd;
+
 	// Guest physical memory
 	uint8_t* memory;
 	size_t   memory_len;
@@ -57,6 +62,10 @@ private:
 	// Physical address of the next page allocated
 	paddr_t next_page_alloc;
 
+	uint32_t dirty_bits;
+	uint8_t* dirty_bitmap;
+
+	// Brk
 	vaddr_t brk, min_brk;
 
 	void init_page_table();

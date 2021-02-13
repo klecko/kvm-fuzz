@@ -9,7 +9,7 @@
 #include <sys/ioctl.h>
 #include <string.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 // Type used for guest virtual addresses
 typedef uint64_t vaddr_t;
@@ -50,6 +50,8 @@ typedef paddr_t psize_t;
 		die(": %s (-%d)\n", strerror(errno), errno);             \
 	}                                                            \
 } while (0)
+
+#define TODO ASSERT(false, "TODO");
 
 #define die(...) do {                   \
 	fprintf(stderr, __VA_ARGS__);       \

@@ -20,16 +20,16 @@ void init_kvm() {
 	       KVM_API_VERSION, api_ver);
 }
 
-Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv):
-	vm_fd(ioctl_chk(kvm_fd, KVM_CREATE_VM, 0)),
-	vcpu{
+Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
+	: vm_fd(ioctl_chk(kvm_fd, KVM_CREATE_VM, 0))
+	, vcpu {
 		ioctl_chk(vm_fd, KVM_CREATE_VCPU, 0),
 		(kvm_run*)mmap(NULL, ioctl_chk(kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
 		               PROT_READ|PROT_WRITE, MAP_SHARED, vcpu.fd, 0)
-	},
-	elf(filepath),
-	mmu(vm_fd, mem_size),
-	running(false)
+	}
+	, elf(filepath)
+	, mmu(vm_fd, mem_size)
+	, running(false)
 {
 	// Check if mmap failed
 	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
@@ -38,7 +38,49 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv):
 
 	load_elf(argv);
 
-	set_breakpoint(0x401d35);
+}
+
+Vm::Vm(const Vm& other)
+	: vm_fd(ioctl_chk(kvm_fd, KVM_CREATE_VM, 0))
+	, vcpu {
+		ioctl_chk(vm_fd, KVM_CREATE_VCPU, 0),
+		(kvm_run*)mmap(NULL, ioctl_chk(kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
+		               PROT_READ|PROT_WRITE, MAP_SHARED, vcpu.fd, 0)
+	}
+	, elf(other.elf.get_path())
+	, mmu(vm_fd, other.mmu)
+	, running(false)
+	, breakpoints_original_bytes(other.breakpoints_original_bytes)
+{
+	// Check if mmap failed
+	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
+
+	setup_long_mode();
+
+	// Copy registers
+	kvm_regs regs;
+	ioctl_chk(other.vcpu.fd, KVM_GET_REGS, &regs);
+	ioctl_chk(vcpu.fd, KVM_SET_REGS, &regs);
+
+	// Copy sregs
+	kvm_sregs sregs;
+	ioctl_chk(other.vcpu.fd, KVM_GET_SREGS, &sregs);
+	ioctl_chk(vcpu.fd, KVM_SET_SREGS, &sregs);
+}
+
+void Vm::reset(const Vm& other) {
+	// Reset mmu
+	mmu.reset(other.mmu);
+
+	// Reset registers
+	kvm_regs regs;
+	ioctl_chk(other.vcpu.fd, KVM_GET_REGS, &regs);
+	ioctl_chk(vcpu.fd, KVM_SET_REGS, &regs);
+
+	// Reset sregs
+	kvm_sregs sregs;
+	ioctl_chk(other.vcpu.fd, KVM_GET_SREGS, &sregs);
+	ioctl_chk(vcpu.fd, KVM_SET_SREGS, &sregs);
 }
 
 psize_t Vm::memsize() const {
@@ -207,9 +249,9 @@ void Vm::run() {
 				break;
 
 			case KVM_EXIT_DEBUG:
-				printf("breakpoint hit\n");
-				remove_breakpoint(0x401d35);
-				break;
+				// TODO: VmExitReason?
+				running = false;
+				return;
 
 			case KVM_EXIT_FAIL_ENTRY:
 				vm_err("KVM_EXIT_FAIL_ENTRY");
@@ -224,6 +266,16 @@ void Vm::run() {
 				vm_err("UNKNOWN EXIT");
 		}
 	}
+}
+
+void Vm::run_until(vaddr_t pc) {
+	set_breakpoint(pc);
+	run();
+	remove_breakpoint(pc);
+
+	kvm_regs regs;
+	ioctl_chk(vcpu.fd, KVM_GET_REGS, &regs);
+	ASSERT(regs.rip == pc, "run until failed");
 }
 
 #ifdef HW_BPS

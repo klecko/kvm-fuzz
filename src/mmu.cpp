@@ -12,21 +12,27 @@ using namespace std;
 // out 16, al; sysret
 const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
 
-Mmu::Mmu(int vm_fd, size_t mem_size):
-	memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
-	                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0)),
-	memory_len(mem_size),
-	ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR)),
-	next_page_alloc(PAGE_TABLE_PADDR + 0x1000),
-	brk(0), min_brk(0)
+Mmu::Mmu(int vm_fd, size_t mem_size)
+	: vm_fd(vm_fd)
+	, memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
+	                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
+	, memory_len(mem_size)
+	, ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR))
+	, next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
+	, dirty_bits(memory_len/PAGE_SIZE)
+	, dirty_bitmap(new uint8_t[dirty_bits/8])
+	, brk(0)
+	, min_brk(0)
 {
 	ERROR_ON(memory == MAP_FAILED, "mmap mmu memory");
 
 	madvise(memory, memory_len, MADV_MERGEABLE);
 
+	memset(dirty_bitmap, 0, dirty_bits/8);
+
 	struct kvm_userspace_memory_region memreg = {
 		.slot = 0,
-		.flags = 0,
+		.flags = KVM_MEM_LOG_DIRTY_PAGES,
 		.guest_phys_addr = 0,
 		.memory_size = mem_size,
 		.userspace_addr = (unsigned long)memory
@@ -37,6 +43,66 @@ Mmu::Mmu(int vm_fd, size_t mem_size):
 	memcpy(memory + SYSCALL_HANDLER_ADDR, SYSCALL_HANDLER, sizeof(SYSCALL_HANDLER));
 
 	init_page_table();
+}
+
+/* Mmu::Mmu(int vm_fd, const Mmu& other)
+	: vm_fd(vm_fd)
+	, memory((uint8_t*)mmap(NULL, other.memory_len, PROT_READ|PROT_WRITE,
+	                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
+	, memory_len(other.memory_len)
+	, ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR))
+	, next_page_alloc(other.next_page_alloc)
+	, dirty_bits(memory_len/PAGE_SIZE)
+	, dirty_bitmap(new uint8_t[dirty_bits/8])
+	, brk(other.brk)
+	, min_brk(other.min_brk)
+{
+	memcpy(memory, other.memory, memory_len);
+	memcpy(dirty_bitmap, other.dirty_bitmap, dirty_bits/8);
+} */
+Mmu::Mmu(int vm_fd, const Mmu& other)
+	: Mmu(vm_fd, other.memory_len)
+{
+	next_page_alloc = other.next_page_alloc;
+	brk             = other.brk;
+	min_brk         = other.min_brk;
+	memcpy(memory, other.memory, memory_len);
+
+	// Reset kvm dirty bitmap
+	memset(dirty_bitmap, 0xFF, dirty_bits/8);
+	kvm_clear_dirty_log clear_dirty = {
+		.slot = 0,
+		.num_pages = dirty_bits,
+		.first_page = 0,
+		.dirty_bitmap = dirty_bitmap,
+	};
+	ioctl_chk(vm_fd, KVM_CLEAR_DIRTY_LOG, &clear_dirty);
+	memset(dirty_bitmap, 0, dirty_bits/8);
+}
+
+void Mmu::reset(const Mmu& other) {
+	// Get dirty pages bitmap
+	size_t bits = memory_len/PAGE_SIZE;
+	kvm_dirty_log dirty = {
+		.slot = 0,
+		.dirty_bitmap = dirty_bitmap
+	};
+	ioctl_chk(vm_fd, KVM_GET_DIRTY_LOG, &dirty);
+
+	// Reset pages
+	uint8_t byte, bit;
+	paddr_t paddr;
+	for (size_t i = 0; i < bits; i++) {
+		byte = dirty_bitmap[i/8];
+		bit = byte & (1 << (i%8));
+		if (bit) {
+			paddr = i*PAGE_SIZE;
+			memcpy(memory + paddr, other.memory + paddr, PAGE_SIZE);
+		}
+	}
+
+	// Reset bitmap
+	memset(dirty.dirty_bitmap, 0, bits/8);
 }
 
 psize_t Mmu::size() const {
@@ -99,7 +165,7 @@ void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 		if (!*pte)
 			*pte = alloc_frame() | flags;
 		else
-			ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with"
+			ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with "
 			       "different flags");
 
 		dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx\n", vaddr, *pte & PTL1_MASK);

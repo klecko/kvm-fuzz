@@ -15,9 +15,12 @@ class Vm {
 public:
 	Vm(vsize_t mem_size, const std::string& filepath,
 	   const std::vector<std::string>& argv);
+	Vm(const Vm& other);
 
+	void reset(const Vm& other);
 	psize_t memsize() const;
 	void run();
+	void run_until(vaddr_t pc);
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
