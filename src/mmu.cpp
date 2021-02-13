@@ -238,32 +238,32 @@ void Mmu::init_page_table() {
 	*pte = 0 | PDE64_PRESENT | PDE64_RW;
 }
 
-uint64_t parse_perms(const string& perms) {
+uint64_t parse_perms(uint32_t perms) {
 	uint64_t flags = 0;
-	if (perms.find("W") != string::npos)
+	if (perms & PF_W)
 		flags |= PDE64_RW;
-	if (perms.find("E") == string::npos)
+	if (perms & PF_X)
 		flags |= PDE64_NX;
 	return flags;
 }
 
 void Mmu::load_elf(const vector<segment_t>& segments) {
 	for (const segment_t& segm : segments) {
-		if (segm.type != "LOAD")
+		if (segm.type != PT_LOAD)
 			continue;
-		dbgprintf("Loading at 0x%lx, len 0x%lx\n", segm.virtaddr, segm.memsize);
+		dbgprintf("Loading at 0x%lx, len 0x%lx\n", segm.vaddr, segm.memsize);
 
 		// Allocate memory region as user
-		alloc(segm.virtaddr, segm.memsize, parse_perms(segm.flags));
+		alloc(segm.vaddr, segm.memsize, parse_perms(segm.flags));
 
 		// Write segment data into memory
-		write_mem(segm.virtaddr, segm.data, segm.filesize);
+		write_mem(segm.vaddr, segm.data, segm.filesize);
 
 		// Fill padding, if any
-		set_mem(segm.virtaddr + segm.filesize, 0, segm.memsize - segm.filesize);
+		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize);
 
 		// Update brk beyond any segment we load
-		brk = max(brk, (segm.virtaddr + segm.memsize + 0xFFF) & ~0xFFF);
+		brk = max(brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
 	}
 	min_brk = brk;
 }

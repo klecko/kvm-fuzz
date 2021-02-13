@@ -2,7 +2,7 @@
 #define _MMU_H
 
 #include <vector>
-#include "elf_parser.hpp"
+#include "elf_parser.h"
 #include "common.h"
 
 class Mmu {

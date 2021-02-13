@@ -26,7 +26,7 @@ uint64_t Vm::do_sys_arch_prctl(const kvm_regs* regs) {
 
 void Vm::handle_syscall() {
 	uint64_t ret = 0;
-	dbgprintf("Handling syscall %lld\n", regs.rax);
+	dbgprintf("Handling syscall %lld\n", regs->rax);
 	switch (regs->rax) {
 		case SYS_write:
 			//ret = syscall(SYS_write, regs->rdi, mmu.get(regs->rsi), regs->rdx);

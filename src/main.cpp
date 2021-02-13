@@ -60,10 +60,17 @@ void worker(const Vm& base, Stats& stats) {
 }
 
 #define num_threads 8
+
 int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
 	Vm vm(1024 * 1024, "../target", {"../target"});
+
+	vm.run(stats);
+
+
+	return 0;
+
 	vm.run_until(0x401d35, stats);
 
 	// Create threads

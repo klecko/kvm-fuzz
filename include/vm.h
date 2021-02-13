@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include "stats.h"
 #include "mmu.h"
-#include "elf_parser.hpp"
 #include "common.h"
 #include "kvm_aux.h"
 
@@ -36,7 +35,7 @@ private:
 	} vcpu;
 	kvm_regs* regs;
 	kvm_sregs* sregs;
-	Elf_parser elf;
+	ElfParser elf;
 	Mmu mmu;
 	bool running;
 	std::unordered_map<vaddr_t, uint8_t> breakpoints_original_bytes;

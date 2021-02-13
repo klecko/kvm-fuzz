@@ -51,7 +51,7 @@ Vm::Vm(const Vm& other)
 	}
 	, regs(&vcpu.run->s.regs.regs)
 	, sregs(&vcpu.run->s.regs.sregs)
-	, elf(other.elf.get_path())
+	, elf(other.elf.path())
 	, mmu(vm_fd, other.mmu)
 	, running(false)
 	, breakpoints_original_bytes(other.breakpoints_original_bytes)
@@ -166,11 +166,11 @@ void Vm::setup_long_mode() {
 	vcpu.run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
 }
 
-void Vm::load_elf(const std::vector<std::string>& argv) {
-	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-	mmu.load_elf(elf.get_segments());
+void Vm::load_elf(const vector<string>& argv) {
+	mmu.load_elf(elf.segments());
 
 	// Allocate stack as writable and not executable
+	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
 	vaddr_t stack_init = 0x800000000000;
 	vsize_t stack_size = 0x10000;
 	mmu.alloc(stack_init - stack_size, stack_size, PDE64_RW | PDE64_NX);
@@ -234,9 +234,11 @@ void Vm::load_elf(const std::vector<std::string>& argv) {
 	mmu.write<uint64_t>(regs->rsp, argv.size());
 
 	regs->rflags = 2;
-	regs->rip = elf.get_entry();
+	regs->rip = elf.entry();
 
 	vcpu.run->kvm_dirty_regs |= KVM_SYNC_X86_REGS;
+
+	dbgprintf("Elf loaded and rip set to 0x%llx\n", regs->rip);
 }
 
 void Vm::run(Stats& stats) {
