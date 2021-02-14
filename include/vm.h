@@ -36,15 +36,21 @@ private:
 	kvm_regs* regs;
 	kvm_sregs* sregs;
 	ElfParser elf;
+	ElfParser* interpreter;
 	Mmu mmu;
 	bool running;
 	std::unordered_map<vaddr_t, uint8_t> breakpoints_original_bytes;
 
 	void setup_long_mode();
 	void load_elf(const std::vector<std::string>& argv);
-	void handle_syscall();
-	uint64_t do_sys_arch_prctl(const kvm_regs* regs);
 	void vm_err(const std::string& err);
+	void handle_syscall();
+	uint64_t do_sys_arch_prctl();
+	uint64_t do_sys_openat();
+	uint64_t do_sys_writev();
+	uint64_t do_sys_read();
+	uint64_t do_sys_pread64();
+	uint64_t do_sys_access();
 };
 
 #endif

@@ -8,7 +8,8 @@
 using namespace std;
 
 ElfParser::ElfParser(const string& elf_path)
-	: m_path(elf_path)
+	: m_base(0)
+	, m_path(elf_path)
 {
 	const char* cpath = m_path.c_str();
 
@@ -25,6 +26,12 @@ ElfParser::ElfParser(const string& elf_path)
 	Elf_Ehdr* ehdr = (Elf_Ehdr*)m_data;
 	Elf_Phdr* phdr = (Elf_Phdr*)(m_data + ehdr->e_phoff);
 	Elf_Shdr* shdr = (Elf_Shdr*)(m_data + ehdr->e_shoff);
+	m_phinfo = {
+		.e_phoff     = ehdr->e_phoff,
+		.e_phentsize = ehdr->e_phentsize,
+		.e_phnum     = ehdr->e_phnum
+	};
+	m_type  = ehdr->e_type;
 	m_entry = ehdr->e_entry;
 
 	// Some checks
@@ -32,6 +39,8 @@ ElfParser::ElfParser(const string& elf_path)
 	       "elf %s: BITS don't match (expecting %d)", cpath, BITS);
 	ASSERT(ehdr->e_machine == EM,
 	       "elf %s: MACH doesn't match (expecting %s)", cpath, EM_S);
+	ASSERT(ehdr->e_type == ET_EXEC || ehdr->e_type == ET_DYN,
+	       "elf %s: TYPE doesn't match (expecting executable or shared", cpath);
 
 	// Get segments
 	m_load_addr = numeric_limits<vaddr_t>::max();
@@ -49,7 +58,10 @@ ElfParser::ElfParser(const string& elf_path)
 			.data     = m_data + segment.offset
 		};
 		m_segments.push_back(segment);
-		m_load_addr = min(m_load_addr, segment.vaddr);
+		if (segment.type == PT_LOAD)
+			m_load_addr = min(m_load_addr, segment.vaddr);
+		if (segment.type == PT_INTERP)
+			m_interpreter = string((char*)segment.data);
 	}
 
 	// Get sections
@@ -100,6 +112,40 @@ ElfParser::ElfParser(const string& elf_path)
 
 }
 
+const uint8_t* ElfParser::data() const {
+	return m_data;
+}
+
+void ElfParser::set_base(vaddr_t base) {
+	vaddr_t diff = base - m_base;
+	m_base = base;
+
+	// Update all virtual addresses accordingly
+	m_entry     += diff;
+	m_load_addr += diff;
+	for (segment_t& segment : m_segments) {
+		segment.vaddr += diff;
+		segment.paddr += diff;
+	}
+	for (section_t& section : m_sections) {
+		section.addr += diff;
+	}
+	for (symbol_t& symbol : m_symbols) {
+		symbol.value += diff;
+	}
+}
+
+vaddr_t ElfParser::base() const {
+	return m_base;
+}
+
+phinfo_t ElfParser::phinfo() const {
+	return m_phinfo;
+}
+
+uint16_t ElfParser::type() const {
+	return m_type;
+}
 
 vaddr_t ElfParser::entry() const {
 	return m_entry;

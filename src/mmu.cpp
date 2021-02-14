@@ -168,11 +168,18 @@ void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 		if (!*pte)
 			*pte = alloc_frame() | flags;
 		else
-			ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with "
-			       "different flags");
+			ASSERT(false, "vaddr already mapped: 0x%lx", vaddr);
+			/* ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with "
+			       "different flags"); */
 
 		dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx\n", vaddr, *pte & PTL1_MASK);
 	}
+}
+
+vaddr_t Mmu::alloc_stack() {
+	// Allocate stack as writable and not executable
+	alloc(STACK_START_ADDR - STACK_SIZE, STACK_SIZE, PDE64_RW | PDE64_NX);
+	return STACK_START_ADDR;
 }
 
 vaddr_t Mmu::get_brk() {
@@ -185,8 +192,10 @@ bool Mmu::set_brk(vaddr_t new_brk) {
 		return false;
 
 	// Allocate space if needed
-	if (new_brk >= brk)
-		alloc(brk, new_brk - brk, PDE64_RW);
+	if (new_brk >= brk) {
+		vaddr_t first_page = (brk + 0xFFF) & ~0xFFF;
+		alloc(first_page, new_brk - first_page, PDE64_RW);
+	}
 
 	dbgprintf("brk set to %lX\n", new_brk);
 	brk = new_brk;

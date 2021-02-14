@@ -7,8 +7,12 @@
 
 class Mmu {
 public:
-	static const paddr_t PAGE_TABLE_PADDR = 0x1000;
-	static const paddr_t SYSCALL_HANDLER_ADDR = 0x0; // both paddr and vaddr
+	static const paddr_t PAGE_TABLE_PADDR     = 0x1000;
+	static const paddr_t SYSCALL_HANDLER_ADDR = 0x0;      // both paddr and vaddr
+	static const vaddr_t ELF_ADDR             = 0x400000; // base for DYN ELF
+	static const vaddr_t STACK_START_ADDR     = 0x800000000000;
+	static const vsize_t STACK_SIZE           = 0x10000;
+	static const vaddr_t MAPPINGS_START_ADDR  = 0x7ffff7ffe000;
 	Mmu(int vm_fd, size_t mem_size);
 	Mmu(int vm_fd, const Mmu& other);
 
@@ -28,6 +32,9 @@ public:
 
 	// Allocate and map given userspace virtual memory region to physical memory
 	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
+
+	// Allocate the stack and return its address
+	vaddr_t alloc_stack();
 
 	// Translate a virtual address to a physical address
 	paddr_t virt_to_phys(vaddr_t vaddr);

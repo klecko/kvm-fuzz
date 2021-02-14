@@ -30,6 +30,7 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
 	, regs(&vcpu.run->s.regs.regs)
 	, sregs(&vcpu.run->s.regs.sregs)
 	, elf(filepath)
+	, interpreter(NULL)
 	, mmu(vm_fd, mem_size)
 	, running(false)
 {
@@ -52,6 +53,7 @@ Vm::Vm(const Vm& other)
 	, regs(&vcpu.run->s.regs.regs)
 	, sregs(&vcpu.run->s.regs.sregs)
 	, elf(other.elf.path())
+	, interpreter(NULL)
 	, mmu(vm_fd, other.mmu)
 	, running(false)
 	, breakpoints_original_bytes(other.breakpoints_original_bytes)
@@ -167,14 +169,32 @@ void Vm::setup_long_mode() {
 }
 
 void Vm::load_elf(const vector<string>& argv) {
+	// EXEC (no PIE) or DYN (PIE)
+	if (elf.type() == ET_DYN)
+		elf.set_base(0x400000);
+
+	dbgprintf("Loading elf at 0x%lx\n", elf.load_addr());
 	mmu.load_elf(elf.segments());
 
-	// Allocate stack as writable and not executable
+	// Check if there's interpreter
+	string interpreter_path = elf.interpreter();
+	if (!interpreter_path.empty()) {
+		TODO
+		// Load interpreter and set RIP to its entry point
+		interpreter = new ElfParser(interpreter_path);
+		interpreter->set_base(0x7ffff7fcf000); // always DYN ?
+		dbgprintf("Loading interpreter %s at 0x%lx\n", interpreter_path.c_str(),
+		          interpreter->load_addr());
+		mmu.load_elf(interpreter->segments());
+		regs->rip = interpreter->entry();
+	} else {
+		// Set RIP to elf entry point
+		regs->rip = elf.entry();
+	}
+
+	// Allocate stack
 	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-	vaddr_t stack_init = 0x800000000000;
-	vsize_t stack_size = 0x10000;
-	mmu.alloc(stack_init - stack_size, stack_size, PDE64_RW | PDE64_NX);
-	regs->rsp = stack_init;
+	regs->rsp = mmu.alloc_stack();
 
 	// NULL
 	regs->rsp -= 16;
@@ -201,20 +221,19 @@ void Vm::load_elf(const vector<string>& argv) {
 	//regs->rsp = (regs->rsp - 0x7) & ~0x7;
 
 	// Set up auxp
-	/* phinfo_t phinfo    = elf.get_phinfo();
-	vaddr_t  load_addr = elf.get_load_addr();
-	Elf64_auxv_t auxv[] = {
-		{AT_RANDOM, {random_bytes}},               // Address of 16 random bytes
-		{AT_EXECFN, {argv_addrs[0]}},              // Filename of the program
+	phinfo_t phinfo      = elf.phinfo();
+	vaddr_t  load_addr   = elf.load_addr();
+	vaddr_t  interp_base = (interpreter ? interpreter->base() : 0);
+	Elf64_auxv_t auxv[]  = {
 		{AT_PHDR,   {load_addr + phinfo.e_phoff}}, // Pointer to program headers
 		{AT_PHENT,  {phinfo.e_phentsize}},         // Size of each entry
 		{AT_PHNUM,  {phinfo.e_phnum}},             // Number of entries
-		{AT_PAGESZ, {4096}},                       // Page size
+		{AT_PAGESZ, {PAGE_SIZE}},                  // Page size
+		{AT_BASE,   {interp_base}},                // Interpreter base address
+		{AT_ENTRY,  {elf.entry()}},                // Entry point of the program
+		{AT_RANDOM, {random_bytes}},               // Address of 16 random bytes
+		{AT_EXECFN, {argv_addrs[0]}},              // Filename of the program
 		{AT_NULL,   {0}},                          // Auxv end
-	}; */
-	Elf64_auxv_t auxv[] = {
-		{AT_RANDOM, {random_bytes}},
-		{AT_NULL,   {0}}
 	};
 	regs->rsp -= sizeof(auxv);
 	mmu.write_mem(regs->rsp, auxv, sizeof(auxv));
@@ -234,7 +253,6 @@ void Vm::load_elf(const vector<string>& argv) {
 	mmu.write<uint64_t>(regs->rsp, argv.size());
 
 	regs->rflags = 2;
-	regs->rip = elf.entry();
 
 	vcpu.run->kvm_dirty_regs |= KVM_SYNC_X86_REGS;
 

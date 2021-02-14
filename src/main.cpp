@@ -64,8 +64,10 @@ void worker(const Vm& base, Stats& stats) {
 int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
-	Vm vm(1024 * 1024, "../target", {"../target"});
+	Vm vm(8 * 1024 * 1024, "../target", {"../target"});
 
+	vm.dump_regs();
+	vm.dump_memory();
 	vm.run(stats);
 
 

@@ -46,6 +46,11 @@
 #define EM_S "EM_X86_64"
 #endif
 
+struct phinfo_t {
+    vaddr_t  e_phoff;      /* Program header table file offset */
+    uint16_t e_phentsize;  /* Program header table entry size */
+    uint16_t e_phnum;      /* Program header table entry count */
+};
 
 struct segment_t {
 	uint32_t type;
@@ -91,6 +96,11 @@ struct relocation_t {
 class ElfParser {
 	public:
 		ElfParser(const std::string& elf_path);
+		const uint8_t* data() const;
+		void set_base(vaddr_t base);
+		vaddr_t base() const;
+		phinfo_t phinfo() const;
+		uint16_t type() const;
 		vaddr_t entry() const;
 		vaddr_t load_addr() const;
 		std::string path() const;
@@ -103,6 +113,9 @@ class ElfParser {
 
 	private:
 		uint8_t* m_data;
+		vaddr_t m_base;
+		phinfo_t m_phinfo;
+		uint16_t m_type;
 		vaddr_t m_entry;
 		vaddr_t m_load_addr;
 		std::string m_path;
