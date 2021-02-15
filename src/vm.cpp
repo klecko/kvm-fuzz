@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 #include "vm.h"
 
 using namespace std;
@@ -18,6 +19,13 @@ void init_kvm() {
 	int api_ver = ioctl(kvm_fd, KVM_GET_API_VERSION, 0);
 	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
 	       KVM_API_VERSION, api_ver);
+}
+
+void Vm::setup() {
+	// Check if mmap failed
+	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
+
+	setup_kvm();
 }
 
 Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
@@ -34,13 +42,13 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
 	, mmu(vm_fd, mem_size)
 	, running(false)
 {
-	// Check if mmap failed
-	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
-
-	setup_long_mode();
+	setup();
 
 	load_elf(argv);
 
+	open_files[STDIN_FILENO]  = FileStdin();
+	open_files[STDOUT_FILENO] = FileStdout();
+	open_files[STDERR_FILENO] = FileStderr();
 }
 
 Vm::Vm(const Vm& other)
@@ -57,11 +65,10 @@ Vm::Vm(const Vm& other)
 	, mmu(vm_fd, other.mmu)
 	, running(false)
 	, breakpoints_original_bytes(other.breakpoints_original_bytes)
+	, open_files(other.open_files)
+	, file_contents(other.file_contents)
 {
-	// Check if mmap failed
-	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
-
-	setup_long_mode();
+	setup();
 
 	// Copy registers
 	memcpy(regs, other.regs, sizeof(*regs));
@@ -99,7 +106,7 @@ psize_t Vm::memsize() const {
 	return mmu.size();
 }
 
-void Vm::setup_long_mode() {
+void Vm::setup_kvm() {
 	ioctl_chk(vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
 
 	kvm_sregs sregs;
@@ -264,7 +271,9 @@ void Vm::run(Stats& stats) {
 	running = true;
 
 	while (running) {
+		cycles = rdtsc2();
 		ioctl_chk(vcpu.fd, KVM_RUN, 0);
+		stats.kvm_cycles += rdtsc2() - cycles;
 		switch (vcpu.run->exit_reason) {
 			case KVM_EXIT_HLT:
 				vm_err("HLT");
@@ -402,6 +411,15 @@ void Vm::remove_breakpoint(vaddr_t addr) {
 	breakpoints_original_bytes.erase(addr);
 }
 #endif
+
+void Vm::set_file(const string& filename, const string& content) {
+	struct iovec iov = {
+		.iov_base = (void*)content.c_str(),
+		.iov_len  = content.size()
+	};
+
+	file_contents[filename] = iov;
+}
 
 void Vm::dump_regs() {
 	printf("rip: 0x%016llX\n", regs->rip);

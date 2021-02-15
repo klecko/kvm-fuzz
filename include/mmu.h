@@ -30,7 +30,7 @@ public:
 	// allocating entries if needed
 	paddr_t* get_pte(vaddr_t vaddr);
 
-	// Allocate and map given userspace virtual memory region to physical memory
+	// Allocate given userspace virtual memory region
 	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
 
 	// Allocate the stack and return its address
@@ -48,6 +48,8 @@ public:
 	void read_mem(void* dst, vaddr_t src, vsize_t len);
 	void write_mem(vaddr_t dst, const void* src, vsize_t len);
 	void set_mem(vaddr_t addr, int c, vsize_t len);
+
+	std::string read_string(vaddr_t addr);
 
 	template<class T>
 	T read(vaddr_t addr);

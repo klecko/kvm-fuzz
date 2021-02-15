@@ -9,7 +9,7 @@
 #include <sys/ioctl.h>
 #include <string.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 // Type used for guest virtual addresses
 typedef uint64_t vaddr_t;

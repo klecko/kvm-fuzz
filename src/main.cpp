@@ -1,4 +1,6 @@
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include "vm.h"
 
@@ -9,7 +11,7 @@ void print_stats(const Stats& stats) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	uint64_t cases;
 	double fcps, run_time, reset_time, reset1_time, reset2_time, reset3_time,
-	       syscall_time;
+	       syscall_time, kvm_time;
 	while (true) {
 		this_thread::sleep_for(chrono::seconds(1));
 		elapsed      = chrono::steady_clock::now() - start;
@@ -21,6 +23,7 @@ void print_stats(const Stats& stats) {
 		reset2_time  = (double)stats.reset2_cycles / stats.total_cycles;
 		reset3_time  = (double)stats.reset3_cycles / stats.total_cycles;
 		syscall_time = (double)stats.syscall_cycles / stats.total_cycles;
+		kvm_time     = (double)stats.kvm_cycles / stats.total_cycles;
 		printf("cases: %lu, fcps: %.3f\n", cases, fcps);
 
 		if (TIMETRACE >= 1)
@@ -28,8 +31,10 @@ void print_stats(const Stats& stats) {
 			       run_time, reset_time);
 
 		if (TIMETRACE >= 2)
-			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f, syscall: %.3f\n",
-			       reset1_time, reset2_time, reset3_time, syscall_time);
+			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f, syscall: %.3f"
+			       ", kvm: %.3f\n",
+			       reset1_time, reset2_time, reset3_time, syscall_time,
+				   kvm_time);
 	}
 }
 
@@ -61,19 +66,21 @@ void worker(const Vm& base, Stats& stats) {
 
 #define num_threads 8
 
+string read_file(const char* filepath){
+	ifstream ifs(filepath);
+	ASSERT(ifs.good(), "Error opening file %s", filepath);
+	ostringstream ss;
+	ss << ifs.rdbuf();
+	ASSERT(ifs.good(), "Error reading file %s", filepath);
+	return ss.str();
+}
+
 int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
-	Vm vm(8 * 1024 * 1024, "../target", {"../target"});
-
-	vm.dump_regs();
-	vm.dump_memory();
-	vm.run(stats);
-
-
-	return 0;
-
-	vm.run_until(0x401d35, stats);
+	Vm vm(8 * 1024 * 1024, "../test_bins/readelf", {"./readelf", "-l", "test"});
+	vm.set_file("test", read_file("./kvm-fuzz"));
+	vm.run_until(0x401c80, stats);
 
 	// Create threads
 	vector<thread> threads;

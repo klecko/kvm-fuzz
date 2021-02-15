@@ -215,7 +215,7 @@ void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
 	}
 }
 
-void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len){
+void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len) {
 	vsize_t offset = 0, size;
 	paddr_t paddr;
 	while (offset < len) {
@@ -228,7 +228,7 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len){
 	}
 }
 
-void Mmu::set_mem(vaddr_t addr, int c, vsize_t len){
+void Mmu::set_mem(vaddr_t addr, int c, vsize_t len) {
 	vsize_t offset = 0, size;
 	paddr_t paddr;
 	while (offset < len) {
@@ -239,6 +239,16 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len){
 		memset(memory + paddr, c, size);
 		offset += size;
 	}
+}
+
+string Mmu::read_string(vaddr_t addr) {
+	string result = "";
+	char c = read<char>(addr++);
+	while (c) {
+		result += c;
+		c = read<char>(addr++);
+	}
+	return result;
 }
 
 void Mmu::init_page_table() {

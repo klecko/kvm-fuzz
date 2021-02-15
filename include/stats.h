@@ -30,6 +30,7 @@ struct Stats {
 	cycle_t  reset3_cycles {0};
 	cycle_t  run_cycles {0};
 	cycle_t  syscall_cycles {0};
+	cycle_t  kvm_cycles {0};
 	std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
 	void update(const Stats& stats){
@@ -47,6 +48,7 @@ struct Stats {
 		reset3_cycles  += stats.reset3_cycles;
 		run_cycles     += stats.run_cycles;
 		syscall_cycles += stats.syscall_cycles;
+		kvm_cycles     += stats.kvm_cycles;
 		lock.clear();
 	}
 };
