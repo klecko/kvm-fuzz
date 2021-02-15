@@ -12,6 +12,139 @@ using namespace std;
 // out 16, al; sysret
 const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
 
+const int Mmu::PageWalker::FLAGS = PDE64_PRESENT | PDE64_RW | PDE64_USER;
+
+Mmu::PageWalker::PageWalker(vaddr_t vaddr, Mmu& mmu)
+	: m_start(vaddr)
+	, m_len(0)
+	, m_mmu(mmu)
+	, m_offset(0)
+	, m_ptl4_i(PTL4_INDEX(vaddr))
+	, m_ptl3_i(PTL3_INDEX(vaddr))
+	, m_ptl2_i(PTL2_INDEX(vaddr))
+	, m_ptl1_i(PTL1_INDEX(vaddr))
+{
+	update_ptl3();
+	update_ptl2();
+	update_ptl1();
+}
+
+Mmu::PageWalker::PageWalker(vaddr_t start, vsize_t len, Mmu& mmu)
+	: PageWalker(start, mmu)
+{
+	m_len = len;
+}
+
+vaddr_t Mmu::PageWalker::start() {
+	return m_start;
+}
+
+vaddr_t Mmu::PageWalker::len() {
+	return m_len;
+}
+
+paddr_t* Mmu::PageWalker::pte() {
+	return &m_ptl1[m_ptl1_i];
+}
+
+vsize_t Mmu::PageWalker::offset() {
+	return m_offset;
+}
+
+vaddr_t Mmu::PageWalker::vaddr() {
+	return m_start + m_offset;
+}
+
+paddr_t Mmu::PageWalker::paddr() {
+	return (*pte() & PTL1_MASK) + PAGE_OFFSET(vaddr());
+}
+
+vsize_t Mmu::PageWalker::page_size() {
+	vsize_t ret = PAGE_SIZE - PAGE_OFFSET(vaddr());
+	if (m_len && m_offset < m_len)
+		ret = min(ret, m_len - m_offset);
+	return ret;
+}
+
+uint64_t Mmu::PageWalker::flags() {
+	return PAGE_OFFSET(*pte()); // FIXME NX
+}
+
+void Mmu::PageWalker::set_flags(uint64_t flags) {
+	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
+	*pte() |= flags;
+}
+
+void Mmu::PageWalker::alloc_frame(uint64_t flags) {
+	ASSERT(!*pte(), "vaddr already mapped: 0x%lx", vaddr());
+	*pte() = m_mmu.alloc_frame() | flags;
+	dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
+	          vaddr(), *pte() & PTL1_MASK, flags);
+}
+
+bool Mmu::PageWalker::next() {
+	// Advance one PTE, update current offset and return whether there are more
+	// pages left
+	next_ptl1_entry();
+
+	m_offset += PAGE_SIZE - PAGE_OFFSET(vaddr());
+
+	return m_offset < m_len;
+}
+
+void Mmu::PageWalker::update_ptl3() {
+	if (!m_mmu.ptl4[m_ptl4_i]) {
+		m_mmu.ptl4[m_ptl4_i] = m_mmu.alloc_frame() | FLAGS;
+	}
+	m_ptl3 = (paddr_t*)(m_mmu.memory + (m_mmu.ptl4[m_ptl4_i] & PTL1_MASK));
+}
+
+void Mmu::PageWalker::update_ptl2() {
+	if (!m_ptl3[m_ptl3_i]) {
+		m_ptl3[m_ptl3_i] = m_mmu.alloc_frame() | FLAGS;
+	}
+	m_ptl2 = (paddr_t*)(m_mmu.memory + (m_ptl3[m_ptl3_i] & PTL1_MASK));
+}
+
+void Mmu::PageWalker::update_ptl1() {
+	if (!m_ptl2[m_ptl2_i]) {
+		m_ptl2[m_ptl2_i] = m_mmu.alloc_frame() | FLAGS;
+	}
+	m_ptl1 = (paddr_t*)(m_mmu.memory + (m_ptl2[m_ptl2_i] & PTL1_MASK));
+}
+
+void Mmu::PageWalker::next_ptl4_entry() {
+	m_ptl4_i++;
+	ASSERT(m_ptl4_i != PTRS_PER_PTL4, "PageWalker: OOB?");
+	update_ptl3();
+}
+
+void Mmu::PageWalker::next_ptl3_entry() {
+	m_ptl3_i++;
+	if (m_ptl3_i == PTRS_PER_PTL3) {
+		m_ptl3_i = 0;
+		next_ptl4_entry();
+	}
+	update_ptl2();
+}
+
+void Mmu::PageWalker::next_ptl2_entry() {
+	m_ptl2_i++;
+	if (m_ptl2_i == PTRS_PER_PTL2) {
+		m_ptl2_i = 0;
+		next_ptl3_entry();
+	}
+	update_ptl1();
+}
+
+void Mmu::PageWalker::next_ptl1_entry() {
+	m_ptl1_i++;
+	if (m_ptl1_i == PTRS_PER_PTL1) {
+		m_ptl1_i = 0;
+		next_ptl2_entry();
+	}
+}
+
 Mmu::Mmu(int vm_fd, size_t mem_size)
 	: vm_fd(vm_fd)
 	, memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
@@ -120,8 +253,10 @@ paddr_t Mmu::alloc_frame() {
 }
 
 paddr_t* Mmu::get_pte(vaddr_t vaddr) {
+	PageWalker walker(vaddr, *this);
+	return walker.pte();
 	// Go over the page table, allocating entries when needed
-	int flags = PDE64_PRESENT | PDE64_RW | PDE64_USER;
+	/* int flags = PDE64_PRESENT | PDE64_RW | PDE64_USER;
 
 	int ptl4_i = PTL4_INDEX(vaddr);
 	if (!ptl4[ptl4_i]) {
@@ -142,7 +277,7 @@ paddr_t* Mmu::get_pte(vaddr_t vaddr) {
 
 	paddr_t* ptl1 = (paddr_t*)(memory + (ptl2[ptl2_i] & PTL1_MASK));
 	int ptl1_i = PTL1_INDEX(vaddr);
-	return &ptl1[ptl1_i];
+	return &ptl1[ptl1_i]; */
 }
 
 paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {
@@ -152,6 +287,7 @@ paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {
 }
 
 void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
+	#if 0
 	// Normalize args
 	flags |= PDE64_PRESENT | PDE64_USER;
 	if (PAGE_OFFSET(start)) {
@@ -174,6 +310,14 @@ void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 
 		dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx\n", vaddr, *pte & PTL1_MASK);
 	}
+	#endif
+
+	ASSERT(len != 0, "alloc %lx zero length", start);
+	flags |= PDE64_PRESENT | PDE64_USER;
+	PageWalker pages(start, len, *this);
+	do {
+		pages.alloc_frame(flags);
+	} while (pages.next());
 }
 
 vaddr_t Mmu::alloc_stack() {
@@ -192,9 +336,9 @@ bool Mmu::set_brk(vaddr_t new_brk) {
 		return false;
 
 	// Allocate space if needed
-	if (new_brk >= brk) {
-		vaddr_t first_page = (brk + 0xFFF) & ~0xFFF;
-		alloc(first_page, new_brk - first_page, PDE64_RW);
+	vaddr_t next_page = (brk + 0xFFF) & ~0xFFF;
+	if (new_brk > next_page) {
+		alloc(next_page, new_brk - next_page, PDE64_RW);
 	}
 
 	dbgprintf("brk set to %lX\n", new_brk);
@@ -203,6 +347,7 @@ bool Mmu::set_brk(vaddr_t new_brk) {
 }
 
 void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
+	#if 0
 	vsize_t offset = 0, size;
 	paddr_t paddr;
 	while (offset < len) {
@@ -213,9 +358,22 @@ void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
 		memcpy((uint8_t*)dst + offset, memory + paddr, size);
 		offset += size;
 	}
+	#endif
+
+	PageWalker pages(src, len, *this);
+	do {
+		// We don't need to check read access: write only pages don't exist
+		// in x86
+		memcpy(
+			(uint8_t*)dst + pages.offset(),
+			memory + pages.paddr(),
+			pages.page_size()
+		);
+	} while (pages.next());
 }
 
-void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len) {
+void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
+	#if 0
 	vsize_t offset = 0, size;
 	paddr_t paddr;
 	while (offset < len) {
@@ -226,9 +384,24 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len) {
 		memcpy(memory + paddr, (const uint8_t*)src + offset, size);
 		offset += size;
 	}
+	#endif
+
+	//printf("writemem start %lx %p %lx\n", dst, src, len);
+	PageWalker pages(dst, len, *this);
+	do {
+		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
+		       "writing to not writable page %lx", pages.vaddr());
+		//printf("memcpy %p %p %lx\n", memory + pages.paddr(), (uint8_t*)src + pages.offset(), pages.page_size());
+		memcpy(
+			memory + pages.paddr(),
+			(uint8_t*)src + pages.offset(),
+			pages.page_size()
+		);
+	} while (pages.next());
 }
 
-void Mmu::set_mem(vaddr_t addr, int c, vsize_t len) {
+void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
+	#if 0
 	vsize_t offset = 0, size;
 	paddr_t paddr;
 	while (offset < len) {
@@ -239,6 +412,14 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len) {
 		memset(memory + paddr, c, size);
 		offset += size;
 	}
+	#endif
+
+	PageWalker pages(addr, len, *this);
+	do {
+		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
+		       "memset to not writable page %lx", pages.vaddr());
+		memset(memory + pages.paddr(), c, pages.page_size());
+	} while (pages.next());
 }
 
 string Mmu::read_string(vaddr_t addr) {
@@ -276,10 +457,11 @@ void Mmu::load_elf(const vector<segment_t>& segments) {
 		alloc(segm.vaddr, segm.memsize, parse_perms(segm.flags));
 
 		// Write segment data into memory
-		write_mem(segm.vaddr, segm.data, segm.filesize);
+		write_mem(segm.vaddr, segm.data, segm.filesize, false);
 
 		// Fill padding, if any
-		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize);
+		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize,
+		        false);
 
 		// Update brk beyond any segment we load
 		brk = max(brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);

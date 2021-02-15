@@ -79,7 +79,12 @@ int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
 	Vm vm(8 * 1024 * 1024, "../test_bins/readelf", {"./readelf", "-l", "test"});
-	vm.set_file("test", read_file("./kvm-fuzz"));
+	string s = read_file("./kvm-fuzz");
+	vm.set_file("test", s);
+
+	/* vm.run(stats);
+	return 0 */;
+
 	vm.run_until(0x401c80, stats);
 
 	// Create threads

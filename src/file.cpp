@@ -145,7 +145,7 @@ vsize_t File::do_read_regular(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
 }
 
 vsize_t File::do_write_stdout(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
-	if (false) {
+	if (DEBUG) {
 		char buf[len + 1];
 		mmu.read_mem(buf, buf_addr, len);
 		buf[len] = 0;

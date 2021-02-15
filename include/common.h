@@ -7,6 +7,8 @@
 #include <assert.h>
 #include <err.h>
 #include <sys/ioctl.h>
+#include <execinfo.h>
+#include <unistd.h>
 #include <string.h>
 
 #define DEBUG 0
@@ -33,9 +35,19 @@ typedef paddr_t psize_t;
 	fprintf(stderr, type " at `%s` %s:%d\n", __PRETTY_FUNCTION__,\
 	        __FILE__, __LINE__);
 
+#define print_backtrace() ((void)0)
+/* #define print_backtrace() do {                                   \
+	void* array[10];                                             \
+	size_t size = backtrace(array, 10);                          \
+	fprintf(stderr, "Bracktrace:\n");                            \
+	backtrace_symbols_fd(array, size, STDERR_FILENO);            \
+	fprintf(stderr, "\n");                                       \
+} while (0) */
+
 
 #define ASSERT(expr, ...) do {                                   \
 	if (!(expr)) {                                               \
+		print_backtrace();                                       \
 		err_header("Assertion failed");                          \
 		fprintf(stderr, "%s: ", __func__);                       \
 		fprintf(stderr, __VA_ARGS__);                            \
@@ -45,6 +57,7 @@ typedef paddr_t psize_t;
 
 #define ERROR_ON(expr, ...) do {                                 \
 	if (expr) {                                                  \
+		print_backtrace();                                       \
 		err_header("Error");                                     \
 		fprintf(stderr, __VA_ARGS__);                            \
 		die(": %s (-%d)\n", strerror(errno), errno);             \
@@ -55,7 +68,7 @@ typedef paddr_t psize_t;
 
 #define die(...) do {                   \
 	fprintf(stderr, __VA_ARGS__);       \
-	exit(EXIT_FAILURE);                 \
+	abort();                            \
 } while(0)
 
 #define ioctl_chk(fd, req, arg)         \
