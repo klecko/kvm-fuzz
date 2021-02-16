@@ -156,6 +156,7 @@ Mmu::Mmu(int vm_fd, size_t mem_size)
 	, m_length(mem_size)
 	, m_ptl4((paddr_t*)(m_memory + PAGE_TABLE_PADDR))
 	, m_next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
+	, m_next_mapping(MAPPINGS_START_ADDR)
 	, m_dirty_bits(m_length/PAGE_SIZE)
 	, m_dirty_bitmap(new uint8_t[m_dirty_bits/8])
 	, m_brk(0)
@@ -190,6 +191,7 @@ Mmu::Mmu(int vm_fd, const Mmu& other)
 	: Mmu(vm_fd, other.m_length)
 {
 	m_next_page_alloc = other.m_next_page_alloc;
+	m_next_mapping    = other.m_next_mapping;
 	m_brk             = other.m_brk;
 	m_min_brk         = other.m_min_brk;
 	memcpy(m_memory, other.m_memory, m_length);
@@ -298,6 +300,13 @@ void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 	} while (pages.next());
 }
 
+vaddr_t Mmu::alloc(vsize_t len, uint64_t flags) {
+	ASSERT((len & PTL1_MASK) == len, "alloc unaligned len");
+	m_next_mapping -= len;
+	alloc(m_next_mapping, len, flags);
+	return m_next_mapping;
+}
+
 vaddr_t Mmu::alloc_stack() {
 	// Allocate stack as writable and not executable
 	alloc(STACK_START_ADDR - STACK_SIZE, STACK_SIZE, PDE64_RW | PDE64_NX);
@@ -305,6 +314,9 @@ vaddr_t Mmu::alloc_stack() {
 }
 
 void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
+	if (len == 0)
+		return;
+
 	PageWalker pages(src, len, *this);
 	do {
 		// We don't need to check read access: write only pages don't exist
@@ -318,6 +330,9 @@ void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
 }
 
 void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
+	if (len == 0)
+		return;
+
 	PageWalker pages(dst, len, *this);
 	do {
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
@@ -331,6 +346,9 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 }
 
 void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
+	if (len == 0)
+		return;
+
 	PageWalker pages(addr, len, *this);
 	do {
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),

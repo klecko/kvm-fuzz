@@ -86,6 +86,9 @@ private:
 	uint64_t do_sys_readlink(vaddr_t pathname_addr, vaddr_t buf_addr,
 	                         vsize_t bufsize);
 	uint64_t do_sys_ioctl(int fd, uint64_t request, uint64_t arg);
+	uint64_t do_sys_mmap(vaddr_t addr, vsize_t length, int prot, int flags,
+	                     int fd, off_t offset);
+	uint64_t do_sys_munmap(vaddr_t addr, vsize_t length);
 };
 
 #endif

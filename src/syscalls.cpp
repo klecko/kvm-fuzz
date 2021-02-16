@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/fcntl.h>
 #include <sys/utsname.h>
+#include <sys/mman.h>
 #include <sys/ioctl.h>
 #include "vm.h"
 #include "syscall_str.h"
@@ -141,7 +142,9 @@ uint64_t Vm::do_sys_lseek(int fd, off_t offset, int whence) {
 		default:
 			TODO
 	}
-	ASSERT(ret >= 0, "lseek: set negative offset: %ld", offset);
+	if (ret < 0)
+		return -EINVAL;
+	//ASSERT(ret >= 0, "lseek: set negative offset: %ld", offset);
 	file.set_offset(ret);
 	return ret;
 }
@@ -186,6 +189,30 @@ uint64_t Vm::do_sys_readlink(vaddr_t pathname_addr, vaddr_t buf_addr,
 uint64_t Vm::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	ASSERT(m_open_files.count(fd), "ioctl: not open fd: %d", fd);
 	TODO
+	return 0;
+}
+
+uint64_t Vm::do_sys_mmap(vaddr_t addr, vsize_t length, int prot, int flags,
+	                     int fd, off_t offset)
+{
+	// We'll remove this checks little by little :)
+	ASSERT(addr == 0, "mmap: not null addr %lx", addr);
+	ASSERT((length & PTL1_MASK) == length, "mmap: not aligned length %lx", length);
+	ASSERT((flags & MAP_TYPE) == MAP_PRIVATE, "mmap: shared mmaping");
+	ASSERT((flags & ~MAP_TYPE) == MAP_ANONYMOUS, "mmap: flags");
+	ASSERT(fd == -1, "mmap: fd %d", fd);
+	ASSERT(offset == 0, "mmap: offset %ld", offset);
+
+	uint64_t mmu_flags = 0;
+	if (prot & PROT_WRITE)
+		mmu_flags |= PDE64_RW;
+	if (!(prot & PROT_EXEC))
+		mmu_flags |= PDE64_NX;
+	return m_mmu.alloc(length, mmu_flags);
+}
+
+uint64_t Vm::do_sys_munmap(vaddr_t addr, vsize_t length) {
+	// TODO
 	return 0;
 }
 
@@ -245,8 +272,14 @@ void Vm::handle_syscall() {
 		case SYS_readlink:
 			ret = do_sys_readlink(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
+		case SYS_mmap:
+			ret = do_sys_mmap(m_regs->rdi, m_regs->rsi, m_regs->rdx, m_regs->r10, m_regs->r8, m_regs->r9);
+			break;
+		case SYS_munmap:
+			ret = do_sys_munmap(m_regs->rdi, m_regs->rsi);
+			break;
 		case SYS_mprotect:
-			ret = 0;
+			ret = 0; // TODO
 			break;
 		case SYS_fstat:
 			ret = do_sys_fstat(m_regs->rdi, m_regs->rsi);

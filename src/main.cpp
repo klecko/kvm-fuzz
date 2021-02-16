@@ -3,6 +3,7 @@
 #include <sstream>
 #include <thread>
 #include "vm.h"
+#include "corpus.h"
 
 using namespace std;
 
@@ -11,7 +12,7 @@ void print_stats(const Stats& stats) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	uint64_t cases;
 	double fcps, run_time, reset_time, reset1_time, reset2_time, reset3_time,
-	       syscall_time, kvm_time;
+	       syscall_time, kvm_time, mut_time;
 	while (true) {
 		this_thread::sleep_for(chrono::seconds(1));
 		elapsed      = chrono::steady_clock::now() - start;
@@ -24,11 +25,12 @@ void print_stats(const Stats& stats) {
 		reset3_time  = (double)stats.reset3_cycles / stats.total_cycles;
 		syscall_time = (double)stats.syscall_cycles / stats.total_cycles;
 		kvm_time     = (double)stats.kvm_cycles / stats.total_cycles;
+		mut_time     = (double)stats.mut_cycles / stats.total_cycles;
 		printf("cases: %lu, fcps: %.3f\n", cases, fcps);
 
 		if (TIMETRACE >= 1)
-			printf("\trun: %.3f, reset: %.3f\n",
-			       run_time, reset_time);
+			printf("\trun: %.3f, reset: %.3f, mut: %.3f\n",
+			       run_time, reset_time, mut_time);
 
 		if (TIMETRACE >= 2)
 			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f, syscall: %.3f"
@@ -38,8 +40,14 @@ void print_stats(const Stats& stats) {
 	}
 }
 
-void worker(const Vm& base, Stats& stats) {
+void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
+	// The vm we'll be running
 	Vm runner(base);
+
+	// Custom RNG: avoids locks and it's simpler
+	Rng rng;
+
+	// Timetracing
 	cycle_t cycles_init, cycles;
 
 	while (true) {
@@ -48,11 +56,19 @@ void worker(const Vm& base, Stats& stats) {
 
 		// Run some time saving stats locally
 		while (_rdtsc() - cycles_init < 50000000) {
+			// Get new input
+			cycles = rdtsc1();
+			const string& input = corpus.get_new_input(id, rng);
+			runner.set_file("test", input);
+			local_stats.mut_cycles += rdtsc1() - cycles;
+
+			// Perform run
 			cycles = rdtsc1();
 			runner.run(local_stats);
 			local_stats.cases++;
 			local_stats.run_cycles += rdtsc1() - cycles;
 
+			// Reset vm
 			cycles = rdtsc1();
 			runner.reset(base, local_stats);
 			local_stats.reset_cycles += rdtsc1() - cycles;
@@ -66,31 +82,19 @@ void worker(const Vm& base, Stats& stats) {
 
 #define num_threads 8
 
-string read_file(const char* filepath){
-	ifstream ifs(filepath);
-	ASSERT(ifs.good(), "Error opening file %s", filepath);
-	ostringstream ss;
-	ss << ifs.rdbuf();
-	ASSERT(ifs.good(), "Error reading file %s", filepath);
-	return ss.str();
-}
 
 int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
+	Corpus corpus(num_threads, "../corpus");
 	Vm vm(8 * 1024 * 1024, "../test_bins/readelf", {"./readelf", "-l", "test"});
-	string s = read_file("./kvm-fuzz");
-	vm.set_file("test", s);
-
-	/* vm.run(stats);
-	return 0; */
 
 	vm.run_until(0x401c80, stats);
 
 	// Create threads
 	vector<thread> threads;
 	for (int i = 0; i < num_threads; i++) {
-		threads.push_back(thread(worker, ref(vm), ref(stats)));
+		threads.push_back(thread(worker, i, ref(vm), ref(corpus), ref(stats)));
 	}
 	threads.push_back(thread(print_stats, ref(stats)));
 

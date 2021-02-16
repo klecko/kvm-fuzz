@@ -300,7 +300,6 @@ void Vm::run(Stats& stats) {
 				return;
 
 			case KVM_EXIT_FAIL_ENTRY:
-				printf("reason = 0x%llx\n", m_vcpu_run->fail_entry.hardware_entry_failure_reason);
 				vm_err("KVM_EXIT_FAIL_ENTRY");
 
 			case KVM_EXIT_INTERNAL_ERROR:

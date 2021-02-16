@@ -54,6 +54,8 @@ public:
 	// Allocate given userspace virtual memory region
 	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
 
+	vaddr_t alloc(vsize_t len, uint64_t flags);
+
 	// Allocate the stack and return its address
 	vaddr_t alloc_stack();
 
@@ -154,6 +156,9 @@ private:
 
 	// Physical address of the next page allocated
 	paddr_t  m_next_page_alloc;
+
+	// Virtual address of the next allocation
+	vaddr_t  m_next_mapping;
 
 	uint32_t m_dirty_bits;
 	uint8_t* m_dirty_bitmap;
