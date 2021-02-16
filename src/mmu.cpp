@@ -56,6 +56,7 @@ vaddr_t Mmu::PageWalker::vaddr() {
 }
 
 paddr_t Mmu::PageWalker::paddr() {
+	ASSERT(*pte(), "Trying to translate not mapped vaddr: 0x%lx", vaddr());
 	return (*pte() & PTL1_MASK) + PAGE_OFFSET(vaddr());
 }
 
@@ -67,10 +68,12 @@ vsize_t Mmu::PageWalker::page_size() {
 }
 
 uint64_t Mmu::PageWalker::flags() {
+	ASSERT(*pte(), "Trying to get flags of not mapped vaddr: 0x%lx", vaddr());
 	return PAGE_OFFSET(*pte()); // FIXME NX
 }
 
 void Mmu::PageWalker::set_flags(uint64_t flags) {
+	ASSERT(*pte(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
 	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
 	*pte() |= flags;
 }
@@ -93,24 +96,24 @@ bool Mmu::PageWalker::next() {
 }
 
 void Mmu::PageWalker::update_ptl3() {
-	if (!m_mmu.ptl4[m_ptl4_i]) {
-		m_mmu.ptl4[m_ptl4_i] = m_mmu.alloc_frame() | FLAGS;
+	if (!m_mmu.m_ptl4[m_ptl4_i]) {
+		m_mmu.m_ptl4[m_ptl4_i] = m_mmu.alloc_frame() | FLAGS;
 	}
-	m_ptl3 = (paddr_t*)(m_mmu.memory + (m_mmu.ptl4[m_ptl4_i] & PTL1_MASK));
+	m_ptl3 = (paddr_t*)(m_mmu.m_memory + (m_mmu.m_ptl4[m_ptl4_i] & PTL1_MASK));
 }
 
 void Mmu::PageWalker::update_ptl2() {
 	if (!m_ptl3[m_ptl3_i]) {
 		m_ptl3[m_ptl3_i] = m_mmu.alloc_frame() | FLAGS;
 	}
-	m_ptl2 = (paddr_t*)(m_mmu.memory + (m_ptl3[m_ptl3_i] & PTL1_MASK));
+	m_ptl2 = (paddr_t*)(m_mmu.m_memory + (m_ptl3[m_ptl3_i] & PTL1_MASK));
 }
 
 void Mmu::PageWalker::update_ptl1() {
 	if (!m_ptl2[m_ptl2_i]) {
 		m_ptl2[m_ptl2_i] = m_mmu.alloc_frame() | FLAGS;
 	}
-	m_ptl1 = (paddr_t*)(m_mmu.memory + (m_ptl2[m_ptl2_i] & PTL1_MASK));
+	m_ptl1 = (paddr_t*)(m_mmu.m_memory + (m_ptl2[m_ptl2_i] & PTL1_MASK));
 }
 
 void Mmu::PageWalker::next_ptl4_entry() {
@@ -145,173 +148,148 @@ void Mmu::PageWalker::next_ptl1_entry() {
 	}
 }
 
+
 Mmu::Mmu(int vm_fd, size_t mem_size)
-	: vm_fd(vm_fd)
-	, memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
-	                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
-	, memory_len(mem_size)
-	, ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR))
-	, next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
-	, dirty_bits(memory_len/PAGE_SIZE)
-	, dirty_bitmap(new uint8_t[dirty_bits/8])
-	, brk(0)
-	, min_brk(0)
+	: m_vm_fd(vm_fd)
+	, m_memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
+	                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
+	, m_length(mem_size)
+	, m_ptl4((paddr_t*)(m_memory + PAGE_TABLE_PADDR))
+	, m_next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
+	, m_dirty_bits(m_length/PAGE_SIZE)
+	, m_dirty_bitmap(new uint8_t[m_dirty_bits/8])
+	, m_brk(0)
+	, m_min_brk(0)
 {
-	ERROR_ON(memory == MAP_FAILED, "mmap mmu memory");
+	ERROR_ON(m_memory == MAP_FAILED, "mmap mmu memory");
 
-	madvise(memory, memory_len, MADV_MERGEABLE);
+	madvise(m_memory, m_length, MADV_MERGEABLE);
 
-	memset(dirty_bitmap, 0, dirty_bits/8);
+	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
 
 	struct kvm_userspace_memory_region memreg = {
 		.slot = 0,
 		.flags = KVM_MEM_LOG_DIRTY_PAGES,
 		.guest_phys_addr = 0,
 		.memory_size = mem_size,
-		.userspace_addr = (unsigned long)memory
+		.userspace_addr = (unsigned long)m_memory
 	};
-	ioctl_chk(vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
+	ioctl_chk(m_vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
 
 	// Set syscall handler
-	memcpy(memory + SYSCALL_HANDLER_ADDR, SYSCALL_HANDLER, sizeof(SYSCALL_HANDLER));
+	memcpy(
+		m_memory + SYSCALL_HANDLER_ADDR,
+		SYSCALL_HANDLER,
+		sizeof(SYSCALL_HANDLER)
+	);
 
 	init_page_table();
 }
 
-/* Mmu::Mmu(int vm_fd, const Mmu& other)
-	: vm_fd(vm_fd)
-	, memory((uint8_t*)mmap(NULL, other.memory_len, PROT_READ|PROT_WRITE,
-	                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
-	, memory_len(other.memory_len)
-	, ptl4((paddr_t*)(memory + PAGE_TABLE_PADDR))
-	, next_page_alloc(other.next_page_alloc)
-	, dirty_bits(memory_len/PAGE_SIZE)
-	, dirty_bitmap(new uint8_t[dirty_bits/8])
-	, brk(other.brk)
-	, min_brk(other.min_brk)
-{
-	memcpy(memory, other.memory, memory_len);
-	memcpy(dirty_bitmap, other.dirty_bitmap, dirty_bits/8);
-} */
 Mmu::Mmu(int vm_fd, const Mmu& other)
-	: Mmu(vm_fd, other.memory_len)
+	: Mmu(vm_fd, other.m_length)
 {
-	next_page_alloc = other.next_page_alloc;
-	brk             = other.brk;
-	min_brk         = other.min_brk;
-	memcpy(memory, other.memory, memory_len);
+	m_next_page_alloc = other.m_next_page_alloc;
+	m_brk             = other.m_brk;
+	m_min_brk         = other.m_min_brk;
+	memcpy(m_memory, other.m_memory, m_length);
 
 	// Reset kvm dirty bitmap
-	memset(dirty_bitmap, 0xFF, dirty_bits/8);
+	memset(m_dirty_bitmap, 0xFF, m_dirty_bits/8);
 	kvm_clear_dirty_log clear_dirty = {
 		.slot = 0,
-		.num_pages = dirty_bits,
+		.num_pages = m_dirty_bits,
 		.first_page = 0,
-		.dirty_bitmap = dirty_bitmap,
+		.dirty_bitmap = m_dirty_bitmap,
 	};
-	ioctl_chk(vm_fd, KVM_CLEAR_DIRTY_LOG, &clear_dirty);
-	memset(dirty_bitmap, 0, dirty_bits/8);
+	ioctl_chk(m_vm_fd, KVM_CLEAR_DIRTY_LOG, &clear_dirty);
+	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
+}
+
+Mmu::~Mmu() {
+	munmap(m_memory, m_length);
+	delete[] m_dirty_bitmap;
+}
+
+void Mmu::init_page_table() {
+	// Identity map the first 4K, as writable without PDE64_USER
+	paddr_t* pte = get_pte(0);
+	*pte = 0 | PDE64_PRESENT | PDE64_RW;
+}
+
+psize_t Mmu::size() const {
+	return m_length;
+}
+
+vaddr_t Mmu::brk() const {
+	return m_brk;
+}
+
+bool Mmu::set_brk(vaddr_t new_brk) {
+	dbgprintf("trying to set brk to %lX\n", new_brk);
+	if (new_brk < m_min_brk)
+		return false;
+
+	// Allocate space if needed
+	vaddr_t next_page = (m_brk + 0xFFF) & ~0xFFF;
+	if (new_brk > next_page) {
+		alloc(next_page, new_brk - next_page, PDE64_RW);
+	}
+
+	dbgprintf("brk set to %lX\n", new_brk);
+	m_brk = new_brk;
+	return true;
 }
 
 void Mmu::reset(const Mmu& other) {
 	// Get dirty pages bitmap
-	size_t bits = memory_len/PAGE_SIZE;
 	kvm_dirty_log dirty = {
 		.slot = 0,
-		.dirty_bitmap = dirty_bitmap
+		.dirty_bitmap = m_dirty_bitmap
 	};
-	ioctl_chk(vm_fd, KVM_GET_DIRTY_LOG, &dirty);
+	ioctl_chk(m_vm_fd, KVM_GET_DIRTY_LOG, &dirty);
 
 	// Reset pages
 	size_t count = 0;
 	uint8_t byte, bit;
 	paddr_t paddr;
-	for (size_t i = 0; i < bits; i++) {
-		byte = dirty_bitmap[i/8];
-		bit = byte & (1 << (i%8));
+	for (size_t i = 0; i < m_dirty_bits; i++) {
+		byte = m_dirty_bitmap[i/8];
+		bit  = byte & (1 << (i%8));
 		if (bit) {
 			count++;
 			paddr = i*PAGE_SIZE;
-			memcpy(memory + paddr, other.memory + paddr, PAGE_SIZE);
+			memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
 		}
 	}
 	//printf("resetted %lu pages\n", count);
 
 	// Reset bitmap
-	memset(dirty.dirty_bitmap, 0, bits/8);
-}
-
-psize_t Mmu::size() const {
-	return memory_len;
+	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
 }
 
 paddr_t Mmu::alloc_frame() {
-	ASSERT(next_page_alloc <= memory_len - PAGE_SIZE, "OOM");
-	paddr_t ret = next_page_alloc;
-	next_page_alloc += PAGE_SIZE;
+	ASSERT(m_next_page_alloc <= m_length - PAGE_SIZE, "OOM");
+	paddr_t ret = m_next_page_alloc;
+	m_next_page_alloc += PAGE_SIZE;
 	return ret;
 }
 
 paddr_t* Mmu::get_pte(vaddr_t vaddr) {
 	PageWalker walker(vaddr, *this);
 	return walker.pte();
-	// Go over the page table, allocating entries when needed
-	/* int flags = PDE64_PRESENT | PDE64_RW | PDE64_USER;
-
-	int ptl4_i = PTL4_INDEX(vaddr);
-	if (!ptl4[ptl4_i]) {
-		ptl4[ptl4_i] = alloc_frame() | flags;
-	}
-
-	paddr_t* ptl3 = (paddr_t*)(memory + (ptl4[ptl4_i] & PTL1_MASK));
-	int ptl3_i = PTL3_INDEX(vaddr);
-	if (!ptl3[ptl3_i]) {
-		ptl3[ptl3_i] = alloc_frame() | flags;
-	}
-
-	paddr_t* ptl2 = (paddr_t*)(memory + (ptl3[ptl3_i] & PTL1_MASK));
-	int ptl2_i = PTL2_INDEX(vaddr);
-	if (!ptl2[ptl2_i]) {
-		ptl2[ptl2_i] = alloc_frame() | flags;
-	}
-
-	paddr_t* ptl1 = (paddr_t*)(memory + (ptl2[ptl2_i] & PTL1_MASK));
-	int ptl1_i = PTL1_INDEX(vaddr);
-	return &ptl1[ptl1_i]; */
 }
 
 paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {
-	paddr_t* pte = get_pte(vaddr);
-	ASSERT(*pte, "Trying to translate not mapped virtual address: 0x%lx", vaddr);
-	return (*pte & PTL1_MASK) + PAGE_OFFSET(vaddr);
+	PageWalker walker(vaddr, *this);
+	return walker.paddr();
+}
+
+uint8_t* Mmu::get(vaddr_t guest) {
+	return m_memory + virt_to_phys(guest);
 }
 
 void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
-	#if 0
-	// Normalize args
-	flags |= PDE64_PRESENT | PDE64_USER;
-	if (PAGE_OFFSET(start)) {
-		len += PAGE_OFFSET(start);
-		start &= PTL1_MASK;
-	}
-	if (PAGE_OFFSET(len)) {
-		len = (len + 0xFFF) & PTL1_MASK;
-	}
-
-	paddr_t* pte;
-	for (vaddr_t vaddr = start; vaddr < start + len; vaddr += PAGE_SIZE) {
-		pte = get_pte(vaddr);
-		if (!*pte)
-			*pte = alloc_frame() | flags;
-		else
-			ASSERT(false, "vaddr already mapped: 0x%lx", vaddr);
-			/* ASSERT((*pte & ~PTL1_MASK) == flags, "page was already mapped with "
-			       "different flags"); */
-
-		dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx\n", vaddr, *pte & PTL1_MASK);
-	}
-	#endif
-
 	ASSERT(len != 0, "alloc %lx zero length", start);
 	flags |= PDE64_PRESENT | PDE64_USER;
 	PageWalker pages(start, len, *this);
@@ -326,74 +304,26 @@ vaddr_t Mmu::alloc_stack() {
 	return STACK_START_ADDR;
 }
 
-vaddr_t Mmu::get_brk() {
-	return brk;
-}
-
-bool Mmu::set_brk(vaddr_t new_brk) {
-	dbgprintf("trying to set brk to %lX\n", new_brk);
-	if (new_brk < min_brk)
-		return false;
-
-	// Allocate space if needed
-	vaddr_t next_page = (brk + 0xFFF) & ~0xFFF;
-	if (new_brk > next_page) {
-		alloc(next_page, new_brk - next_page, PDE64_RW);
-	}
-
-	dbgprintf("brk set to %lX\n", new_brk);
-	brk = new_brk;
-	return true;
-}
-
 void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
-	#if 0
-	vsize_t offset = 0, size;
-	paddr_t paddr;
-	while (offset < len) {
-		// Read memory by pages. Each iteration, copy until the end of the page
-		// or until the end of dst.
-		size = min(PAGE_SIZE - PAGE_OFFSET(src + offset), len - offset);
-		paddr = virt_to_phys(src + offset);
-		memcpy((uint8_t*)dst + offset, memory + paddr, size);
-		offset += size;
-	}
-	#endif
-
 	PageWalker pages(src, len, *this);
 	do {
 		// We don't need to check read access: write only pages don't exist
 		// in x86
 		memcpy(
 			(uint8_t*)dst + pages.offset(),
-			memory + pages.paddr(),
+			m_memory + pages.paddr(),
 			pages.page_size()
 		);
 	} while (pages.next());
 }
 
 void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
-	#if 0
-	vsize_t offset = 0, size;
-	paddr_t paddr;
-	while (offset < len) {
-		// Copy memory by pages. Each iteration, copy until the end of the page
-		// or until the end of src.
-		size = min(PAGE_SIZE - PAGE_OFFSET(dst + offset), len - offset);
-		paddr = virt_to_phys(dst + offset);
-		memcpy(memory + paddr, (const uint8_t*)src + offset, size);
-		offset += size;
-	}
-	#endif
-
-	//printf("writemem start %lx %p %lx\n", dst, src, len);
 	PageWalker pages(dst, len, *this);
 	do {
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "writing to not writable page %lx", pages.vaddr());
-		//printf("memcpy %p %p %lx\n", memory + pages.paddr(), (uint8_t*)src + pages.offset(), pages.page_size());
 		memcpy(
-			memory + pages.paddr(),
+			m_memory + pages.paddr(),
 			(uint8_t*)src + pages.offset(),
 			pages.page_size()
 		);
@@ -401,24 +331,11 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 }
 
 void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
-	#if 0
-	vsize_t offset = 0, size;
-	paddr_t paddr;
-	while (offset < len) {
-		// Set memory by pages. Each iteration, set until the end of the page
-		// or until the end of the memory we want to set.
-		size = min(PAGE_SIZE - PAGE_OFFSET(addr + offset), len - offset);
-		paddr = virt_to_phys(addr + offset);
-		memset(memory + paddr, c, size);
-		offset += size;
-	}
-	#endif
-
 	PageWalker pages(addr, len, *this);
 	do {
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "memset to not writable page %lx", pages.vaddr());
-		memset(memory + pages.paddr(), c, pages.page_size());
+		memset(m_memory + pages.paddr(), c, pages.page_size());
 	} while (pages.next());
 }
 
@@ -432,12 +349,6 @@ string Mmu::read_string(vaddr_t addr) {
 	return result;
 }
 
-void Mmu::init_page_table() {
-	// Identity map the first 4K, as writable without PDE64_USER
-	paddr_t* pte = get_pte(0);
-	*pte = 0 | PDE64_PRESENT | PDE64_RW;
-}
-
 uint64_t parse_perms(uint32_t perms) {
 	uint64_t flags = 0;
 	if (perms & PF_W)
@@ -448,6 +359,9 @@ uint64_t parse_perms(uint32_t perms) {
 }
 
 void Mmu::load_elf(const vector<segment_t>& segments) {
+	// This could be faster with a single PageWalker for each segment instead of
+	// one for each alloc, write_mem and set_mem, but we're only doing this
+	// once so who cares
 	for (const segment_t& segm : segments) {
 		if (segm.type != PT_LOAD)
 			continue;
@@ -464,19 +378,15 @@ void Mmu::load_elf(const vector<segment_t>& segments) {
 		        false);
 
 		// Update brk beyond any segment we load
-		brk = max(brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
+		m_brk = max(m_brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
 	}
-	min_brk = brk;
-}
-
-uint8_t* Mmu::get(vaddr_t guest) {
-	return memory + virt_to_phys(guest);
+	m_min_brk = m_brk;
 }
 
 void Mmu::dump_memory(psize_t len) const {
+	ASSERT(len <= m_length, "Dump OOB: %ld/%ld", len, m_length);
 	ofstream out("dump");
-	assert(len <= memory_len);
-	out.write((char*)memory, len);
+	out.write((char*)m_memory, len);
 	out.close();
 	cout << "Dumped " << len << " bytes of memory" << endl;
 }

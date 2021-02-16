@@ -153,7 +153,7 @@ uint64_t Vm::do_sys_close(int fd) {
 }
 
 uint64_t Vm::do_sys_brk(vaddr_t addr) {
-	return (mmu.set_brk(addr) ? addr : mmu.get_brk());
+	return (mmu.set_brk(addr) ? addr : mmu.brk());
 }
 
 uint64_t Vm::do_sys_uname(vaddr_t buf_addr) {
