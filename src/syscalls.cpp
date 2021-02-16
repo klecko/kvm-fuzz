@@ -249,6 +249,7 @@ void Vm::handle_syscall() {
 			break;
 		case SYS_exit:
 		case SYS_exit_group:
+			dbgprintf("end run --------------------------------\n\n");
 			m_running = false;
 			break;
 		case SYS_getuid:

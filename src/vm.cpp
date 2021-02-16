@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -451,5 +452,15 @@ void Vm::vm_err(const string& msg) {
 	cout << endl << "[VM ERROR]" << endl;
 	dump_regs();
 	dump_memory();
+
+	// Dump current input file to mem
+
+	ofstream os("crash");
+	struct iovec& iov = m_file_contents["test"];
+	os.write((char*)iov.iov_base, iov.iov_len);
+	assert(os.good());
+	cout << "Dumped crash file of size " << iov.iov_len << endl;
+
+	printf("0x%lx\n", m_mmu.virt_to_phys(m_regs->rcx));
 	die("%s\n", msg.c_str());
 }

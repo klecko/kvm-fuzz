@@ -72,10 +72,16 @@ uint64_t Mmu::PageWalker::flags() {
 	return PAGE_OFFSET(*pte()); // FIXME NX
 }
 
-void Mmu::PageWalker::set_flags(uint64_t flags) {
+void Mmu::PageWalker::add_flags(uint64_t flags) {
 	ASSERT(*pte(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
 	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
 	*pte() |= flags;
+}
+
+void Mmu::PageWalker::clear_flags(uint64_t flags) {
+	ASSERT(*pte(), "Trying to clear flags to not mapped vaddr: 0x%lx", vaddr());
+	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
+	*pte() &= ~flags;
 }
 
 void Mmu::PageWalker::alloc_frame(uint64_t flags) {
@@ -83,6 +89,10 @@ void Mmu::PageWalker::alloc_frame(uint64_t flags) {
 	*pte() = m_mmu.alloc_frame() | flags;
 	dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
 	          vaddr(), *pte() & PTL1_MASK, flags);
+}
+
+bool Mmu::PageWalker::is_mapped() {
+	return *pte() != 0;
 }
 
 bool Mmu::PageWalker::next() {
@@ -266,8 +276,33 @@ void Mmu::reset(const Mmu& other) {
 	}
 	//printf("resetted %lu pages\n", count);
 
-	// Reset bitmap
+	// Reset extra pages
+	for (paddr_t paddr : m_dirty_extra) {
+		memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+	}
+
+	// Clear bitmap and vector of extra pages
 	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
+	m_dirty_extra.clear();
+
+	// Reset state
+	m_next_page_alloc = other.m_next_page_alloc;
+	m_next_mapping    = other.m_next_mapping;
+	m_brk             = other.m_brk;
+	m_min_brk         = other.m_min_brk;
+
+	/* if (memcmp(m_memory, other.m_memory, m_length) != 0) {
+		printf("WOOPS reset is not working\n");
+		for (size_t i = 0; i < m_dirty_bits; i++) {
+			paddr = i*PAGE_SIZE;
+			if (memcmp(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE) != 0) {
+				byte = m_dirty_bitmap[i/8];
+				bit  = byte & (1 << (i%8));
+				printf("page %ld at 0x%lx was not resetted, bit was %hhu!\n", i, paddr, bit);
+			}
+		}
+		die(":(\n");
+	} */
 }
 
 paddr_t Mmu::alloc_frame() {
@@ -335,6 +370,7 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 
 	PageWalker pages(dst, len, *this);
 	do {
+		// Check write permissions, memcpy and mark page as dirty
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "writing to not writable page %lx", pages.vaddr());
 		memcpy(
@@ -342,6 +378,7 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 			(uint8_t*)src + pages.offset(),
 			pages.page_size()
 		);
+		m_dirty_extra.push_back(pages.paddr() & PTL1_MASK);
 	} while (pages.next());
 }
 
@@ -351,9 +388,11 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
 
 	PageWalker pages(addr, len, *this);
 	do {
+		// Check write permissions, memset and mark page as dirty
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "memset to not writable page %lx", pages.vaddr());
 		memset(m_memory + pages.paddr(), c, pages.page_size());
+		m_dirty_extra.push_back(pages.paddr() & PTL1_MASK);
 	} while (pages.next());
 }
 

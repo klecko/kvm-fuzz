@@ -98,7 +98,7 @@ private:
 		// offset in case it is the first one)
 		vaddr_t vaddr();
 
-		// Current physichal address (physichal address of current page, with
+		// Current physical address (physichal address of current page, with
 		// offset in case it's the first one)
 		paddr_t paddr();
 
@@ -111,10 +111,14 @@ private:
 
 		// Get and set current page flags
 		uint64_t flags();
-		void set_flags(uint64_t flags);
+		void add_flags(uint64_t flags);
+		void clear_flags(uint64_t flags);
 
 		// Alloc a frame for current page. Fail if it has already a frame
 		void alloc_frame(uint64_t flags);
+
+		// Returns whether current virtual address is mapped or not
+		bool is_mapped();
 
 		// Advance to the next page. In case of range page walkers, returns
 		// whether the new page is in given range. Normal page walkers always
@@ -165,6 +169,12 @@ private:
 
 	// Brk
 	vaddr_t  m_brk, m_min_brk;
+
+	// Addresses of dirty pages, appart from the ones indicated by
+	// the dirty bitmap. When we write to guest, kvm bitmap is not updated
+	// and there doesn't seem to be a way to update it. For now, those pages
+	// are saved here.
+	std::vector<paddr_t> m_dirty_extra;
 
 	void init_page_table();
 };

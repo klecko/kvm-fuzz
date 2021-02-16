@@ -89,6 +89,11 @@ int main(int argc, char** argv) {
 	Corpus corpus(num_threads, "../corpus");
 	Vm vm(8 * 1024 * 1024, "../test_bins/readelf", {"./readelf", "-l", "test"});
 
+	/* string file = read_file("./crash");
+	vm.set_file("test", file);
+	vm.run(stats);
+	return 0 ; */
+
 	vm.run_until(0x401c80, stats);
 
 	// Create threads
