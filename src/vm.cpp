@@ -10,110 +10,78 @@
 
 using namespace std;
 
-int kvm_fd = -1;
+int g_kvm_fd = -1;
 
 void init_kvm() {
-	kvm_fd = open("/dev/kvm", O_RDWR);
-	ERROR_ON(kvm_fd == -1, "open /dev/kvm");
+	g_kvm_fd = open("/dev/kvm", O_RDWR);
+	ERROR_ON(g_kvm_fd == -1, "open /dev/kvm");
 
-	int api_ver = ioctl(kvm_fd, KVM_GET_API_VERSION, 0);
+	int api_ver = ioctl(g_kvm_fd, KVM_GET_API_VERSION, 0);
 	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
 	       KVM_API_VERSION, api_ver);
 }
 
-void Vm::setup() {
-	// Check if mmap failed
-	ERROR_ON(vcpu.run == MAP_FAILED, "mmap kvm_run");
-
-	setup_kvm();
-}
-
 Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
-	: vm_fd(ioctl_chk(kvm_fd, KVM_CREATE_VM, 0))
-	, vcpu {
-		ioctl_chk(vm_fd, KVM_CREATE_VCPU, 0),
-		(kvm_run*)mmap(NULL, ioctl_chk(kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
-		               PROT_READ|PROT_WRITE, MAP_SHARED, vcpu.fd, 0)
-	}
-	, regs(&vcpu.run->s.regs.regs)
-	, sregs(&vcpu.run->s.regs.sregs)
-	, elf(filepath)
-	, interpreter(NULL)
-	, mmu(vm_fd, mem_size)
-	, running(false)
+	: m_vm_fd(ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0))
+	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
+	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
+		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
+	, m_regs(&m_vcpu_run->s.regs.regs)
+	, m_sregs(&m_vcpu_run->s.regs.sregs)
+	, m_elf(filepath)
+	, m_interpreter(NULL)
+	, m_mmu(m_vm_fd, mem_size)
+	, m_running(false)
 {
-	setup();
+	setup_kvm();
 
 	load_elf(argv);
 
-	open_files[STDIN_FILENO]  = FileStdin();
-	open_files[STDOUT_FILENO] = FileStdout();
-	open_files[STDERR_FILENO] = FileStderr();
+	m_open_files[STDIN_FILENO]  = FileStdin();
+	m_open_files[STDOUT_FILENO] = FileStdout();
+	m_open_files[STDERR_FILENO] = FileStderr();
 }
 
 Vm::Vm(const Vm& other)
-	: vm_fd(ioctl_chk(kvm_fd, KVM_CREATE_VM, 0))
-	, vcpu {
-		ioctl_chk(vm_fd, KVM_CREATE_VCPU, 0),
-		(kvm_run*)mmap(NULL, ioctl_chk(kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
-		               PROT_READ|PROT_WRITE, MAP_SHARED, vcpu.fd, 0)
-	}
-	, regs(&vcpu.run->s.regs.regs)
-	, sregs(&vcpu.run->s.regs.sregs)
-	, elf(other.elf.path())
-	, interpreter(NULL)
-	, mmu(vm_fd, other.mmu)
-	, running(false)
-	, breakpoints_original_bytes(other.breakpoints_original_bytes)
-	, open_files(other.open_files)
-	, file_contents(other.file_contents)
+	: m_vm_fd(ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0))
+	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
+	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
+		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
+	, m_regs(&m_vcpu_run->s.regs.regs)
+	, m_sregs(&m_vcpu_run->s.regs.sregs)
+	, m_elf(other.m_elf.path())
+	, m_interpreter(NULL)
+	, m_mmu(m_vm_fd, other.m_mmu)
+	, m_running(false)
+	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
+	, m_open_files(other.m_open_files)
+	, m_file_contents(other.m_file_contents)
 {
-	setup();
+	setup_kvm();
 
 	// Copy registers
-	memcpy(regs, other.regs, sizeof(*regs));
+	memcpy(m_regs, other.m_regs, sizeof(*m_regs));
 
 	// Copy sregs
-	memcpy(sregs, other.sregs, sizeof(*sregs));
+	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
 
 	// Indicate we have dirtied registers
-	vcpu.run->kvm_dirty_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
-}
-
-void Vm::reset(const Vm& other, Stats& stats) {
-	cycle_t cycles;
-
-	// Reset mmu
-	cycles = rdtsc2();
-	mmu.reset(other.mmu);
-	stats.reset1_cycles += rdtsc2() - cycles;
-
-	// Reset registers
-	cycles = rdtsc2();
-	memcpy(regs, other.regs, sizeof(*regs));
-	stats.reset2_cycles += rdtsc2() - cycles;
-
-	// Reset sregs
-	cycles = rdtsc2();
-	memcpy(sregs, other.sregs, sizeof(*sregs));
-	stats.reset3_cycles += rdtsc2() - cycles;
-
-	// Indicate we have dirtied registers
-	vcpu.run->kvm_dirty_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
-}
-
-psize_t Vm::memsize() const {
-	return mmu.size();
+	set_regs_dirty();
+	set_sregs_dirty();
 }
 
 void Vm::setup_kvm() {
-	ioctl_chk(vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
+	// Check if mmap failed
+	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap kvm_run");
 
+	ioctl_chk(m_vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
+
+	// Set special registers for long mode
 	kvm_sregs sregs;
-	ioctl_chk(vcpu.fd, KVM_GET_SREGS, &sregs);
-	sregs.cr3 = Mmu::PAGE_TABLE_PADDR;
-	sregs.cr4 = CR4_PAE | CR4_OSXMMEXCPT | CR4_OSFXSR;
-	sregs.cr0 = CR0_PE | CR0_MP | CR0_ET| CR0_NE | CR0_WP | CR0_AM | CR0_PG;
+	ioctl_chk(m_vcpu_fd, KVM_GET_SREGS, &sregs);
+	sregs.cr3  = Mmu::PAGE_TABLE_PADDR;
+	sregs.cr4  = CR4_PAE | CR4_OSXMMEXCPT | CR4_OSFXSR;
+	sregs.cr0  = CR0_PE | CR0_MP | CR0_ET| CR0_NE | CR0_WP | CR0_AM | CR0_PG;
 	sregs.efer = EFER_LME | EFER_LMA | EFER_SCE;
 
 	// Setup segments
@@ -135,7 +103,7 @@ void Vm::setup_kvm() {
 	seg.type     = 3;    // read, write, accessed, idk why ???
 	seg.selector = 0x10; // index 2
 	sregs.ds = sregs.es = sregs.fs = sregs.gs = sregs.ss = seg;
-	ioctl_chk(vcpu.fd, KVM_SET_SREGS, &sregs);
+	ioctl_chk(m_vcpu_fd, KVM_SET_SREGS, &sregs);
 
 	// Setup MSRs
 	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*3;
@@ -155,133 +123,168 @@ void Vm::setup_kvm() {
 		.index = MSR_SYSCALL_MASK,
 		.data = 0x3f7fd5
 	};
-	ioctl_chk(vcpu.fd, KVM_SET_MSRS, msrs);
+	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
 
-	// Setup cpuid, not sure if needed
+	// Setup cpuid
 	sz = sizeof(kvm_cpuid2) + sizeof(kvm_cpuid_entry2)*100;
 	kvm_cpuid2* cpuid = (kvm_cpuid2*)alloca(sz);
 	memset(cpuid, 0, sz);
 	cpuid->nent = 100;
-	ioctl_chk(kvm_fd, KVM_GET_SUPPORTED_CPUID, cpuid);
-	ioctl_chk(vcpu.fd, KVM_SET_CPUID2, cpuid);
+	ioctl_chk(g_kvm_fd, KVM_GET_SUPPORTED_CPUID, cpuid);
+	ioctl_chk(m_vcpu_fd, KVM_SET_CPUID2, cpuid);
 
 	// Set debug
 	kvm_guest_debug debug;
 	memset(&debug, 0, sizeof(debug));
 	debug.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP | KVM_GUESTDBG_USE_SW_BP;
-	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug);
+	ioctl_chk(m_vcpu_fd, KVM_SET_GUEST_DEBUG, &debug);
 
 	// Set register sync
-	vcpu.run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
+	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
 }
 
 void Vm::load_elf(const vector<string>& argv) {
 	// EXEC (no PIE) or DYN (PIE)
-	if (elf.type() == ET_DYN)
-		elf.set_base(0x400000);
+	if (m_elf.type() == ET_DYN)
+		m_elf.set_base(0x400000);
 
-	dbgprintf("Loading elf at 0x%lx\n", elf.load_addr());
-	mmu.load_elf(elf.segments());
+	dbgprintf("Loading elf at 0x%lx\n", m_elf.load_addr());
+	m_mmu.load_elf(m_elf.segments());
 
 	// Check if there's interpreter
-	string interpreter_path = elf.interpreter();
+	string interpreter_path = m_elf.interpreter();
 	if (!interpreter_path.empty()) {
 		TODO
 		// Load interpreter and set RIP to its entry point
-		interpreter = new ElfParser(interpreter_path);
-		interpreter->set_base(0x7ffff7fcf000); // always DYN ?
+		m_interpreter = new ElfParser(interpreter_path);
+		m_interpreter->set_base(0x7ffff7fcf000); // always DYN ?
 		dbgprintf("Loading interpreter %s at 0x%lx\n", interpreter_path.c_str(),
-		          interpreter->load_addr());
-		mmu.load_elf(interpreter->segments());
-		regs->rip = interpreter->entry();
+		          m_interpreter->load_addr());
+		m_mmu.load_elf(m_interpreter->segments());
+		m_regs->rip = m_interpreter->entry();
 	} else {
 		// Set RIP to elf entry point
-		regs->rip = elf.entry();
+		m_regs->rip = m_elf.entry();
 	}
 
 	// Allocate stack
 	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-	regs->rsp = mmu.alloc_stack();
+	m_regs->rsp = m_mmu.alloc_stack();
 
 	// NULL
-	regs->rsp -= 16;
-	mmu.write<vaddr_t>(regs->rsp, 0);
-	mmu.write<vaddr_t>(regs->rsp + 8, 0);
+	m_regs->rsp -= 16;
+	m_mmu.write<vaddr_t>(m_regs->rsp, 0);
+	m_mmu.write<vaddr_t>(m_regs->rsp + 8, 0);
 
 	// Random bytes for auxv. Seed is not initialized
-	regs->rsp -= 16;
-	vaddr_t random_bytes = regs->rsp;
+	m_regs->rsp -= 16;
+	vaddr_t random_bytes = m_regs->rsp;
 	for (int i = 0; i < 16; i++)
-		mmu.write<uint8_t>(random_bytes + i, rand());
+		m_mmu.write<uint8_t>(random_bytes + i, rand());
 
 	// Write argv strings saving pointers to each arg
 	vector<vaddr_t> argv_addrs;
 	for (const string& arg : argv) {
-		regs->rsp -= arg.size() + 1;
-		mmu.write_mem(regs->rsp, arg.c_str(), arg.size()+1);
-		argv_addrs.push_back(regs->rsp);
+		m_regs->rsp -= arg.size() + 1;
+		m_mmu.write_mem(m_regs->rsp, arg.c_str(), arg.size()+1);
+		argv_addrs.push_back(m_regs->rsp);
 	}
 	argv_addrs.push_back(0); // null ptr, end of argv
 
 	// Align rsp
-	regs->rsp &= ~0x7;
+	m_regs->rsp &= ~0x7;
 	//regs->rsp = (regs->rsp - 0x7) & ~0x7;
 
 	// Set up auxp
-	phinfo_t phinfo      = elf.phinfo();
-	vaddr_t  load_addr   = elf.load_addr();
-	vaddr_t  interp_base = (interpreter ? interpreter->base() : 0);
+	phinfo_t phinfo      = m_elf.phinfo();
+	vaddr_t  load_addr   = m_elf.load_addr();
+	vaddr_t  interp_base = (m_interpreter ? m_interpreter->base() : 0);
 	Elf64_auxv_t auxv[]  = {
 		{AT_PHDR,   {load_addr + phinfo.e_phoff}}, // Pointer to program headers
 		{AT_PHENT,  {phinfo.e_phentsize}},         // Size of each entry
 		{AT_PHNUM,  {phinfo.e_phnum}},             // Number of entries
 		{AT_PAGESZ, {PAGE_SIZE}},                  // Page size
 		{AT_BASE,   {interp_base}},                // Interpreter base address
-		{AT_ENTRY,  {elf.entry()}},                // Entry point of the program
+		{AT_ENTRY,  {m_elf.entry()}},              // Entry point of the program
 		{AT_RANDOM, {random_bytes}},               // Address of 16 random bytes
 		{AT_EXECFN, {argv_addrs[0]}},              // Filename of the program
 		{AT_NULL,   {0}},                          // Auxv end
 	};
-	regs->rsp -= sizeof(auxv);
-	mmu.write_mem(regs->rsp, auxv, sizeof(auxv));
+	m_regs->rsp -= sizeof(auxv);
+	m_mmu.write_mem(m_regs->rsp, auxv, sizeof(auxv));
 
 	// Set up envp
-	regs->rsp -= 8;
-	mmu.write<vaddr_t>(regs->rsp, 0);
+	m_regs->rsp -= 8;
+	m_mmu.write<vaddr_t>(m_regs->rsp, 0);
 
 	// Set up argv
 	for (auto it = argv_addrs.rbegin(); it != argv_addrs.rend(); ++it) {
-		regs->rsp -= 8;
-		mmu.write<vaddr_t>(regs->rsp, *it);
+		m_regs->rsp -= 8;
+		m_mmu.write<vaddr_t>(m_regs->rsp, *it);
 	}
 
 	// Set up argc
-	regs->rsp -= 8;
-	mmu.write<uint64_t>(regs->rsp, argv.size());
+	m_regs->rsp -= 8;
+	m_mmu.write<uint64_t>(m_regs->rsp, argv.size());
 
-	regs->rflags = 2;
+	m_regs->rflags = 2;
 
-	vcpu.run->kvm_dirty_regs |= KVM_SYNC_X86_REGS;
+	set_regs_dirty();
 
-	dbgprintf("Elf loaded and rip set to 0x%llx\n", regs->rip);
+	dbgprintf("Elf loaded and rip set to 0x%llx\n", m_regs->rip);
+}
+
+void Vm::set_regs_dirty() {
+	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_REGS;
+}
+
+void Vm::set_sregs_dirty() {
+	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_SREGS;
+}
+
+psize_t Vm::memsize() const {
+	return m_mmu.size();
+}
+
+void Vm::reset(const Vm& other, Stats& stats) {
+	cycle_t cycles;
+
+	// Reset mmu
+	cycles = rdtsc2();
+	m_mmu.reset(other.m_mmu);
+	stats.reset1_cycles += rdtsc2() - cycles;
+
+	// Reset registers
+	cycles = rdtsc2();
+	memcpy(m_regs, other.m_regs, sizeof(*m_regs));
+	stats.reset2_cycles += rdtsc2() - cycles;
+
+	// Reset sregs
+	cycles = rdtsc2();
+	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
+	stats.reset3_cycles += rdtsc2() - cycles;
+
+	// Indicate we have dirtied registers
+	set_regs_dirty();
+	set_sregs_dirty();
 }
 
 void Vm::run(Stats& stats) {
 	cycle_t cycles;
-	running = true;
+	m_running = true;
 
-	while (running) {
+	while (m_running) {
 		cycles = rdtsc2();
-		ioctl_chk(vcpu.fd, KVM_RUN, 0);
+		ioctl_chk(m_vcpu_fd, KVM_RUN, 0);
 		stats.kvm_cycles += rdtsc2() - cycles;
-		switch (vcpu.run->exit_reason) {
+		switch (m_vcpu_run->exit_reason) {
 			case KVM_EXIT_HLT:
 				vm_err("HLT");
 				break;
 
 			case KVM_EXIT_IO:
-				if (vcpu.run->io.direction == KVM_EXIT_IO_OUT &&
-					vcpu.run->io.port == 16)
+				if (m_vcpu_run->io.direction == KVM_EXIT_IO_OUT &&
+					m_vcpu_run->io.port == 16)
 				{
 					cycles = rdtsc2();
 					handle_syscall();
@@ -293,10 +296,11 @@ void Vm::run(Stats& stats) {
 
 			case KVM_EXIT_DEBUG:
 				// TODO: VmExitReason?
-				running = false;
+				m_running = false;
 				return;
 
 			case KVM_EXIT_FAIL_ENTRY:
+				printf("reason = 0x%llx\n", m_vcpu_run->fail_entry.hardware_entry_failure_reason);
 				vm_err("KVM_EXIT_FAIL_ENTRY");
 
 			case KVM_EXIT_INTERNAL_ERROR:
@@ -316,8 +320,8 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 	run(stats);
 	remove_breakpoint(pc);
 
-	ASSERT(regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
-		   regs->rip, pc);
+	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
+		   m_regs->rip, pc);
 }
 
 #ifdef HW_BPS
@@ -398,17 +402,17 @@ void Vm::remove_breakpoint(vaddr_t addr) {
 #define SW_BPS
 #ifdef SW_BPS
 void Vm::set_breakpoint(vaddr_t addr) {
-	uint8_t* p = mmu.get(addr);
+	uint8_t* p = m_mmu.get(addr);
 	ASSERT(*p != 0xCC, "Trying to set breakpoint twice: 0x%lx", addr);
-	breakpoints_original_bytes[addr] = *p;
+	m_breakpoints_original_bytes[addr] = *p;
 	*p = 0xCC;
 }
 
 void Vm::remove_breakpoint(vaddr_t addr) {
-	uint8_t* p = mmu.get(addr);
+	uint8_t* p = m_mmu.get(addr);
 	ASSERT(*p == 0xCC, "Trying to remove not existing breakpoint: 0x%lx", addr);
-	*p = breakpoints_original_bytes[addr];
-	breakpoints_original_bytes.erase(addr);
+	*p = m_breakpoints_original_bytes[addr];
+	m_breakpoints_original_bytes.erase(addr);
 }
 #endif
 
@@ -417,16 +421,15 @@ void Vm::set_file(const string& filename, const string& content) {
 		.iov_base = (void*)content.c_str(),
 		.iov_len  = content.size()
 	};
-
-	file_contents[filename] = iov;
+	m_file_contents[filename] = iov;
 }
 
 void Vm::dump_regs() {
-	printf("rip: 0x%016llX\n", regs->rip);
-	printf("rax: 0x%016llX  rbx: 0x%016llX  rcx: 0x%016llX  rdx: 0x%016llX\n", regs->rax, regs->rbx, regs->rcx, regs->rdx);
-	printf("rsi: 0x%016llX  rdi: 0x%016llX  rsp: 0x%016llX  rbp: 0x%016llX\n", regs->rsi, regs->rdi, regs->rsp, regs->rbp);
-	printf("r8:  0x%016llX  r9:  0x%016llX  r10: 0x%016llX  r11: 0x%016llX\n", regs->r8, regs->r9, regs->r10, regs->r11);
-	printf("r12: 0x%016llX  r13: 0x%016llX  r14: 0x%016llX  r15: 0x%016llX\n", regs->r12, regs->r13, regs->r14, regs->r15);
+	printf("rip: 0x%016llX\n", m_regs->rip);
+	printf("rax: 0x%016llX  rbx: 0x%016llX  rcx: 0x%016llX  rdx: 0x%016llX\n", m_regs->rax, m_regs->rbx, m_regs->rcx, m_regs->rdx);
+	printf("rsi: 0x%016llX  rdi: 0x%016llX  rsp: 0x%016llX  rbp: 0x%016llX\n", m_regs->rsi, m_regs->rdi, m_regs->rsp, m_regs->rbp);
+	printf("r8:  0x%016llX  r9:  0x%016llX  r10: 0x%016llX  r11: 0x%016llX\n", m_regs->r8, m_regs->r9, m_regs->r10, m_regs->r11);
+	printf("r12: 0x%016llX  r13: 0x%016llX  r14: 0x%016llX  r15: 0x%016llX\n", m_regs->r12, m_regs->r13, m_regs->r14, m_regs->r15);
 
 	/* kvm_fpu fregs;
 	ioctl_chk(vcpu.fd, KVM_GET_FPU, &regs);
@@ -442,7 +445,7 @@ void Vm::dump_memory() const {
 }
 
 void Vm::dump_memory(psize_t len) const {
-	mmu.dump_memory(len);
+	m_mmu.dump_memory(len);
 }
 
 void Vm::vm_err(const string& msg) {

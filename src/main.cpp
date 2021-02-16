@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
 	vm.set_file("test", s);
 
 	/* vm.run(stats);
-	return 0 */;
+	return 0; */
 
 	vm.run_until(0x401c80, stats);
 
