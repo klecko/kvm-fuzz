@@ -16,6 +16,8 @@ class File {
 public:
 	File(uint32_t flags = 0, const char* buf = NULL, vsize_t size = 0);
 
+	uint32_t flags();
+	void set_flags(uint32_t flags);
 	const char* cursor();
 	bool    is_readable();
 	bool    is_writable();

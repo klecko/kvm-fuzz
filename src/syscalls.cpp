@@ -10,6 +10,8 @@
 #include <sys/utsname.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
+#include <sys/sysinfo.h>
 #include "vm.h"
 #include "syscall_str.h"
 #include "common.h"
@@ -192,6 +194,31 @@ uint64_t Vm::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	return 0;
 }
 
+uint64_t Vm::do_sys_fcntl(int fd, int cmd, uint64_t arg) {
+	ASSERT(m_open_files.count(fd), "fcntl: not open fd: %d", fd);
+	File& file = m_open_files[fd];
+	uint64_t ret = 0;
+	uint32_t flags;
+	switch (cmd) {
+		// There's only one flag defined for this: FD_CLOEXEC.
+		// It can also be specified when opening, with O_CLOEXEC.
+		// For simplicity, save it as O_CLOEXEC
+		case F_GETFD:
+			ret = (file.flags() & O_CLOEXEC ? FD_CLOEXEC : 0);
+			break;
+		case F_SETFD:
+			flags = file.flags();
+			if (arg & FD_CLOEXEC)
+				flags |= O_CLOEXEC;
+			file.set_flags(flags);
+			ret = 0;
+			break;
+		default:
+			ASSERT(false, "TODO cmd = %d", cmd);
+	}
+	return ret;
+}
+
 uint64_t Vm::do_sys_mmap(vaddr_t addr, vsize_t length, int prot, int flags,
 	                     int fd, off_t offset)
 {
@@ -228,7 +255,56 @@ uint64_t Vm::do_sys_mprotect(vaddr_t addr, vsize_t length, int prot) {
 	return 0;
 }
 
+uint64_t Vm::do_sys_prlimit(pid_t pid, int resource, vaddr_t new_limit_addr,
+                            vaddr_t old_limit_addr)
+{
+	ASSERT(pid == 0, "prlimit: TODO pid %d", pid);
+	ASSERT(new_limit_addr == 0, "prlimit: TODO set limit");
+	struct rlimit limit;
+	switch (resource) {
+		case RLIMIT_NOFILE:
+			limit.rlim_cur = 1024;
+			limit.rlim_max = 1048576;
+			break;
+		default:
+			TODO
+	}
+	m_mmu.write(old_limit_addr, limit);
+	return 0;
+}
+
+uint64_t Vm::do_sys_sysinfo(vaddr_t info_addr) {
+	struct sysinfo sys = {
+		.uptime    = 1234,
+		.loads     = {102176, 105792, 94720},
+		.totalram  = 32UL*1024*1024*1024,
+		.freeram   = 26UL*1024*1024*1024,
+		.sharedram = 1UL*1024*1024*1024,
+		.bufferram = 1UL*1024*1024*1024,
+		.totalswap = 2UL*1024*1024*1024,
+		.freeswap  = 2UL*1024*1024*1024,
+		.procs     = 1234,
+		.totalhigh = 0,
+		.freehigh  = 0,
+		.mem_unit  = 1
+	};
+	m_mmu.write(info_addr, sys);
+	return 0;
+}
+
+void print_syscalls(int n[500]) {
+	int sum = 0;
+	for (int i = 0; i < 500; i++) {
+		if (n[i]) {
+			printf("%s: %d\n", syscall_str[i], n[i]);
+			sum += n[i];
+		}
+	}
+	printf("total: %d\n", sum);
+}
 void Vm::handle_syscall() {
+	/* static int n[500] = {0};
+	n[m_regs->rax]++; */
 	uint64_t ret = 0;
 	dbgprintf("--> syscall: %s\n", syscall_str[m_regs->rax]);
 	switch (m_regs->rax) {
@@ -263,6 +339,7 @@ void Vm::handle_syscall() {
 		case SYS_exit_group:
 			dbgprintf("end run --------------------------------\n\n");
 			m_running = false;
+			//print_syscalls(n);
 			break;
 		case SYS_getuid:
 			ret = 0;
@@ -302,6 +379,16 @@ void Vm::handle_syscall() {
 			break;
 		case SYS_ioctl:
 			ret = do_sys_ioctl(m_regs->rdi, m_regs->rsi, m_regs->rdx);
+			break;
+		case SYS_fcntl:
+			ret = do_sys_fcntl(m_regs->rdi, m_regs->rsi, m_regs->rdx);
+			break;
+		case SYS_prlimit64:
+			ret = do_sys_prlimit(m_regs->rdi, m_regs->rsi, m_regs->rdx, m_regs->r10);
+			break;
+		case SYS_sysinfo:
+			ret = do_sys_sysinfo(m_regs->rdi);
+			break;
 		default:
 			dump_regs();
 			die("Unimplemented syscall: %s (%lld)\n", syscall_str[m_regs->rax],

@@ -20,6 +20,12 @@ void init_kvm() {
 	int api_ver = ioctl(g_kvm_fd, KVM_GET_API_VERSION, 0);
 	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
 	       KVM_API_VERSION, api_ver);
+
+#ifdef COVERAGE
+	int vmx_pt = ioctl(g_kvm_fd, KVM_VMX_PT_SUPPORTED);
+	ASSERT(vmx_pt != -1, "vmx_pt is not loaded");
+	ASSERT(vmx_pt != -2, "Intel PT is not supported on this CPU");
+#endif
 }
 
 Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
@@ -27,6 +33,11 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
 	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
 	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
 		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
+#ifdef COVERAGE
+	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
+	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
+	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
+#endif
 	, m_regs(&m_vcpu_run->s.regs.regs)
 	, m_sregs(&m_vcpu_run->s.regs.sregs)
 	, m_elf(filepath)
@@ -48,6 +59,11 @@ Vm::Vm(const Vm& other)
 	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
 	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
 		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
+#ifdef COVERAGE
+	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
+	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
+	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
+#endif
 	, m_regs(&m_vcpu_run->s.regs.regs)
 	, m_sregs(&m_vcpu_run->s.regs.sregs)
 	, m_elf(other.m_elf.path())
@@ -74,6 +90,9 @@ Vm::Vm(const Vm& other)
 void Vm::setup_kvm() {
 	// Check if mmap failed
 	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap kvm_run");
+#ifdef COVERAGE
+	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
+#endif
 
 	ioctl_chk(m_vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
 
@@ -106,11 +125,11 @@ void Vm::setup_kvm() {
 	sregs.ds = sregs.es = sregs.fs = sregs.gs = sregs.ss = seg;
 	ioctl_chk(m_vcpu_fd, KVM_SET_SREGS, &sregs);
 
-	// Setup MSRs
+	// Setup MSRs. I'd say MSR_STAR value is wrong, I just copy-pasted from
+	// somewhere but it also works if that entry is removed so idk
 	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*3;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
 	memset(msrs, 0, sz);
-	// Don't know if MSR_STAR is needed
 	msrs->nmsrs = 3;
 	msrs->entries[0] = {
 		.index = MSR_LSTAR, // Long Syscall TARget
@@ -142,6 +161,18 @@ void Vm::setup_kvm() {
 
 	// Set register sync
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
+
+#ifdef COVERAGE
+	// Setup VMX PT
+	vmx_pt_filter_iprs filter = {
+		.a = 0x400000, // readelf text range
+		.b = 0x410000
+	};
+	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter);
+	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE_ADDR0, 0);
+
+	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE, 0);
+#endif
 }
 
 void Vm::load_elf(const vector<string>& argv) {
@@ -278,6 +309,7 @@ void Vm::run(Stats& stats) {
 		cycles = rdtsc2();
 		ioctl_chk(m_vcpu_fd, KVM_RUN, 0);
 		stats.kvm_cycles += rdtsc2() - cycles;
+		stats.vm_exits++;
 		switch (m_vcpu_run->exit_reason) {
 			case KVM_EXIT_HLT:
 				vm_err("HLT");
@@ -290,6 +322,7 @@ void Vm::run(Stats& stats) {
 					cycles = rdtsc2();
 					handle_syscall();
 					stats.syscall_cycles += rdtsc2() - cycles;
+					stats.vm_exits_sys++;
 				} else {
 					vm_err("IO");
 				}
@@ -297,8 +330,14 @@ void Vm::run(Stats& stats) {
 
 			case KVM_EXIT_DEBUG:
 				// TODO: VmExitReason?
+				stats.vm_exits_debug++;
 				m_running = false;
 				return;
+
+			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
+				stats.vm_exits_cov++;
+				get_coverage();
+				break;
 
 			case KVM_EXIT_FAIL_ENTRY:
 				vm_err("KVM_EXIT_FAIL_ENTRY");
@@ -310,7 +349,7 @@ void Vm::run(Stats& stats) {
 				vm_err("KVM_EXIT_SHUTDOWN");
 
 			default:
-				vm_err("UNKNOWN EXIT");
+				vm_err("UNKNOWN EXIT " + to_string(m_vcpu_run->exit_reason));
 		}
 	}
 }
@@ -322,6 +361,11 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 		   m_regs->rip, pc);
+}
+
+void Vm::get_coverage() {
+	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
+	//printf("full %lu\n", size);
 }
 
 #ifdef HW_BPS
@@ -454,13 +498,11 @@ void Vm::vm_err(const string& msg) {
 	dump_memory();
 
 	// Dump current input file to mem
-
 	ofstream os("crash");
 	struct iovec& iov = m_file_contents["test"];
 	os.write((char*)iov.iov_base, iov.iov_len);
 	assert(os.good());
 	cout << "Dumped crash file of size " << iov.iov_len << endl;
 
-	printf("0x%lx\n", m_mmu.virt_to_phys(m_regs->rcx));
 	die("%s\n", msg.c_str());
 }

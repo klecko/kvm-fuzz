@@ -18,11 +18,10 @@ typedef unsigned long long cycle_t;
 // STATS
 struct Stats {
 	uint64_t cases {0};
-	uint64_t instr {0};
-	uint64_t cov {0};
-	uint64_t crashes {0};
-	uint64_t timeouts {0};
-	uint64_t ooms {0};
+	uint64_t vm_exits {0};
+	uint64_t vm_exits_sys {0};
+	uint64_t vm_exits_debug {0};
+	uint64_t vm_exits_cov {0};
 	cycle_t  total_cycles {0};
 	cycle_t  reset_cycles {0};
 	cycle_t  reset1_cycles {0};
@@ -37,11 +36,10 @@ struct Stats {
 	void update(const Stats& stats){
 		while (lock.test_and_set());
 		cases          += stats.cases;
-		instr          += stats.instr;
-		cov            += stats.cov;
-		crashes        += stats.crashes;
-		timeouts       += stats.timeouts;
-		ooms           += stats.ooms;
+		vm_exits       += stats.vm_exits;
+		vm_exits_sys   += stats.vm_exits_sys;
+		vm_exits_debug += stats.vm_exits_debug;
+		vm_exits_cov   += stats.vm_exits_cov;
 		total_cycles   += stats.total_cycles;
 		reset_cycles   += stats.reset_cycles;
 		reset1_cycles  += stats.reset1_cycles;

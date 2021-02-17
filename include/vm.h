@@ -11,6 +11,8 @@
 #include "common.h"
 #include "kvm_aux.h"
 
+//#define COVERAGE
+
 void init_kvm();
 
 class Vm {
@@ -47,6 +49,8 @@ private:
 	int m_vm_fd;
 	int m_vcpu_fd;
 	struct kvm_run* m_vcpu_run;
+	int m_vmx_pt_fd;
+	uint8_t*   m_vmx_pt;
 	kvm_regs*  m_regs;
 	kvm_sregs* m_sregs;
 	ElfParser  m_elf;
@@ -65,6 +69,7 @@ private:
 	void load_elf(const std::vector<std::string>& argv);
 	void set_regs_dirty();
 	void set_sregs_dirty();
+	void get_coverage();
 	void vm_err(const std::string& err);
 
 	void handle_syscall();
@@ -90,6 +95,10 @@ private:
 	                     int fd, off_t offset);
 	uint64_t do_sys_munmap(vaddr_t addr, vsize_t length);
 	uint64_t do_sys_mprotect(vaddr_t addr, vsize_t length, int prot);
+	uint64_t do_sys_fcntl(int fd, int cmd, uint64_t arg);
+	uint64_t do_sys_prlimit(pid_t pid, int resource, vaddr_t new_limit_addr,
+	                        vaddr_t old_limit_addr);
+	uint64_t do_sys_sysinfo(vaddr_t info_addr);
 };
 
 #endif

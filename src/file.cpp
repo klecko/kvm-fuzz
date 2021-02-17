@@ -71,6 +71,14 @@ File::File(uint32_t flags, const char* buf, vsize_t size)
 	, m_offset(0)
 { }
 
+uint32_t File::flags() {
+	return m_flags;
+}
+
+void File::set_flags(uint32_t flags) {
+	m_flags = flags;
+}
+
 bool File::is_readable() {
 	uint32_t accmode = m_flags & O_ACCMODE;
 	return (accmode == O_RDONLY || accmode == O_RDWR);
