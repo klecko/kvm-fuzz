@@ -216,6 +216,18 @@ uint64_t Vm::do_sys_munmap(vaddr_t addr, vsize_t length) {
 	return 0;
 }
 
+uint64_t Vm::do_sys_mprotect(vaddr_t addr, vsize_t length, int prot) {
+	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "mprotect todo");
+	uint64_t flags = 0;
+	if (prot & PROT_WRITE)
+		flags |= PDE64_RW;
+	if (!(prot & PROT_EXEC))
+		flags |= PDE64_NX;
+
+	m_mmu.set_flags(addr, length, flags);
+	return 0;
+}
+
 void Vm::handle_syscall() {
 	uint64_t ret = 0;
 	dbgprintf("--> syscall: %s\n", syscall_str[m_regs->rax]);
@@ -296,7 +308,7 @@ void Vm::handle_syscall() {
 			    m_regs->rax);
 	}
 
-	dbgprintf("<-- syscall: %s returned %lX\n", syscall_str[m_regs->rax], ret);
+	dbgprintf("<-- syscall: %s returned 0x%lX\n", syscall_str[m_regs->rax], ret);
 	m_regs->rax = ret;
 	set_regs_dirty();
 }

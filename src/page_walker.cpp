@@ -63,8 +63,14 @@ uint64_t Mmu::PageWalker::flags() {
 	return PAGE_OFFSET(*pte()); // FIXME NX
 }
 
-void Mmu::PageWalker::add_flags(uint64_t flags) {
+void Mmu::PageWalker::set_flags(uint64_t flags) {
 	ASSERT(*pte(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
+	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
+	*pte() = (*pte() & PTL1_MASK) | flags;
+}
+
+void Mmu::PageWalker::add_flags(uint64_t flags) {
+	ASSERT(*pte(), "Trying to add flags to not mapped vaddr: 0x%lx", vaddr());
 	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
 	*pte() |= flags;
 }

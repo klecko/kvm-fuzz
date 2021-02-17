@@ -89,6 +89,7 @@ private:
 	uint64_t do_sys_mmap(vaddr_t addr, vsize_t length, int prot, int flags,
 	                     int fd, off_t offset);
 	uint64_t do_sys_munmap(vaddr_t addr, vsize_t length);
+	uint64_t do_sys_mprotect(vaddr_t addr, vsize_t length, int prot);
 };
 
 #endif

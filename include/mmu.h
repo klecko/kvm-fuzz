@@ -75,6 +75,9 @@ public:
 	// Read a null-terminated string from `addr`
 	std::string read_string(vaddr_t addr);
 
+	// Set flags to given memory region in the page table
+	void set_flags(vaddr_t addr, vsize_t len, uint64_t flags);
+
 	// Load elf into memory, updating brk
 	void load_elf(const std::vector<segment_t>& segments);
 

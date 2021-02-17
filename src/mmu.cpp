@@ -260,6 +260,17 @@ string Mmu::read_string(vaddr_t addr) {
 	return result;
 }
 
+void Mmu::set_flags(vaddr_t addr, vsize_t len, uint64_t flags) {
+	if (len == 0)
+		return;
+
+	PageWalker pages(addr, len, *this);
+	do {
+		// This will trigger ASSERT if page is not mapped
+		pages.set_flags(flags);
+	} while (pages.next());
+}
+
 uint64_t parse_perms(uint32_t perms) {
 	uint64_t flags = 0;
 	if (perms & PF_W)

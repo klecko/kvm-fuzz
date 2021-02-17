@@ -28,6 +28,7 @@ public:
 
 	// Get and set current page flags
 	uint64_t flags();
+	void set_flags(uint64_t flags);
 	void add_flags(uint64_t flags);
 	void clear_flags(uint64_t flags);
 
