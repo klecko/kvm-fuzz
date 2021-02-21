@@ -299,6 +299,10 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
+
+	// Reset other VM state
+	m_breakpoints_original_bytes = other.m_breakpoints_original_bytes;
+	m_open_files = other.m_open_files;
 }
 
 void Vm::run(Stats& stats) {
