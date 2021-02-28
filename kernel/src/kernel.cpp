@@ -13,12 +13,9 @@ unordered_map<string, struct iovec> Kernel::m_file_contents;
 Kernel kernel;
 
 void Kernel::init() {
-	// Align the stack and save it. Maybe this would be better in kmain
-	asm volatile("and rsp, 0xFFFFFFFFFFFFFFF0");
-	save_kernel_stack();
-
 	// Init kernel stuff
 	register_syscall();
+	save_kernel_stack();
 	init_syscall_str();
 
 	hypercall_print("Hello from kernel\n");
@@ -39,7 +36,7 @@ void Kernel::init_elf_path() {
 	char buf[PATH_MAX];
 	hypercall_get_elf_path(buf, PATH_MAX);
 	m_elf_path = string(buf);
-	hypercall_print((string("Elf path: ") + m_elf_path + "\n").c_str());
+	hypercall_print("Elf path: " + m_elf_path + "\n");
 }
 
 #define MSR_STAR          0xc0000081 /* legacy mode SYSCALL target */

@@ -154,10 +154,10 @@ size_t File::do_read_regular(void* buf, size_t len) {
 
 size_t File::do_write_stdout(const void* buf, size_t len) {
 #ifdef DEBUG
-		char buf[len + 1];
+		/* char buf[len + 1];
 		mmu.read_mem(buf, buf, len);
 		buf[len] = 0;
-		printf("%s", buf);
+		printf("%s", buf); */
 #endif
 	return len;
 }

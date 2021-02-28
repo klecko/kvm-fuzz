@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <string>
 #include "hypercalls.h"
 
 // Keep this the same as in the hypervisor!
@@ -43,19 +42,13 @@ void hypercall_ready() {
 	hypercall(Hypercall::Ready);
 }
 
-/* __attribute__((naked))
+__attribute__((naked))
 void _hypercall_print(const char* msg) {
 	hypercall(Hypercall::Print);
 }
 
 void hypercall_print(const string& msg) {
-	// TODO: STL
 	_hypercall_print(msg.c_str());
-} */
-
-__attribute__((naked))
-void hypercall_print(const char* msg) {
-	hypercall(Hypercall::Print);
 }
 
 __attribute__((naked))

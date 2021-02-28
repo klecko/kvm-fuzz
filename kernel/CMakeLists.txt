@@ -3,7 +3,7 @@ set(CMAKE_CXX_COMPILER "x86_64-elf-g++")
 set(LINKER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 
 # Add linux header files, as we are emulating a linux kernel
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffreestanding -static -Wall \
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffreestanding -static -Wall -mno-sse \
 	-fno-exceptions -fno-rtti -masm=intel -fpic -fpie -fno-use-cxa-atexit \
 	-I /usr/include/x86_64-linux-gnu -I /usr/include")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib \
