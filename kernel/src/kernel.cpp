@@ -13,15 +13,18 @@ unordered_map<string, struct iovec> Kernel::m_file_contents;
 Kernel kernel;
 
 void Kernel::init() {
+	// Align the stack and save it. Maybe this would be better in kmain
+	asm volatile("and rsp, 0xFFFFFFFFFFFFFFF0");
+	save_kernel_stack();
+
 	// Init kernel stuff
 	register_syscall();
-	save_kernel_stack();
 	init_syscall_str();
 
 	hypercall_print("Hello from kernel\n");
 
 	// Let's init kernel state. We'll need to use some hypercalls
-	m_kernel_stack = 0;
+	//m_kernel_stack = 0;
 	m_user_stack   = 0;
 	init_elf_path();
 	m_open_files[STDIN_FILENO]  = FileStdin();
@@ -44,7 +47,7 @@ void Kernel::init_elf_path() {
 #define MSR_SYSCALL_MASK  0xc0000084 /* EFLAGS mask for syscall */
 
 void Kernel::register_syscall() {
-	asm(
+	asm volatile(
 		// MSR_LSTAR
 		"lea rdi, %[syscall_handler];"
 		"mov eax, edi;"
@@ -54,7 +57,7 @@ void Kernel::register_syscall() {
 		"wrmsr;"
 
 		// MSR_STAR
-		/* "xor rax, rax;"
+		"xor rax, rax;"
 		"mov edx, 0x00200008;"
 		"mov ecx, %[_MSR_STAR];"
 		"wrmsr;"
@@ -63,7 +66,7 @@ void Kernel::register_syscall() {
 		"mov eax, 0x3f7fd5;"
 		"xor rdx, rdx;"
 		"mov ecx, %[_MSR_SYSCALL_MASK];"
-		"wrmsr;" */
+		"wrmsr;"
 		:
 		: [syscall_handler] "m"(syscall_entry),
 		  [_MSR_LSTAR] "i"(MSR_LSTAR),
@@ -77,32 +80,32 @@ void Kernel::register_syscall() {
 // dirty any other register
 __attribute__((__always_inline__)) inline
 void Kernel::save_kernel_stack() {
-	asm("mov %[kernel_stack], rsp;" : [kernel_stack] "=m"(m_kernel_stack) : :);
+	asm volatile("mov %[kernel_stack], rsp;" : [kernel_stack] "=m"(m_kernel_stack) : :);
 }
 
 __attribute__((__always_inline__)) inline
 void Kernel::save_user_stack() {
-	asm("mov %[user_stack], rsp;" : [user_stack] "=m"(m_user_stack) : :);
+	asm volatile("mov %[user_stack], rsp;" : [user_stack] "=m"(m_user_stack) : :);
 }
 
 __attribute__((__always_inline__)) inline
 void Kernel::restore_kernel_stack() {
-	asm("mov rsp, %[kernel_stack];" : [kernel_stack] "=m"(m_kernel_stack) : :);
+	asm volatile("mov rsp, %[kernel_stack];" : [kernel_stack] "=m"(m_kernel_stack) : :);
 }
 
 __attribute__((__always_inline__)) inline
 void Kernel::restore_user_stack() {
-	asm("mov rsp, %[user_stack];" : [user_stack] "=m"(m_user_stack) : :);
+	asm volatile("mov rsp, %[user_stack];" : [user_stack] "=m"(m_user_stack) : :);
 }
 
 
 __attribute__((naked))
 void Kernel::syscall_entry() {
-	//asm("hlt");
+	//asm volatile("hlt");
 	save_user_stack();
 	restore_kernel_stack();
 
-	asm(
+	asm volatile(
 	// Save non-callee-saved registers. This includes rcx (return address)
 	// and r11 (rflags)
 		"push rdi;"
@@ -137,8 +140,8 @@ void Kernel::syscall_entry() {
 
 	//save_kernel_stack();
 	restore_user_stack();
-	//asm("hlt");
-	asm("sysretq");
+	//asm volatile("hlt");
+	asm volatile("sysretq");
 }
 
 // This needs to be in the same file as syscall_entry, so it can be called
