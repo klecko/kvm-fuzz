@@ -28,7 +28,8 @@ void init_kvm() {
 #endif
 }
 
-Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
+Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
+       const vector<string>& argv)
 	: m_vm_fd(ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0))
 	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
 	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
@@ -41,17 +42,22 @@ Vm::Vm(vsize_t mem_size, const string& filepath, const vector<string>& argv)
 	, m_regs(&m_vcpu_run->s.regs.regs)
 	, m_sregs(&m_vcpu_run->s.regs.sregs)
 	, m_elf(filepath)
+	, m_kernel(kernelpath)
 	, m_interpreter(NULL)
 	, m_mmu(m_vm_fd, mem_size)
 	, m_running(false)
 {
 	setup_kvm();
 
-	load_elf(argv);
+	// Load kernel, and run it until it's ready
+	Stats dummy;
+	load_kernel();
+	dbgprintf("Starting vm\n");
+	run(dummy);
+	dbgprintf("Kernel startup finished\n");
 
-	m_open_files[STDIN_FILENO]  = FileStdin();
-	m_open_files[STDOUT_FILENO] = FileStdout();
-	m_open_files[STDERR_FILENO] = FileStderr();
+	// Load user elf
+	load_elf(argv);
 }
 
 Vm::Vm(const Vm& other)
@@ -66,13 +72,12 @@ Vm::Vm(const Vm& other)
 #endif
 	, m_regs(&m_vcpu_run->s.regs.regs)
 	, m_sregs(&m_vcpu_run->s.regs.sregs)
-	, m_elf(other.m_elf.path())
+	, m_elf(other.m_elf)
+	, m_kernel(other.m_kernel)
 	, m_interpreter(NULL)
 	, m_mmu(m_vm_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
-	, m_open_files(other.m_open_files)
-	, m_file_contents(other.m_file_contents)
 {
 	setup_kvm();
 
@@ -113,7 +118,7 @@ void Vm::setup_kvm() {
 		.selector = 0x8,        // index 1 (index 0 is null segment descriptor)
 		.type     = 11,         // execute, read, accessed, idk why ???
 		.present  = 1,          // bit P
-		.dpl      = 3,          // Descriptor Privilege Level. 3 = user mode
+		.dpl      = 0,          // Descriptor Privilege Level. 3 = user mode
 		.db       = 0,          // Default operand size / Big
 		.s        = 1,          // Descriptor type
 		.l        = 1,          // Long: 64-bit segment. db must be zero
@@ -127,13 +132,13 @@ void Vm::setup_kvm() {
 
 	// Setup MSRs. I'd say MSR_STAR value is wrong, I just copy-pasted from
 	// somewhere but it also works if that entry is removed so idk
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*3;
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*2;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
 	memset(msrs, 0, sz);
 	msrs->nmsrs = 3;
 	msrs->entries[0] = {
 		.index = MSR_LSTAR, // Long Syscall TARget
-		.data = Mmu::SYSCALL_HANDLER_ADDR
+		.data = 1, //Mmu::SYSCALL_HANDLER_ADDR
 	};
 	msrs->entries[1] = {
 		.index = MSR_STAR, // legacy Syscall TARget
@@ -181,7 +186,7 @@ void Vm::load_elf(const vector<string>& argv) {
 		m_elf.set_base(0x400000);
 
 	dbgprintf("Loading elf at 0x%lx\n", m_elf.load_addr());
-	m_mmu.load_elf(m_elf.segments());
+	m_mmu.load_elf(m_elf.segments(), false);
 
 	// Check if there's interpreter
 	string interpreter_path = m_elf.interpreter();
@@ -192,7 +197,7 @@ void Vm::load_elf(const vector<string>& argv) {
 		m_interpreter->set_base(0x7ffff7fcf000); // always DYN ?
 		dbgprintf("Loading interpreter %s at 0x%lx\n", interpreter_path.c_str(),
 		          m_interpreter->load_addr());
-		m_mmu.load_elf(m_interpreter->segments());
+		m_mmu.load_elf(m_interpreter->segments(), false);
 		m_regs->rip = m_interpreter->entry();
 	} else {
 		// Set RIP to elf entry point
@@ -201,7 +206,7 @@ void Vm::load_elf(const vector<string>& argv) {
 
 	// Allocate stack
 	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-	m_regs->rsp = m_mmu.alloc_stack();
+	m_regs->rsp = m_mmu.alloc_stack(false);
 
 	// NULL
 	m_regs->rsp -= 16;
@@ -266,6 +271,22 @@ void Vm::load_elf(const vector<string>& argv) {
 	dbgprintf("Elf loaded and rip set to 0x%llx\n", m_regs->rip);
 }
 
+void Vm::load_kernel() {
+	// Check it's static and no PIE
+	ASSERT(m_kernel.type() == ET_EXEC, "Kernel is PIE?");
+	ASSERT(m_kernel.interpreter().empty(), "Kernel is dynamically linked");
+	dbgprintf("Loading kernel at 0x%lx\n", m_kernel.load_addr());
+
+	// Load kernel to memory, allocate stack and set up registers
+	m_mmu.load_elf(m_kernel.segments(), true);
+	m_regs->rsp = m_mmu.alloc_stack(true) - 0x10;
+	m_regs->rflags = 2;
+	m_regs->rip = m_kernel.entry();
+	set_regs_dirty();
+
+	dbgprintf("Kernel loaded and rip set to 0x%llx\n", m_regs->rip);
+}
+
 void Vm::set_regs_dirty() {
 	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_REGS;
 }
@@ -302,7 +323,6 @@ void Vm::reset(const Vm& other, Stats& stats) {
 
 	// Reset other VM state
 	m_breakpoints_original_bytes = other.m_breakpoints_original_bytes;
-	m_open_files = other.m_open_files;
 }
 
 void Vm::run(Stats& stats) {
@@ -324,7 +344,8 @@ void Vm::run(Stats& stats) {
 					m_vcpu_run->io.port == 16)
 				{
 					cycles = rdtsc2();
-					handle_syscall();
+					handle_hypercall();
+					//handle_syscall();
 					stats.syscall_cycles += rdtsc2() - cycles;
 					stats.vm_exits_sys++;
 				} else {
@@ -334,6 +355,12 @@ void Vm::run(Stats& stats) {
 
 			case KVM_EXIT_DEBUG:
 				// TODO: VmExitReason?
+				printf("breakpoint hit\n");
+				dump_regs();
+				{
+					vaddr_t addr = m_mmu.read<vaddr_t>(0xffffffff802d7480);
+					printf("%lx\n", addr);
+				}
 				stats.vm_exits_debug++;
 				m_running = false;
 				return;
@@ -478,6 +505,7 @@ void Vm::dump_regs() {
 	printf("rsi: 0x%016llX  rdi: 0x%016llX  rsp: 0x%016llX  rbp: 0x%016llX\n", m_regs->rsi, m_regs->rdi, m_regs->rsp, m_regs->rbp);
 	printf("r8:  0x%016llX  r9:  0x%016llX  r10: 0x%016llX  r11: 0x%016llX\n", m_regs->r8, m_regs->r9, m_regs->r10, m_regs->r11);
 	printf("r12: 0x%016llX  r13: 0x%016llX  r14: 0x%016llX  r15: 0x%016llX\n", m_regs->r12, m_regs->r13, m_regs->r14, m_regs->r15);
+	printf("rflags: 0x%016llX\n", m_regs->rflags);
 
 	/* kvm_fpu fregs;
 	ioctl_chk(vcpu.fd, KVM_GET_FPU, &regs);
@@ -499,7 +527,7 @@ void Vm::dump_memory(psize_t len) const {
 void Vm::vm_err(const string& msg) {
 	cout << endl << "[VM ERROR]" << endl;
 	dump_regs();
-	dump_memory();
+	//dump_memory();
 
 	// Dump current input file to mem
 	ofstream os("crash");

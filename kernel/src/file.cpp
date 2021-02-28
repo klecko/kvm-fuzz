@@ -1,7 +1,7 @@
-#include "file.h"
 #include <sys/fcntl.h>
+#include "file.h"
 
-void stat_regular(vaddr_t stat_addr, vsize_t filesize, Mmu& mmu) {
+void stat_regular(void* statbuf, size_t filesize) {
 	struct stat st;
 	st.st_dev          = 2052;
 	st.st_ino          = 11349843;
@@ -19,10 +19,10 @@ void stat_regular(vaddr_t stat_addr, vsize_t filesize, Mmu& mmu) {
 	st.st_ctim.tv_nsec = 0;
 	st.st_blksize      = 4096;
 	st.st_blocks       = (filesize/512) + 1;
-	mmu.write_mem(stat_addr, &st, sizeof(st));
+	memcpy(statbuf, &st, sizeof(st));
 }
 
-void stat_stdout(vaddr_t stat_addr, Mmu& mmu) {
+void stat_stdout(void* statbuf) {
 	struct stat st;
 	st.st_dev          = 22;
 	st.st_ino          = 6;
@@ -40,7 +40,7 @@ void stat_stdout(vaddr_t stat_addr, Mmu& mmu) {
 	st.st_ctim.tv_nsec = 0;
 	st.st_blksize      = 1024;
 	st.st_blocks       = 0;
-	mmu.write_mem(stat_addr, &st, sizeof(st));
+	memcpy(statbuf, &st, sizeof(st));
 }
 
 const file_ops File::fops_regular = {
@@ -63,7 +63,7 @@ const file_ops File::fops_stdout = {
 
 const file_ops File::fops_stderr = File::fops_stdout;
 
-File::File(uint32_t flags, const char* buf, vsize_t size)
+File::File(uint32_t flags, const char* buf, size_t size)
 	: m_fops(fops_regular)
 	, m_flags(flags)
 	, m_buf(buf)
@@ -93,72 +93,72 @@ const char* File::cursor() {
 	return m_buf + m_offset;
 }
 
-vsize_t File::size() {
+size_t File::size() {
 	return m_size;
 }
 
-vsize_t File::offset() {
+size_t File::offset() {
 	return m_offset;
 }
 
-void File::set_offset(vsize_t offset) {
+void File::set_offset(size_t offset) {
 	m_offset = offset;
 }
 
-vsize_t File::move_cursor(vsize_t increment) {
+size_t File::move_cursor(size_t increment) {
 	// Check if offset is currently past end
 	if (m_offset >= m_size)
 		return 0;
 
 	// Reduce increment if there is not enough space available
-	vsize_t ret = (m_offset+increment < m_size ? increment : m_size-m_offset);
+	size_t ret = (m_offset+increment < m_size ? increment : m_size-m_offset);
 
 	// Update offset
 	m_offset += ret;
 	return ret;
 }
 
-void File::stat(vaddr_t stat_addr, Mmu& mmu) {
+void File::stat(void* statbuf) {
 	ASSERT(m_fops.do_stat, "not implemented stat");
-	(this->*m_fops.do_stat)(stat_addr, mmu);
+	(this->*m_fops.do_stat)(statbuf);
 }
 
-vsize_t File::read(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
+size_t File::read(void* buf, size_t len) {
 	ASSERT(m_fops.do_read, "not implemented read");
-	return (this->*m_fops.do_read)(buf_addr, len, mmu);
+	return (this->*m_fops.do_read)(buf, len);
 }
 
-vsize_t File::write(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
+size_t File::write(const void* buf, size_t len) {
 	ASSERT(m_fops.do_write, "not implemented write");
-	return (this->*m_fops.do_write)(buf_addr, len, mmu);
+	return (this->*m_fops.do_write)(buf, len);
 }
 
 // All fstat syscalls fall back to stat
-void File::do_stat_regular(vaddr_t stat_addr, Mmu& mmu) {
-	stat_regular(stat_addr, m_size, mmu);
+void File::do_stat_regular(void* statbuf) {
+	stat_regular(statbuf, m_size);
 }
 
-void File::do_stat_stdout(vaddr_t stat_addr, Mmu& mmu) {
-	stat_stdout(stat_addr, mmu);
+void File::do_stat_stdout(void* statbuf) {
+	stat_stdout(statbuf);
 }
 
-vsize_t File::do_read_regular(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
+size_t File::do_read_regular(void* buf, size_t len) {
 	ASSERT(is_readable(), "trying to read from not readable file");
 
 	// Get cursor, move it, and write to memory the resulting length
 	const char* p = cursor();
 	len = move_cursor(len);
-	mmu.write_mem(buf_addr, p, len);
+	memcpy(buf, p, len);
 	return len;
 }
 
-vsize_t File::do_write_stdout(vaddr_t buf_addr, vsize_t len, Mmu& mmu) {
-	if (DEBUG) {
+size_t File::do_write_stdout(const void* buf, size_t len) {
+#ifdef DEBUG
 		char buf[len + 1];
-		mmu.read_mem(buf, buf_addr, len);
+		mmu.read_mem(buf, buf, len);
 		buf[len] = 0;
 		printf("%s", buf);
-	}
+#endif
 	return len;
 }
 

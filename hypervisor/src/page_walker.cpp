@@ -99,7 +99,12 @@ bool Mmu::PageWalker::next() {
 
 	m_offset += PAGE_SIZE - PAGE_OFFSET(vaddr());
 
-	return m_offset < m_len;
+	// If there are more pages left in the range of memory specified, check
+	// we are not at the end of the memory space
+	bool ret = m_offset < m_len;
+	if (ret)
+		ASSERT(m_ptl4_i != PTRS_PER_PTL4, "PageWalker: OOB?");
+	return ret;
 }
 
 void Mmu::PageWalker::update_ptl3() {
@@ -125,7 +130,6 @@ void Mmu::PageWalker::update_ptl1() {
 
 void Mmu::PageWalker::next_ptl4_entry() {
 	m_ptl4_i++;
-	ASSERT(m_ptl4_i != PTRS_PER_PTL4, "PageWalker: OOB?");
 	update_ptl3();
 }
 

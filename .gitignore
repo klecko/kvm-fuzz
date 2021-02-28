@@ -1,3 +1,5 @@
 test*
 core
 .vscode
+.gdb_history
+build

@@ -97,12 +97,18 @@ int main(int argc, char** argv) {
 	init_kvm();
 	Stats stats;
 	Corpus corpus(num_threads, "../corpus");
-	Vm vm(8 * 1024 * 1024, "../test_bins/readelf", {"./readelf", "-l", "test"});
+	Vm vm(
+		8 * 1024 * 1024,
+		"./kernel/kernel",
+		"../test_bins/readelf",
+		{"./readelf", "-l", "test"}
+	);
 
-/* 	string file = read_file("./kvm-fuzz");
-	vm.set_file("test", file);
+	/* string file = read_file("./kvm-fuzz");
+	vm.set_file("test", file); */
+	//vm.set_breakpoint(0xffffffff802a6550);
 	vm.run(stats);
-	return 0 ; */
+	return 0 ;
 
 	vm.run_until(0x401c80, stats); // readelf
 	//vm.run_until(0x402520, stats); // objdump

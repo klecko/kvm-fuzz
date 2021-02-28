@@ -1,0 +1,3 @@
+[submodule "kernel/include/STL"]
+	path = kernel/include/STL
+	url = https://github.com/klecko/STL

@@ -1,10 +1,12 @@
+#ifndef _SYSCALL_STR_H
+#define _SYSCALL_STR_H
+
 #include <sys/syscall.h>
 
-const char* syscall_str[500];
+extern const char* syscall_str[500];
 
 // cat /usr/include/x86_64-linux-gnu/asm/unistd_64.h | grep "__NR_" | awk '{ syscall = substr($2, 6); printf "\tsyscall_str[SYS_%s] = \"SYS_%s\";\n", syscall, syscall }'
-__attribute__ ((constructor))
-void init_syscall_str() {
+inline void init_syscall_str() {
 	syscall_str[SYS_read] = "SYS_read";
 	syscall_str[SYS_write] = "SYS_write";
 	syscall_str[SYS_open] = "SYS_open";
@@ -353,3 +355,5 @@ void init_syscall_str() {
 	syscall_str[SYS_pidfd_open] = "SYS_pidfd_open";
 	syscall_str[SYS_clone3] = "SYS_clone3";
 }
+
+#endif

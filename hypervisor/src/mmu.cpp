@@ -1,4 +1,5 @@
 #include <iostream>
+#include <pthread.h>
 #include <fstream>
 #include <sys/mman.h>
 #include <linux/kvm.h>
@@ -11,7 +12,7 @@
 using namespace std;
 
 // out 16, al; sysret
-const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
+// const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
 
 Mmu::Mmu(int vm_fd, size_t mem_size)
 	: m_vm_fd(vm_fd)
@@ -42,13 +43,13 @@ Mmu::Mmu(int vm_fd, size_t mem_size)
 	ioctl_chk(m_vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
 
 	// Set syscall handler
-	memcpy(
+	/* memcpy(
 		m_memory + SYSCALL_HANDLER_ADDR,
 		SYSCALL_HANDLER,
 		sizeof(SYSCALL_HANDLER)
-	);
+	); */
 
-	init_page_table();
+	//init_page_table();
 }
 
 Mmu::Mmu(int vm_fd, const Mmu& other)
@@ -77,12 +78,6 @@ Mmu::~Mmu() {
 	delete[] m_dirty_bitmap;
 }
 
-void Mmu::init_page_table() {
-	// Identity map the first 4K, as writable without PDE64_USER
-	paddr_t* pte = get_pte(0);
-	*pte = 0 | PDE64_PRESENT | PDE64_RW;
-}
-
 psize_t Mmu::size() const {
 	return m_length;
 }
@@ -99,7 +94,7 @@ bool Mmu::set_brk(vaddr_t new_brk) {
 	// Allocate space if needed
 	vaddr_t next_page = (m_brk + 0xFFF) & ~0xFFF;
 	if (new_brk > next_page) {
-		alloc(next_page, new_brk - next_page, PDE64_RW);
+		alloc(next_page, new_brk - next_page, PDE64_RW | PDE64_USER);
 	}
 
 	dbgprintf("brk set to %lX\n", new_brk);
@@ -182,7 +177,7 @@ uint8_t* Mmu::get(vaddr_t guest) {
 
 void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 	ASSERT(len != 0, "alloc %lx zero length", start);
-	flags |= PDE64_PRESENT | PDE64_USER;
+	flags |= PDE64_PRESENT;
 	PageWalker pages(start, len, *this);
 	do {
 		pages.alloc_frame(flags);
@@ -196,10 +191,18 @@ vaddr_t Mmu::alloc(vsize_t len, uint64_t flags) {
 	return m_next_mapping;
 }
 
-vaddr_t Mmu::alloc_stack() {
+vaddr_t Mmu::alloc_stack(bool kernel) {
 	// Allocate stack as writable and not executable
-	alloc(STACK_START_ADDR - STACK_SIZE, STACK_SIZE, PDE64_RW | PDE64_NX);
-	return STACK_START_ADDR;
+	vaddr_t  start;
+	uint64_t flags = PDE64_RW | PDE64_NX;
+	if (kernel) {
+		start  = KERNEL_STACK_START_ADDR;
+	} else {
+		flags |= PDE64_USER;
+		start  = STACK_START_ADDR;
+	}
+	alloc(start - STACK_SIZE, STACK_SIZE, flags);
+	return start;
 }
 
 void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
@@ -280,17 +283,21 @@ uint64_t parse_perms(uint32_t perms) {
 	return flags;
 }
 
-void Mmu::load_elf(const vector<segment_t>& segments) {
+void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
 	// This could be faster with a single PageWalker for each segment instead of
 	// one for each alloc, write_mem and set_mem, but we're only doing this
 	// once so who cares
+	uint64_t flags;
 	for (const segment_t& segm : segments) {
 		if (segm.type != PT_LOAD)
 			continue;
 		dbgprintf("Loading at 0x%lx, len 0x%lx\n", segm.vaddr, segm.memsize);
 
-		// Allocate memory region as user
-		alloc(segm.vaddr, segm.memsize, parse_perms(segm.flags));
+		// Allocate memory region with given permissions
+		flags = parse_perms(segm.flags);
+		if (!kernel)
+			flags |= PDE64_USER;
+		alloc(segm.vaddr, segm.memsize, flags);
 
 		// Write segment data into memory
 		write_mem(segm.vaddr, segm.data, segm.filesize, false);
@@ -299,10 +306,12 @@ void Mmu::load_elf(const vector<segment_t>& segments) {
 		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize,
 		        false);
 
-		// Update brk beyond any segment we load
-		m_brk = max(m_brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
+		// In case this is not kernel, update brk beyond any segment we load
+		if (!kernel)
+			m_brk = max(m_brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
 	}
-	m_min_brk = m_brk;
+	if (!kernel)
+		m_min_brk = m_brk;
 }
 
 void Mmu::dump_memory(psize_t len) const {

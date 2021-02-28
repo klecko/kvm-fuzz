@@ -8,9 +8,9 @@
 class Mmu {
 public:
 	static const paddr_t PAGE_TABLE_PADDR     = 0x1000;
-	static const paddr_t SYSCALL_HANDLER_ADDR = 0x0;      // both paddr and vaddr
 	static const vaddr_t ELF_ADDR             = 0x400000; // base for DYN ELF
 	static const vaddr_t STACK_START_ADDR     = 0x800000000000;
+	static const vaddr_t KERNEL_STACK_START_ADDR = 0;
 	static const vsize_t STACK_SIZE           = 0x10000;
 	static const vaddr_t MAPPINGS_START_ADDR  = 0x7ffff7ffe000;
 
@@ -51,13 +51,12 @@ public:
 	// Guest to host address conversion
 	uint8_t* get(vaddr_t guest);
 
-	// Allocate given userspace virtual memory region
+	// Allocate given virtual memory region
 	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
-
 	vaddr_t alloc(vsize_t len, uint64_t flags);
 
-	// Allocate the stack and return its address
-	vaddr_t alloc_stack();
+	// Allocate a stack and return its address
+	vaddr_t alloc_stack(bool kernel);
 
 	// Basic memory modification primitives
 	void read_mem(void* dst, vaddr_t src, vsize_t len);
@@ -78,8 +77,8 @@ public:
 	// Set flags to given memory region in the page table
 	void set_flags(vaddr_t addr, vsize_t len, uint64_t flags);
 
-	// Load elf into memory, updating brk
-	void load_elf(const std::vector<segment_t>& segments);
+	// Load elf into memory, updating brk if it is not kernel
+	void load_elf(const std::vector<segment_t>& segments, bool kernel);
 
 	void dump_memory(psize_t len) const;
 
