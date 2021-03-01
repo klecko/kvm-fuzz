@@ -104,9 +104,11 @@ int main(int argc, char** argv) {
 		{"./readelf", "-l", "test"}
 	);
 
-	/* string file = read_file("./kvm-fuzz");
-	vm.set_file("test", file); */
+	string file = read_file("./hypervisor/kvm-fuzz");
+	vm.set_file("test", file);
 	//vm.set_breakpoint(0xffffffff802a6550);
+	vm.init();
+
 	vm.run(stats);
 	return 0 ;
 

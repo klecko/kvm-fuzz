@@ -22,6 +22,10 @@ public:
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
 
+	// Load kernel, run until it finishes initialization, and finally load user
+	// elf. Then, we're ready to run
+	void init();
+
 	psize_t memsize() const;
 
 	// Reset Vm state to `other`, given that current Vm has been constructed
@@ -55,6 +59,7 @@ private:
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
 	ElfParser* m_interpreter;
+	std::vector<std::string> m_argv;
 	Mmu  m_mmu;
 	bool m_running;
 	std::unordered_map<vaddr_t, uint8_t> m_breakpoints_original_bytes;
@@ -64,7 +69,7 @@ private:
 	std::unordered_map<std::string, struct iovec> m_file_contents;
 
 	void setup_kvm();
-	void load_elf(const std::vector<std::string>& argv);
+	void load_elf();
 	void load_kernel();
 	void set_regs_dirty();
 	void set_sregs_dirty();
@@ -75,6 +80,9 @@ private:
 	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
 	void do_hc_get_info(vaddr_t info_addr);
+	vsize_t do_hc_get_file_len(size_t n);
+	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
+	void do_hc_get_file(size_t n, vaddr_t buf_addr);
 	void do_hc_end_run();
 
 	/* void handle_syscall();

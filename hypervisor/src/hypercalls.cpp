@@ -12,6 +12,9 @@ enum Hypercall : size_t {
 	Ready,
 	Print,
 	GetInfo,
+	GetFileLen,
+	GetFileName,
+	GetFile,
 	EndRun,
 };
 
@@ -40,6 +43,7 @@ void Vm::do_hc_print(vaddr_t msg_addr) {
 struct VmInfo {
 	char elf_path[PATH_MAX];
 	vaddr_t brk;
+	size_t num_files;
 };
 
 void Vm::do_hc_get_info(vaddr_t info_addr) {
@@ -47,7 +51,29 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	VmInfo info;
 	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
 	info.brk = m_elf.initial_brk();
+	info.num_files = m_file_contents.size();
 	m_mmu.write(info_addr, info);
+}
+
+vsize_t Vm::do_hc_get_file_len(size_t n) {
+	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
+	auto it = m_file_contents.begin();
+	advance(it, n);
+	return it->second.iov_len;
+}
+
+void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
+	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
+	auto it = m_file_contents.begin();
+	advance(it, n);
+	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size());
+}
+
+void Vm::do_hc_get_file(size_t n, vaddr_t buf_addr) {
+	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
+	auto it = m_file_contents.begin();
+	advance(it, n);
+	m_mmu.write_mem(buf_addr, it->second.iov_base, it->second.iov_len);
 }
 
 void Vm::handle_hypercall() {
@@ -67,6 +93,18 @@ void Vm::handle_hypercall() {
 		case Hypercall::GetInfo:
 			do_hc_get_info(m_regs->rdi);
 			break;
+		case Hypercall::GetFileLen:
+			ret = do_hc_get_file_len(m_regs->rdi);
+			break;
+		case Hypercall::GetFileName:
+			do_hc_get_file_name(m_regs->rdi, m_regs->rsi);
+			break;
+		case Hypercall::GetFile:
+			do_hc_get_file(m_regs->rdi, m_regs->rsi);
+			break;
+		case Hypercall::EndRun:
+			m_running = false;
+			return;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);
 	}

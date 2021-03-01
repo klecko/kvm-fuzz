@@ -8,6 +8,9 @@ enum Hypercall : size_t {
 	Ready,
 	Print,
 	GetInfo,
+	GetFileLen,
+	GetFileName,
+	GetFile,
 	EndRun,
 };
 
@@ -68,6 +71,21 @@ void hc_print(const string& msg) {
 __attribute__((naked))
 void hc_get_info(VmInfo* info) {
 	hypercall(Hypercall::GetInfo);
+}
+
+__attribute__((naked))
+size_t hc_get_file_len(size_t n) {
+	hypercall(Hypercall::GetFileLen);
+}
+
+__attribute__((naked))
+void hc_get_file_name(size_t n, char* buf) {
+	hypercall(Hypercall::GetFileName);
+}
+
+__attribute__((naked))
+void hc_get_file(size_t n, void* buf) {
+	hypercall(Hypercall::GetFile);
 }
 
 __attribute__((naked))

@@ -44,20 +44,11 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 	, m_elf(filepath)
 	, m_kernel(kernelpath)
 	, m_interpreter(NULL)
+	, m_argv(argv)
 	, m_mmu(m_vm_fd, mem_size)
 	, m_running(false)
 {
 	setup_kvm();
-
-	// Load kernel, and run it until it's ready
-	Stats dummy;
-	load_kernel();
-	dbgprintf("Starting vm\n");
-	run(dummy);
-	dbgprintf("Kernel startup finished\n");
-
-	// Load user elf
-	load_elf(argv);
 }
 
 Vm::Vm(const Vm& other)
@@ -90,6 +81,18 @@ Vm::Vm(const Vm& other)
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
+}
+
+void Vm::init() {
+	// Load kernel, and run it until it's ready
+	Stats dummy;
+	load_kernel();
+	dbgprintf("Starting vm\n");
+	run(dummy);
+	dbgprintf("Kernel startup finished\n");
+
+	// Load user elf
+	load_elf();
 }
 
 void Vm::setup_kvm() {
@@ -180,7 +183,7 @@ void Vm::setup_kvm() {
 #endif
 }
 
-void Vm::load_elf(const vector<string>& argv) {
+void Vm::load_elf() {
 	// EXEC (no PIE) or DYN (PIE)
 	if (m_elf.type() == ET_DYN)
 		m_elf.set_base(0x400000);
@@ -221,7 +224,7 @@ void Vm::load_elf(const vector<string>& argv) {
 
 	// Write argv strings saving pointers to each arg
 	vector<vaddr_t> argv_addrs;
-	for (const string& arg : argv) {
+	for (const string& arg : m_argv) {
 		m_regs->rsp -= arg.size() + 1;
 		m_mmu.write_mem(m_regs->rsp, arg.c_str(), arg.size()+1);
 		argv_addrs.push_back(m_regs->rsp);
@@ -262,7 +265,7 @@ void Vm::load_elf(const vector<string>& argv) {
 
 	// Set up argc
 	m_regs->rsp -= 8;
-	m_mmu.write<uint64_t>(m_regs->rsp, argv.size());
+	m_mmu.write<uint64_t>(m_regs->rsp, m_argv.size());
 
 	m_regs->rflags = 2;
 

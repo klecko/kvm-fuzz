@@ -30,12 +30,33 @@ void Kernel::init() {
 	m_open_files[STDIN_FILENO]  = FileStdin();
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();
+	init_file_contents(info.num_files);
 
 	printf("Elf path: %s\n", m_elf_path.c_str());
 	printf("Brk: 0x%lx\n", m_brk);
+	printf("Files: %d\n", m_file_contents.size());
+	for (auto v : m_file_contents) {
+		printf("\t%s\n", v.f.c_str());
+	}
 
 	// We are ready
 	hc_ready();
+}
+
+void Kernel::init_file_contents(size_t n) {
+	void* buf;
+	size_t size;
+	char filename[PATH_MAX];
+	for (size_t i = 0; i < n; i++) {
+		hc_get_file_name(i, filename);
+		size = hc_get_file_len(i);
+		buf = kmalloc(size);
+		hc_get_file(i, buf);
+		m_file_contents[string(filename)] = {
+			.iov_base = buf,
+			.iov_len  = size,
+		};
+	}
 }
 
 void Kernel::wrmsr(unsigned int msr, uint64_t val) {
