@@ -4,10 +4,10 @@
 // Keep this the same as in the hypervisor!
 enum Hypercall : size_t {
 	Test,
-	Alloc,
+	Mmap,
 	Ready,
 	Print,
-	GetElfPath,
+	GetInfo,
 	EndRun,
 };
 
@@ -33,8 +33,8 @@ void hypercall_test(size_t arg) {
 }
 
 __attribute__((naked))
-void* hypercall_alloc(size_t size) {
-	hypercall(Hypercall::Alloc);
+void* hypercall_mmap(void* addr, size_t size, uint64_t page_flags, int flags) {
+	hypercall(Hypercall::Mmap);
 }
 
 __attribute__((naked))
@@ -43,17 +43,17 @@ void hypercall_ready() {
 }
 
 __attribute__((naked))
-void _hypercall_print(const char* msg) {
+void hypercall_print(const char* msg) {
 	hypercall(Hypercall::Print);
 }
 
 void hypercall_print(const string& msg) {
-	_hypercall_print(msg.c_str());
+	hypercall_print(msg.c_str());
 }
 
 __attribute__((naked))
-void hypercall_get_elf_path(const char* buf, size_t size) {
-	hypercall(Hypercall::GetElfPath);
+void hypercall_get_info(VmInfo* info) {
+	hypercall(Hypercall::GetInfo);
 }
 
 __attribute__((naked))

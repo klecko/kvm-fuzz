@@ -1,12 +1,13 @@
 #include <unistd.h>
-#include <linux/limits.h>
 #include "kernel.h"
+#include "libcpp.h"
 #include "hypercalls.h"
 #include "syscall_str.h"
 
 void* Kernel::m_kernel_stack;
 void* Kernel::m_user_stack;
 string Kernel::m_elf_path;
+void* Kernel::m_brk;
 unordered_map<int, File> Kernel::m_open_files;
 unordered_map<string, struct iovec> Kernel::m_file_contents;
 
@@ -20,23 +21,21 @@ void Kernel::init() {
 
 	hypercall_print("Hello from kernel\n");
 
-	// Let's init kernel state. We'll need to use some hypercalls
-	//m_kernel_stack = 0;
-	m_user_stack   = 0;
-	init_elf_path();
+	// Let's init kernel state. We'll need help from the hypervisor
+	VmInfo info;
+	hypercall_get_info(&info);
+	m_user_stack = 0;
+	m_elf_path   = string(info.elf_path);
+	m_brk        = info.brk;
 	m_open_files[STDIN_FILENO]  = FileStdin();
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();
 
+	hypercall_print("Elf path: " + m_elf_path + "\n");
+	hypercall_print("Brk: " + to_str((size_t)m_brk) + "\n");
+
 	// We are ready
 	hypercall_ready();
-}
-
-void Kernel::init_elf_path() {
-	char buf[PATH_MAX];
-	hypercall_get_elf_path(buf, PATH_MAX);
-	m_elf_path = string(buf);
-	hypercall_print("Elf path: " + m_elf_path + "\n");
 }
 
 #define MSR_STAR          0xc0000081 /* legacy mode SYSCALL target */

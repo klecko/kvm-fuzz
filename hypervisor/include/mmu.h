@@ -10,9 +10,9 @@ public:
 	static const paddr_t PAGE_TABLE_PADDR     = 0x1000;
 	static const vaddr_t ELF_ADDR             = 0x400000; // base for DYN ELF
 	static const vaddr_t STACK_START_ADDR     = 0x800000000000;
-	static const vaddr_t KERNEL_STACK_START_ADDR = 0;
+	static const vaddr_t KERNEL_STACK_START_ADDR = 0xFFFFFFFFFFFFF000;
 	static const vsize_t STACK_SIZE           = 0x10000;
-	static const vaddr_t MAPPINGS_START_ADDR  = 0x7ffff7ffe000;
+	static const vaddr_t MAPPINGS_START_ADDR  = 0x7FFFF7FFE000;
 
 	// Normal constructor
 	Mmu(int vm_fd, size_t mem_size);
@@ -69,7 +69,7 @@ public:
 	T read(vaddr_t addr);
 
 	template <class T>
-	void write(vaddr_t addr, T value);
+	void write(vaddr_t addr, const T& value);
 
 	// Read a null-terminated string from `addr`
 	std::string read_string(vaddr_t addr);
@@ -126,7 +126,7 @@ T Mmu::read(vaddr_t addr) {
 }
 
 template<class T>
-void Mmu::write(vaddr_t addr, T value) {
+void Mmu::write(vaddr_t addr, const T& value) {
 	write_mem(addr, &value, sizeof(T));
 }
 #endif

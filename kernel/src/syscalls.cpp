@@ -1,4 +1,5 @@
 #include "common.h"
+#include "libcpp.h"
 #include "kernel.h"
 #include "hypercalls.h"
 #include "syscall_str.h"

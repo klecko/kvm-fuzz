@@ -84,8 +84,8 @@ void Mmu::PageWalker::clear_flags(uint64_t flags) {
 void Mmu::PageWalker::alloc_frame(uint64_t flags) {
 	ASSERT(!*pte(), "vaddr already mapped: 0x%lx", vaddr());
 	*pte() = m_mmu.alloc_frame() | flags;
-	dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
-	          vaddr(), *pte() & PTL1_MASK, flags);
+	/* dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
+	          vaddr(), *pte() & PTL1_MASK, flags); */
 }
 
 bool Mmu::PageWalker::is_mapped() {

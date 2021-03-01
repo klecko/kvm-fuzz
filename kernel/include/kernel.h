@@ -28,13 +28,15 @@ private:
 	// Absolute path of the elf we're emulating
 	static string m_elf_path;
 
+	// User brk
+	static void* m_brk;
+
 	// Open files indexed by file descriptor
 	static unordered_map<int, File> m_open_files;
 
 	// Files contents indexed by filename
 	static unordered_map<string, struct iovec> m_file_contents;
 
-	static void init_elf_path();
 	static void register_syscall();
 	static void syscall_entry();
 	static uint64_t _handle_syscall(uint64_t, uint64_t, uint64_t, uint64_t,

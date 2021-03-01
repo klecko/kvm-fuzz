@@ -72,9 +72,9 @@ private:
 	void vm_err(const std::string& err);
 
 	void handle_hypercall();
-	vaddr_t do_hc_alloc(vsize_t size);
+	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
-	void do_hc_get_elf_path(vaddr_t buf_addr, vsize_t bufsize);
+	void do_hc_get_info(vaddr_t info_addr);
 	void do_hc_end_run();
 
 	/* void handle_syscall();

@@ -1,5 +1,6 @@
 #include <sys/fcntl.h>
 #include "file.h"
+#include "libcpp.h"
 
 void stat_regular(void* statbuf, size_t filesize) {
 	struct stat st;

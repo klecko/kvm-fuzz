@@ -1,20 +1,21 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "libcpp.h"
 #include "hypercalls.h"
 
 #define DEBUG 1
 
+#define hlt() asm("hlt")
+
 #define ASSERT(expr, ...) do {  \
 	if (!(expr)) {              \
-		asm("hlt");             \
+		hlt();                  \
 	}                           \
 } while (0)
 
 
 #define ERROR_ON(expr, ...) do { \
 	if (expr) {                  \
-		asm("hlt");              \
+		hlt();                   \
 	}                            \
 } while(0)
 

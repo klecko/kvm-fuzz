@@ -1,5 +1,6 @@
 #include <iostream>
 #include <linux/limits.h>
+#include <sys/mman.h>
 #include "vm.h"
 
 using namespace std;
@@ -7,16 +8,28 @@ using namespace std;
 // Keep this the same as in the kernel!
 enum Hypercall : size_t {
 	Test,
-	Alloc,
+	Mmap,
 	Ready,
 	Print,
-	GetElfPath,
+	GetInfo,
 	EndRun,
 };
 
-vaddr_t Vm::do_hc_alloc(vsize_t size) {
-	printf("hc alloc %lu\n", size);
-	return m_mmu.alloc(size, PDE64_RW);
+vaddr_t Vm::do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags) {
+	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED;
+	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
+	ASSERT(flags & MAP_PRIVATE, "shared mapping");
+	ASSERT(flags & MAP_ANONYMOUS, "file backed mapping");
+	ASSERT((size & PTL1_MASK) == size, "not aligned size %lx", size);
+	uint64_t ret = 0;
+	if (flags & MAP_FIXED) {
+		m_mmu.alloc(addr, size, page_flags);
+		ret = addr;
+	} else {
+		ret = m_mmu.alloc(size, page_flags);
+	}
+	dbgprintf("hc alloc %lu at 0x%lx with page flags 0x%lx\n", size, ret, page_flags);
+	return ret;
 }
 
 void Vm::do_hc_print(vaddr_t msg_addr) {
@@ -24,13 +37,17 @@ void Vm::do_hc_print(vaddr_t msg_addr) {
 	cout << "[KERNEL] " << msg;
 }
 
-void Vm::do_hc_get_elf_path(vaddr_t buf_addr, vsize_t bufsize) {
-	// Get path, convert it to absolute and write it to memory
-	char abspath[PATH_MAX];
-	ERROR_ON(!realpath(m_elf.path().c_str(), abspath), "readlink: realpath");
-	size_t len = strlen(abspath) + 1; // include null byte
-	ASSERT(len <= bufsize, "hc get elf path: small buffer");
-	m_mmu.write_mem(buf_addr, abspath, len);
+struct VmInfo {
+	char elf_path[PATH_MAX];
+	vaddr_t brk;
+};
+
+void Vm::do_hc_get_info(vaddr_t info_addr) {
+	// Get absolute elf path, brk and other stuff
+	VmInfo info;
+	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
+	info.brk = m_mmu.brk();
+	m_mmu.write(info_addr, info);
 }
 
 void Vm::handle_hypercall() {
@@ -38,8 +55,8 @@ void Vm::handle_hypercall() {
 	switch (m_regs->rax) {
 		case Hypercall::Test:
 			die("Hypercall test, arg=0x%llx\n", m_regs->rdi);
-		case Hypercall::Alloc:
-			ret = do_hc_alloc(m_regs->rdi);
+		case Hypercall::Mmap:
+			ret = do_hc_mmap(m_regs->rdi, m_regs->rsi, m_regs->rdx, m_regs->rcx);
 			break;
 		case Hypercall::Ready:
 			m_running = false;
@@ -47,8 +64,8 @@ void Vm::handle_hypercall() {
 		case Hypercall::Print:
 			do_hc_print(m_regs->rdi);
 			break;
-		case Hypercall::GetElfPath:
-			do_hc_get_elf_path(m_regs->rdi, m_regs->rsi);
+		case Hypercall::GetInfo:
+			do_hc_get_info(m_regs->rdi);
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);

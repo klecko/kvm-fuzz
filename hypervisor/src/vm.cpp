@@ -357,13 +357,13 @@ void Vm::run(Stats& stats) {
 				// TODO: VmExitReason?
 				printf("breakpoint hit\n");
 				dump_regs();
-				{
-					vaddr_t addr = m_mmu.read<vaddr_t>(0xffffffff802d7480);
-					printf("%lx\n", addr);
-				}
+				m_regs->rip += 1;
+				set_regs_dirty();
+				cout << endl;
 				stats.vm_exits_debug++;
-				m_running = false;
-				return;
+				break;
+				//m_running = false;
+				//return;
 
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
 				stats.vm_exits_cov++;
