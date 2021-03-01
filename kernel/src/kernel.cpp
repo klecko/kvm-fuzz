@@ -19,7 +19,7 @@ void Kernel::init() {
 	save_kernel_stack();
 	init_syscall_str();
 
-	hypercall_print("Hello from kernel\n");
+	printf("Hello from kernel\n");
 
 	// Let's init kernel state. We'll need help from the hypervisor
 	VmInfo info;
@@ -31,8 +31,8 @@ void Kernel::init() {
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();
 
-	hypercall_print("Elf path: " + m_elf_path + "\n");
-	hypercall_print("Brk: " + to_str((size_t)m_brk) + "\n");
+	printf("Elf path: %s\n", m_elf_path.c_str());
+	printf("Brk: 0x%lx\n", m_brk);
 
 	// We are ready
 	hypercall_ready();

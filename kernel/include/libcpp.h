@@ -2,6 +2,7 @@
 #define _LIBCPP_H
 
 #include "common.h"
+#include "printf.h"
 #include "string"
 
 void* kmalloc(size_t size);

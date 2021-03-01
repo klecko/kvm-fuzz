@@ -47,6 +47,20 @@ void hypercall_print(const char* msg) {
 	hypercall(Hypercall::Print);
 }
 
+const size_t out_buf_size = 1024;
+char out_buf[out_buf_size];
+size_t used = 0;
+void hypercall_print(char c) {
+	// Add the char to the buffer. Print only if it's a line break or if the
+	// buffer is full
+	out_buf[used++] = c;
+	if (c == '\n' || used == out_buf_size-1) {
+		out_buf[used] = 0;
+		hypercall_print(out_buf);
+		used = 0;
+	}
+}
+
 void hypercall_print(const string& msg) {
 	hypercall_print(msg.c_str());
 }

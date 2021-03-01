@@ -306,7 +306,7 @@ uint64_t Kernel::do_sys_sysinfo(struct sysinfo* info) {
 uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
                                 uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
-	dbgprint(string("--> syscall: ") + syscall_str[nr] + "\n");
+	dbgprintf("--> syscall: %s\n", syscall_str[nr]);
 	uint64_t ret = 0;
 	switch (nr) {
 		case SYS_openat:
@@ -398,6 +398,6 @@ uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t a
 			//    m_regs->rax);
 	}
 
-	hypercall_print(string("<-- syscall: ") + syscall_str[nr] + "\n");
+	dbgprintf("<-- syscall: %s returned 0x%lx\n", syscall_str[nr], ret);
 	return ret;
 }

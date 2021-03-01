@@ -24,6 +24,7 @@ void hypercall_test(size_t arg);
 void* hypercall_mmap(void* addr, size_t size, uint64_t page_flags, int flags);
 void hypercall_ready();
 void hypercall_print(const char* msg);
+void hypercall_print(char c);
 void hypercall_print(const string& msg);
 void hypercall_get_info(VmInfo* info);
 void hypercall_end_run();

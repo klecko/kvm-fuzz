@@ -23,16 +23,7 @@ void* kmalloc(size_t size) {
 	remaining -= size;
 	next_alloc = (uint8_t*)next_alloc + size;
 
-	// We can't use string here for debugging because that would call kmalloc
-#if DEBUG == 1
-/* 	const size_t sz = 100;
-	char msg[sz] = "Allocation of ";
-	itoa(size, msg + strlen(msg), sz - strlen(msg));
-	strncat(msg, ": ", sz - strlen(msg));
-	itoa((uint64_t)ret, msg + strlen(msg), sz - strlen(msg));
-	strncat(msg, "\n", sz - strlen(msg));
-	hypercall_print(msg); */
-#endif
+	//dbgprintf("Allocation of %lu: 0x%lx\n", size, ret);
 	return ret;
 }
 
