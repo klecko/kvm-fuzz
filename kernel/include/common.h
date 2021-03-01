@@ -7,8 +7,6 @@
 
 #define hlt() asm("hlt")
 
-#define print(msg) hypercall_print(msg);
-
 #if DEBUG == 1
 #define dbgprint(msg) hypercall_print(msg)
 #define dbgprintf(...) printf(__VA_ARGS__)
@@ -27,16 +25,6 @@
 		printf("%s: ", __func__);                                \
 		printf(__VA_ARGS__);                                     \
 		die("\nExpected: `%s`\n", #expr);                        \
-	}                                                            \
-} while (0)
-
-
-#define ERROR_ON(expr, ...) do {                                 \
-	if (expr) {                                                  \
-		print_backtrace();                                       \
-		err_header("Error");                                     \
-		printf(__VA_ARGS__);                                     \
-		die(": %s (-%d)\n", strerror(errno), errno);             \
 	}                                                            \
 } while (0)
 
