@@ -10,6 +10,8 @@ struct VmInfo {
 	char elf_path[PATH_MAX];
 	void* brk;
 	size_t num_files;
+	void (**constructors)(void);
+	size_t num_constructors;
 };
 
 void hc_test(size_t arg);

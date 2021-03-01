@@ -43,7 +43,9 @@ void Vm::do_hc_print(vaddr_t msg_addr) {
 struct VmInfo {
 	char elf_path[PATH_MAX];
 	vaddr_t brk;
-	size_t num_files;
+	vsize_t num_files;
+	vaddr_t constructors;
+	vsize_t num_constructors;
 };
 
 void Vm::do_hc_get_info(vaddr_t info_addr) {
@@ -52,6 +54,17 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
 	info.brk = m_elf.initial_brk();
 	info.num_files = m_file_contents.size();
+
+	info.constructors = 0;
+	info.num_constructors = 0;
+	for (section_t& section : m_kernel.sections()) {
+		if (section.name == ".ctors") {
+			info.constructors = section.addr;
+			info.num_constructors = section.size / sizeof(vaddr_t);
+			break;
+		}
+	}
+
 	m_mmu.write(info_addr, info);
 }
 

@@ -23,10 +23,17 @@ void Kernel::init() {
 	// Let's init kernel state. We'll need help from the hypervisor
 	VmInfo info;
 	hc_get_info(&info);
+
+	// First, call constructors
+	for (size_t i = 0; i < info.num_constructors; i++) {
+		info.constructors[i]();
+	}
+
+	// Initialize data members
 	m_user_stack = 0;
 	m_elf_path   = string(info.elf_path);
 	m_brk        = info.brk;
-	m_min_brk    = info.brk;
+	m_min_brk    = m_brk;
 	m_open_files[STDIN_FILENO]  = FileStdin();
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();

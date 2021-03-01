@@ -99,13 +99,13 @@ int main(int argc, char** argv) {
 	Stats stats;
 	Corpus corpus(num_threads, "../corpus");
 	Vm vm(
-		8 * 1024 * 1024,
+		4 * 1024 * 1024,
 		"./kernel/kernel",
 		"../test_bins/readelf",
 		{"./readelf", "-l", "test"}
 	);
 
-	string file = read_file("./hypervisor/kvm-fuzz");
+	string file = read_file("/usr/bin/ls");
 	vm.set_file("test", file);
 
 	vm.init();

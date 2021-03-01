@@ -153,8 +153,7 @@ uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
 uint64_t Kernel::do_sys_close(int fd) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	//m_open_files.erase(fd); // ADAPTACIÓN STL
-	//m_open_files.erase(m_open_files.find({fd, m_open_files[fd]}));
-	// FIXME
+	m_open_files.erase({fd, m_open_files[fd]});
 	return 0;
 }
 
