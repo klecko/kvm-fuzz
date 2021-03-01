@@ -11,25 +11,37 @@
 
 using namespace std;
 
-// out 16, al; sysret
-// const unsigned char SYSCALL_HANDLER[] = "\xe6\x10\x48\x0f\x07";
-
-Mmu::Mmu(int vm_fd, size_t mem_size)
+Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	: m_vm_fd(vm_fd)
+	, m_vcpu_fd(vcpu_fd)
 	, m_memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
 	                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
 	, m_length(mem_size)
 	, m_ptl4((paddr_t*)(m_memory + PAGE_TABLE_PADDR))
 	, m_next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
 	, m_next_mapping(MAPPINGS_START_ADDR)
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	, m_dirty_ring_i(0)
+	, m_dirty_ring_entries(ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING) / sizeof(kvm_dirty_gfn))
+	, m_dirty_ring((kvm_dirty_gfn*)
+		mmap(NULL, m_dirty_ring_entries * sizeof(kvm_dirty_gfn),
+		     PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, KVM_DIRTY_LOG_PAGE_OFFSET*PAGE_SIZE)
+		)
+#else
 	, m_dirty_bits(m_length/PAGE_SIZE)
 	, m_dirty_bitmap(new uint8_t[m_dirty_bits/8])
+#endif
 {
 	ERROR_ON(m_memory == MAP_FAILED, "mmap mmu memory");
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	ERROR_ON(m_dirty_ring == MAP_FAILED, "mmap dirty log ring");
+#endif
 
 	madvise(m_memory, m_length, MADV_MERGEABLE);
 
+#ifndef ENABLE_KVM_DIRTY_LOG_RING
 	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
+#endif
 
 	struct kvm_userspace_memory_region memreg = {
 		.slot = 0,
@@ -50,13 +62,16 @@ Mmu::Mmu(int vm_fd, size_t mem_size)
 	//init_page_table();
 }
 
-Mmu::Mmu(int vm_fd, const Mmu& other)
-	: Mmu(vm_fd, other.m_length)
+Mmu::Mmu(int vm_fd, int vcpu_fd, const Mmu& other)
+	: Mmu(vm_fd, vcpu_fd, other.m_length)
 {
 	m_next_page_alloc = other.m_next_page_alloc;
 	m_next_mapping    = other.m_next_mapping;
 	memcpy(m_memory, other.m_memory, m_length);
 
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	ioctl_chk(m_vm_fd, KVM_RESET_DIRTY_RINGS, 0);
+#else
 	// Reset kvm dirty bitmap
 	memset(m_dirty_bitmap, 0xFF, m_dirty_bits/8);
 	kvm_clear_dirty_log clear_dirty = {
@@ -67,11 +82,16 @@ Mmu::Mmu(int vm_fd, const Mmu& other)
 	};
 	ioctl_chk(m_vm_fd, KVM_CLEAR_DIRTY_LOG, &clear_dirty);
 	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
+#endif
 }
 
 Mmu::~Mmu() {
 	munmap(m_memory, m_length);
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	TODO
+#else
 	delete[] m_dirty_bitmap;
+#endif
 }
 
 psize_t Mmu::size() const {
@@ -79,6 +99,20 @@ psize_t Mmu::size() const {
 }
 
 size_t Mmu::reset(const Mmu& other) {
+	size_t count = 0;
+
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	// For each entry, reset it and mark it as resetted
+	paddr_t paddr;
+	while (m_dirty_ring[m_dirty_ring_i].flags & KVM_DIRTY_GFN_F_DIRTY) {
+		paddr = m_dirty_ring[m_dirty_ring_i].offset * PAGE_SIZE;
+		memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+		m_dirty_ring[m_dirty_ring_i].flags |= KVM_DIRTY_GFN_F_RESET;
+		count++;
+		m_dirty_ring_i = (m_dirty_ring_i+1)% m_dirty_ring_entries;
+	}
+	ioctl_chk(m_vm_fd, KVM_RESET_DIRTY_RINGS, 0);
+#else
 	// Get dirty pages bitmap
 	kvm_dirty_log dirty = {
 		.slot = 0,
@@ -86,8 +120,7 @@ size_t Mmu::reset(const Mmu& other) {
 	};
 	ioctl_chk(m_vm_fd, KVM_GET_DIRTY_LOG, &dirty);
 
-	// Reset pages
-	size_t count = 0;
+	// Reset pages and clear bitmap
 	uint8_t byte, bit;
 	paddr_t paddr;
 	for (size_t i = 0; i < m_dirty_bits; i++) {
@@ -99,15 +132,14 @@ size_t Mmu::reset(const Mmu& other) {
 			memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
 		}
 	}
+	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
+#endif
 
-	// Reset extra pages
+	// Reset extra pages and clear vector
 	for (paddr_t paddr : m_dirty_extra) {
 		memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
 		count++;
 	}
-
-	// Clear bitmap and vector of extra pages
-	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
 	m_dirty_extra.clear();
 
 	// Reset state
@@ -116,12 +148,10 @@ size_t Mmu::reset(const Mmu& other) {
 
 	/* if (memcmp(m_memory, other.m_memory, m_length) != 0) {
 		printf("WOOPS reset is not working\n");
-		for (size_t i = 0; i < m_dirty_bits; i++) {
+		for (size_t i = 0; i < m_length / PAGE_SIZE; i++) {
 			paddr = i*PAGE_SIZE;
 			if (memcmp(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE) != 0) {
-				byte = m_dirty_bitmap[i/8];
-				bit  = byte & (1 << (i%8));
-				printf("page %ld at 0x%lx was not resetted, bit was %hhu!\n", i, paddr, bit);
+				printf("page %ld at 0x%lx was not resetted\n", i, paddr);
 			}
 		}
 		die(":(\n");

@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <string.h>
 
+#define ENABLE_KVM_DIRTY_LOG_RING
+//#define ENABLE_COVERAGE
+
 //#define DEBUG 1
 
 // Type used for guest virtual addresses
@@ -68,6 +71,8 @@ typedef paddr_t psize_t;
 
 #define die(...) do {                   \
 	fprintf(stderr, __VA_ARGS__);       \
+	fflush(stderr);                     \
+	fflush(stdout);                     \
 	abort();                            \
 } while(0)
 

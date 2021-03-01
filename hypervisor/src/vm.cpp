@@ -21,20 +21,37 @@ void init_kvm() {
 	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
 	       KVM_API_VERSION, api_ver);
 
-#ifdef COVERAGE
+#ifdef ENABLE_COVERAGE
 	int vmx_pt = ioctl(g_kvm_fd, KVM_VMX_PT_SUPPORTED);
 	ASSERT(vmx_pt != -1, "vmx_pt is not loaded");
 	ASSERT(vmx_pt != -2, "Intel PT is not supported on this CPU");
 #endif
 }
 
+int ioctl_create_vm() {
+	int fd = ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0);
+
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	int max_size = ioctl_chk(fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
+	ASSERT(max_size, "kvm dirty log ring not available");
+
+	kvm_enable_cap cap = {
+		.cap = KVM_CAP_DIRTY_LOG_RING,
+		.args = {max_size}
+	};
+	ioctl_chk(fd, KVM_ENABLE_CAP, &cap);
+#endif
+
+	return fd;
+}
+
 Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
        const vector<string>& argv)
-	: m_vm_fd(ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0))
+	: m_vm_fd(ioctl_create_vm())
 	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
 	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
 		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
-#ifdef COVERAGE
+#ifdef ENABLE_COVERAGE
 	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
 	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
 	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
@@ -45,18 +62,18 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 	, m_kernel(kernelpath)
 	, m_interpreter(NULL)
 	, m_argv(argv)
-	, m_mmu(m_vm_fd, mem_size)
+	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
 {
 	setup_kvm();
 }
 
 Vm::Vm(const Vm& other)
-	: m_vm_fd(ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0))
+	: m_vm_fd(ioctl_create_vm())
 	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
 	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
 		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
-#ifdef COVERAGE
+#ifdef ENABLE_COVERAGE
 	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
 	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
 	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
@@ -66,7 +83,7 @@ Vm::Vm(const Vm& other)
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
 	, m_interpreter(NULL)
-	, m_mmu(m_vm_fd, other.m_mmu)
+	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
 {
@@ -110,7 +127,7 @@ void Vm::init() {
 void Vm::setup_kvm() {
 	// Check if mmap failed
 	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap kvm_run");
-#ifdef COVERAGE
+#ifdef ENABLE_COVERAGE
 	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
 #endif
 
@@ -182,7 +199,7 @@ void Vm::setup_kvm() {
 	// Set register sync
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
 
-#ifdef COVERAGE
+#ifdef ENABLE_COVERAGE
 	// Setup VMX PT
 	vmx_pt_filter_iprs filter = {
 		.a = 0x400000, // readelf text range
@@ -410,7 +427,7 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 }
 
 void Vm::get_coverage() {
-	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
+	//size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
 	//printf("full %lu\n", size);
 }
 

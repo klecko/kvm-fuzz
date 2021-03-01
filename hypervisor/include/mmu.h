@@ -4,9 +4,11 @@
 #include <vector>
 #include "elf_parser.h"
 #include "common.h"
+#include "kvm_aux.h"
 
 class Mmu {
 public:
+	inline uint8_t* memory() const { return m_memory; }
 	static const paddr_t PAGE_TABLE_PADDR     = 0x1000;
 	static const vaddr_t ELF_ADDR             = 0x400000; // base for DYN ELF
 	static const vaddr_t STACK_START_ADDR     = 0x800000000000;
@@ -15,11 +17,11 @@ public:
 	static const vaddr_t MAPPINGS_START_ADDR  = 0x7FFFF7FFE000;
 
 	// Normal constructor
-	Mmu(int vm_fd, size_t mem_size);
+	Mmu(int vm_fd, int vcpu_fd, size_t mem_size);
 
 	// Copy constructor: create a Mmu identical to `other` and associated to
-	// `vm_fd`. This allows using the method `reset`
-	Mmu(int vm_fd, const Mmu& other);
+	// given vm and vcpu. This allows using the method `reset`
+	Mmu(int vm_fd, int vcpu_fd, const Mmu& other);
 
 	~Mmu();
 
@@ -88,6 +90,7 @@ private:
 	class PageWalker;
 
 	int m_vm_fd;
+	int m_vcpu_fd;
 
 	// Guest physical memory
 	uint8_t* m_memory;
@@ -103,8 +106,14 @@ private:
 	// Virtual address of the next allocation
 	vaddr_t  m_next_mapping;
 
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	size_t m_dirty_ring_i;
+	size_t m_dirty_ring_entries;
+	kvm_dirty_gfn* m_dirty_ring;
+#else
 	uint32_t m_dirty_bits;
 	uint8_t* m_dirty_bitmap;
+#endif
 
 	// Addresses of dirty pages, appart from the ones indicated by
 	// the dirty bitmap. When we write to guest, kvm bitmap is not updated

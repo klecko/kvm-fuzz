@@ -1,4 +1,20 @@
+#ifndef _KVM_AUX_H
+#define _KVM_AUX_H
+
 #include <linux/kvm.h>
+
+// too recent to be in linux/kvm.h
+#define KVM_CAP_DIRTY_LOG_RING 192
+#define KVM_DIRTY_LOG_PAGE_OFFSET 64
+#define KVM_DIRTY_GFN_F_DIRTY           (1 << 0)
+#define KVM_DIRTY_GFN_F_RESET           (1 << 1)
+#define KVM_DIRTY_GFN_F_MASK            0x3
+#define KVM_RESET_DIRTY_RINGS		_IO(KVMIO, 0xc7)
+struct kvm_dirty_gfn {
+        __u32 flags;
+        __u32 slot; /* as_id | slot_id */
+        __u64 offset;
+};
 
 /* 64-bit page * entry bits */
 #define PDE64_PRESENT 1
@@ -128,3 +144,5 @@ struct vmx_pt_filter_iprs {
 	__u64 a;
 	__u64 b;
 };
+
+#endif

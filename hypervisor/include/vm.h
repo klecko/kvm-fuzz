@@ -10,7 +10,6 @@
 #include "common.h"
 #include "kvm_aux.h"
 
-//#define COVERAGE
 
 void init_kvm();
 
@@ -51,9 +50,11 @@ public:
 private:
 	int m_vm_fd;
 	int m_vcpu_fd;
-	struct kvm_run* m_vcpu_run;
+	kvm_run*   m_vcpu_run;
+#ifdef ENABLE_COVERAGE
 	int m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
+#endif
 	kvm_regs*  m_regs;
 	kvm_sregs* m_sregs;
 	ElfParser  m_elf;
