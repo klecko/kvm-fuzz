@@ -166,7 +166,7 @@ void Kernel::syscall_entry() {
 // This needs to be in the same file as syscall_entry, so it can be called
 // from there without dirtying any reg
 uint64_t Kernel::_handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                         uint64_t arg3, uint64_t arg4, uint64_t arg5)
+                                 uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
 	register int nr asm("eax");
 	return Kernel::handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5);
