@@ -33,8 +33,8 @@ public:
 	bool set_brk(vaddr_t new_brk);
 
 	// Reset to the state in `other`, given that current Mmu has been
-	// constructed as a copy of `other`
-	void reset(const Mmu& other);
+	// constructed as a copy of `other`. Returns the number of pages resetted
+	size_t reset(const Mmu& other);
 
 	// Allocate a physical page
 	paddr_t alloc_frame();

@@ -27,6 +27,7 @@ struct Stats {
 	cycle_t  reset1_cycles {0};
 	cycle_t  reset2_cycles {0};
 	cycle_t  reset3_cycles {0};
+	cycle_t  reset_pages {0};
 	cycle_t  run_cycles {0};
 	cycle_t  syscall_cycles {0};
 	cycle_t  kvm_cycles {0};
@@ -45,6 +46,7 @@ struct Stats {
 		reset1_cycles  += stats.reset1_cycles;
 		reset2_cycles  += stats.reset2_cycles;
 		reset3_cycles  += stats.reset3_cycles;
+		reset_pages    += stats.reset_pages;
 		run_cycles     += stats.run_cycles;
 		syscall_cycles += stats.syscall_cycles;
 		kvm_cycles     += stats.kvm_cycles;

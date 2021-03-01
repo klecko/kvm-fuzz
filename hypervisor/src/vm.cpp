@@ -78,6 +78,18 @@ Vm::Vm(const Vm& other)
 	// Copy sregs
 	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
 
+	// Copy MSRs
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*5;
+	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	msrs->nmsrs = 5;
+	msrs->entries[0].index = MSR_LSTAR;
+	msrs->entries[1].index = MSR_STAR;
+	msrs->entries[2].index = MSR_SYSCALL_MASK;
+	msrs->entries[3].index = MSR_FS_BASE;
+	msrs->entries[4].index = MSR_GS_BASE;
+	ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
+	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
+
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
@@ -141,7 +153,7 @@ void Vm::setup_kvm() {
 	msrs->nmsrs = 3;
 	msrs->entries[0] = {
 		.index = MSR_LSTAR, // Long Syscall TARget
-		.data = 1, //Mmu::SYSCALL_HANDLER_ADDR
+		.data = 0x515C411, //Mmu::SYSCALL_HANDLER_ADDR
 	};
 	msrs->entries[1] = {
 		.index = MSR_STAR, // legacy Syscall TARget
@@ -307,7 +319,7 @@ void Vm::reset(const Vm& other, Stats& stats) {
 
 	// Reset mmu
 	cycles = rdtsc2();
-	m_mmu.reset(other.m_mmu);
+	stats.reset_pages += m_mmu.reset(other.m_mmu);
 	stats.reset1_cycles += rdtsc2() - cycles;
 
 	// Reset registers
@@ -358,15 +370,15 @@ void Vm::run(Stats& stats) {
 
 			case KVM_EXIT_DEBUG:
 				// TODO: VmExitReason?
-				printf("breakpoint hit\n");
+				/* printf("breakpoint hit\n");
 				dump_regs();
 				m_regs->rip += 1;
 				set_regs_dirty();
 				cout << endl;
+				break; */
 				stats.vm_exits_debug++;
-				break;
-				//m_running = false;
-				//return;
+				m_running = false;
+				return;
 
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
 				stats.vm_exits_cov++;

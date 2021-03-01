@@ -78,7 +78,7 @@ psize_t Mmu::size() const {
 	return m_length;
 }
 
-void Mmu::reset(const Mmu& other) {
+size_t Mmu::reset(const Mmu& other) {
 	// Get dirty pages bitmap
 	kvm_dirty_log dirty = {
 		.slot = 0,
@@ -99,11 +99,11 @@ void Mmu::reset(const Mmu& other) {
 			memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
 		}
 	}
-	//printf("resetted %lu pages\n", count);
 
 	// Reset extra pages
 	for (paddr_t paddr : m_dirty_extra) {
 		memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+		count++;
 	}
 
 	// Clear bitmap and vector of extra pages
@@ -126,6 +126,7 @@ void Mmu::reset(const Mmu& other) {
 		}
 		die(":(\n");
 	} */
+	return count;
 }
 
 paddr_t Mmu::alloc_frame() {

@@ -13,7 +13,7 @@ void print_stats(const Stats& stats) {
 	uint64_t cases;
 	double fcps, run_time, reset_time, reset1_time, reset2_time, reset3_time,
 	       syscall_time, kvm_time, mut_time, vm_exits, vm_exits_sys,
-		   vm_exits_debug, vm_exits_cov;
+		   vm_exits_debug, vm_exits_cov, reset_pages;
 	while (true) {
 		this_thread::sleep_for(chrono::seconds(1));
 		elapsed        = chrono::steady_clock::now() - start;
@@ -27,6 +27,7 @@ void print_stats(const Stats& stats) {
 		syscall_time   = (double)stats.syscall_cycles / stats.total_cycles;
 		kvm_time       = (double)stats.kvm_cycles / stats.total_cycles;
 		mut_time       = (double)stats.mut_cycles / stats.total_cycles;
+		reset_pages    = (double)stats.reset_pages / stats.cases;
 		vm_exits       = (double)stats.vm_exits / stats.cases;
 		vm_exits_sys   = (double)stats.vm_exits_sys / stats.cases;
 		vm_exits_debug = (double)stats.vm_exits_debug / stats.cases;
@@ -40,9 +41,9 @@ void print_stats(const Stats& stats) {
 
 		if (TIMETRACE >= 2) {
 			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f, syscall: %.3f"
-			       ", kvm: %.3f\n",
+			       ", kvm: %.3f, pages: %.3f\n",
 			       reset1_time, reset2_time, reset3_time, syscall_time,
-				   kvm_time);
+				   kvm_time, reset_pages);
 			printf("\tvm exits sys: %.3f, vm exits debug: %.3f, vm exits cov: "
 			       "%.3f\n",
 					vm_exits_sys, vm_exits_debug, vm_exits_cov);
@@ -68,8 +69,8 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 		while (_rdtsc() - cycles_init < 50000000) {
 			// Get new input
 			cycles = rdtsc1();
-			const string& input = corpus.get_new_input(id, rng);
-			runner.set_file("test", input);
+			/* const string& input = corpus.get_new_input(id, rng);
+			runner.set_file("test", input); */
 			local_stats.mut_cycles += rdtsc1() - cycles;
 
 			// Perform run
@@ -106,11 +107,18 @@ int main(int argc, char** argv) {
 
 	string file = read_file("./hypervisor/kvm-fuzz");
 	vm.set_file("test", file);
-	//vm.set_breakpoint(0xffffffff802a6550);
+
 	vm.init();
 
-	vm.run(stats);
-	return 0 ;
+/* 	vm.run_until(0x401c80, stats); // readelf
+	Vm runner(vm);
+	runner.dump_regs();
+	runner.run(stats);
+
+	printf("\n\n\n");
+	runner.reset(vm, stats);
+	runner.run(stats);
+	return 0 ; */
 
 	vm.run_until(0x401c80, stats); // readelf
 	//vm.run_until(0x402520, stats); // objdump
