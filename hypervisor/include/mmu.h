@@ -106,9 +106,6 @@ private:
 	uint32_t m_dirty_bits;
 	uint8_t* m_dirty_bitmap;
 
-	// Brk
-	vaddr_t  m_brk, m_min_brk;
-
 	// Addresses of dirty pages, appart from the ones indicated by
 	// the dirty bitmap. When we write to guest, kvm bitmap is not updated
 	// and there doesn't seem to be a way to update it. For now, those pages

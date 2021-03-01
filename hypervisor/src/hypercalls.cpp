@@ -46,7 +46,7 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	// Get absolute elf path, brk and other stuff
 	VmInfo info;
 	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
-	info.brk = m_mmu.brk();
+	info.brk = m_elf.initial_brk();
 	m_mmu.write(info_addr, info);
 }
 

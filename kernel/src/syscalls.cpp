@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "common.h"
 #include "libcpp.h"
 #include "kernel.h"
@@ -27,7 +28,8 @@ uint64_t Kernel::do_sys_arch_prctl(int code, unsigned long addr) {
 	uint64_t ret = 0;
 	switch (code) {
 		case ARCH_SET_FS:
-			//asm volatile("wrfsbase %0" :: "r" (addr) : "memory");
+			wrmsr(MSR_FS_BASE, addr);
+			break;
 		case ARCH_SET_GS:
 		case ARCH_GET_FS:
 		case ARCH_GET_GS:
@@ -44,10 +46,10 @@ uint64_t Kernel::do_sys_openat(int dirfd, const char* pathname, int flags,
                                mode_t mode)
 {
 	string pathname_s(pathname);
-	ASSERT(m_file_contents.count(pathname_s), "openat: unknown %s", pathname);
-	ASSERT(dirfd == AT_FDCWD, "openat: %s dirfd %d", pathname, dirfd);
+	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
+	ASSERT(dirfd == AT_FDCWD, "%s dirfd %d", pathname, dirfd);
 	ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
-	       "open: %s with write permisions", pathname);
+	       "%s with write permisions", pathname);
 
 	// Find unused fd
 	int fd = 3;
@@ -78,13 +80,13 @@ uint64_t Kernel::do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 }
 
 uint64_t Kernel::do_sys_read(int fd, void* buf, size_t count) {
-	ASSERT(m_open_files.count(fd), "read: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	return m_open_files[fd].read(buf, count);
 }
 
 uint64_t Kernel::do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
-	ASSERT(m_open_files.count(fd), "pread64: not open fd: %d", fd);
-	ASSERT(offset >= 0, "pread64: negative offset on fd %d: %ld", fd, offset);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	ASSERT(offset >= 0, "negative offset on fd %d: %ld", fd, offset);
 
 	// Change offset, read and restore offset
 	File& file = m_open_files[fd];
@@ -100,19 +102,19 @@ uint64_t Kernel::do_sys_access(const char* pathname, int mode) {
 }
 
 uint64_t Kernel::do_sys_write(int fd, const void* buf, size_t count) {
-	ASSERT(m_open_files.count(fd), "write: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	return m_open_files[fd].write(buf, count);
 }
 
 uint64_t Kernel::do_sys_stat(const char* pathname, struct stat* statbuf) {
 	string pathname_s(pathname);
-	ASSERT(m_file_contents.count(pathname_s), "stat: unknown %s", pathname);
+	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
 	stat_regular(statbuf, m_file_contents[pathname_s].iov_len);
 	return 0;
 }
 
 uint64_t Kernel::do_sys_fstat(int fd, struct stat* statbuf) {
-	ASSERT(m_open_files.count(fd), "fstat: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	m_open_files[fd].stat(statbuf);
 	return 0;
 }
@@ -121,7 +123,7 @@ uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
 	// We use signed types here, as the syscall does, but we use unsigned types
 	// in File. The syscall fails if the resulting offset is negative, so
 	// there isn't any problem about that
-	ASSERT(m_open_files.count(fd), "lseek: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	File& file = m_open_files[fd];
 	int64_t ret;
 	switch (whence) {
@@ -149,15 +151,30 @@ uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
 }
 
 uint64_t Kernel::do_sys_close(int fd) {
-	ASSERT(m_open_files.count(fd), "close: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	//m_open_files.erase(fd); // ADAPTACIÓN STL
 	m_open_files.erase(m_open_files.find({fd, m_open_files[fd]}));
 	return 0;
 }
 
 uint64_t Kernel::do_sys_brk(void* addr) {
-	TODO
-	//return (m_mmu.set_brk(addr) ? addr : m_mmu.brk());
+	dbgprintf("trying to set brk to 0x%lx\n", addr);
+	if (addr < m_min_brk)
+		return (uint64_t)m_brk;
+
+	// Allocate space if needed
+	// Too many castings. There must be a better way to do this
+	uintptr_t next_page = ((uintptr_t)m_brk + 0xFFF) & ~0xFFF;
+	if ((uintptr_t)addr > next_page) {
+		size_t sz = ((uintptr_t)addr - next_page + 0xFFF) & ~0xFFF;
+		hc_mmap((void*)next_page, sz, PDE64_RW | PDE64_USER,
+		        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED);
+	}
+
+	dbgprintf("brk set to 0x%lx\n", addr);
+	m_brk = addr;
+
+	return (uint64_t)m_brk;
 }
 
 uint64_t Kernel::do_sys_uname(struct utsname* buf) {
@@ -176,8 +193,7 @@ uint64_t Kernel::do_sys_readlink(const char* pathname, char* buf,
                                  size_t bufsize)
 {
 	string pathname_s(pathname);
-	ASSERT(pathname_s == "/proc/self/exe",
-	       "readlink: not implemented %s", pathname);
+	ASSERT(pathname_s == "/proc/self/exe", "not implemented %s", pathname);
 
 	// Readlink does not append a null byte to buf
 	size_t size = min(m_elf_path.size(), bufsize);
@@ -186,13 +202,13 @@ uint64_t Kernel::do_sys_readlink(const char* pathname, char* buf,
 }
 
 uint64_t Kernel::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
-	ASSERT(m_open_files.count(fd), "ioctl: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	TODO
 	return 0;
 }
 
 uint64_t Kernel::do_sys_fcntl(int fd, int cmd, unsigned long arg) {
-	ASSERT(m_open_files.count(fd), "fcntl: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	File& file = m_open_files[fd];
 	uint64_t ret = 0;
 	uint32_t flags;
@@ -258,8 +274,8 @@ uint64_t Kernel::do_sys_prlimit(pid_t pid, int resource,
                                 const struct rlimit* new_limit,
                                 struct rlimit* old_limit)
 {
-	ASSERT(pid == 0, "prlimit: TODO pid %d", pid);
-	ASSERT(new_limit == NULL, "prlimit: TODO set limit");
+	ASSERT(pid == 0, "TODO pid %d", pid);
+	ASSERT(new_limit == NULL, "TODO set limit");
 	struct rlimit limit;
 	switch (resource) {
 		case RLIMIT_NOFILE:
@@ -339,7 +355,7 @@ uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t a
 		case SYS_exit:
 		case SYS_exit_group:
 			//dbgprintf("end run --------------------------------\n\n");
-			hypercall_end_run();
+			hc_end_run();
 			//print_syscalls(n);
 			break;
 		case SYS_getuid:

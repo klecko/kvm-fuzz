@@ -24,8 +24,6 @@ Mmu::Mmu(int vm_fd, size_t mem_size)
 	, m_next_mapping(MAPPINGS_START_ADDR)
 	, m_dirty_bits(m_length/PAGE_SIZE)
 	, m_dirty_bitmap(new uint8_t[m_dirty_bits/8])
-	, m_brk(0)
-	, m_min_brk(0)
 {
 	ERROR_ON(m_memory == MAP_FAILED, "mmap mmu memory");
 
@@ -57,8 +55,6 @@ Mmu::Mmu(int vm_fd, const Mmu& other)
 {
 	m_next_page_alloc = other.m_next_page_alloc;
 	m_next_mapping    = other.m_next_mapping;
-	m_brk             = other.m_brk;
-	m_min_brk         = other.m_min_brk;
 	memcpy(m_memory, other.m_memory, m_length);
 
 	// Reset kvm dirty bitmap
@@ -80,26 +76,6 @@ Mmu::~Mmu() {
 
 psize_t Mmu::size() const {
 	return m_length;
-}
-
-vaddr_t Mmu::brk() const {
-	return m_brk;
-}
-
-bool Mmu::set_brk(vaddr_t new_brk) {
-	dbgprintf("trying to set brk to %lX\n", new_brk);
-	if (new_brk < m_min_brk)
-		return false;
-
-	// Allocate space if needed
-	vaddr_t next_page = (m_brk + 0xFFF) & ~0xFFF;
-	if (new_brk > next_page) {
-		alloc(next_page, new_brk - next_page, PDE64_RW | PDE64_USER);
-	}
-
-	dbgprintf("brk set to %lX\n", new_brk);
-	m_brk = new_brk;
-	return true;
 }
 
 void Mmu::reset(const Mmu& other) {
@@ -137,8 +113,6 @@ void Mmu::reset(const Mmu& other) {
 	// Reset state
 	m_next_page_alloc = other.m_next_page_alloc;
 	m_next_mapping    = other.m_next_mapping;
-	m_brk             = other.m_brk;
-	m_min_brk         = other.m_min_brk;
 
 	/* if (memcmp(m_memory, other.m_memory, m_length) != 0) {
 		printf("WOOPS reset is not working\n");
@@ -305,13 +279,7 @@ void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
 		// Fill padding, if any
 		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize,
 		        false);
-
-		// In case this is not kernel, update brk beyond any segment we load
-		if (!kernel)
-			m_brk = max(m_brk, (segm.vaddr + segm.memsize + 0xFFF) & ~0xFFF);
 	}
-	if (!kernel)
-		m_min_brk = m_brk;
 }
 
 void Mmu::dump_memory(psize_t len) const {

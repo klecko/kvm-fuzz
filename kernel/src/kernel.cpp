@@ -8,10 +8,9 @@ void* Kernel::m_kernel_stack;
 void* Kernel::m_user_stack;
 string Kernel::m_elf_path;
 void* Kernel::m_brk;
+void* Kernel::m_min_brk;
 unordered_map<int, File> Kernel::m_open_files;
 unordered_map<string, struct iovec> Kernel::m_file_contents;
-
-Kernel kernel;
 
 void Kernel::init() {
 	// Init kernel stuff
@@ -23,10 +22,11 @@ void Kernel::init() {
 
 	// Let's init kernel state. We'll need help from the hypervisor
 	VmInfo info;
-	hypercall_get_info(&info);
+	hc_get_info(&info);
 	m_user_stack = 0;
 	m_elf_path   = string(info.elf_path);
 	m_brk        = info.brk;
+	m_min_brk    = info.brk;
 	m_open_files[STDIN_FILENO]  = FileStdin();
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();
@@ -35,41 +35,36 @@ void Kernel::init() {
 	printf("Brk: 0x%lx\n", m_brk);
 
 	// We are ready
-	hypercall_ready();
+	hc_ready();
 }
 
-#define MSR_STAR          0xc0000081 /* legacy mode SYSCALL target */
-#define MSR_LSTAR         0xc0000082 /* long mode SYSCALL target */
-#define MSR_SYSCALL_MASK  0xc0000084 /* EFLAGS mask for syscall */
+void Kernel::wrmsr(unsigned int msr, uint64_t val) {
+	asm volatile(
+		"wrmsr"
+		:
+		: "c" (msr),
+		  "a" (val & 0xFFFFFFFF),
+		  "d" (val >> 32)
+		: "memory"
+	);
+}
+
+uint64_t Kernel::rdmsr(unsigned int msr) {
+	uint32_t hi, lo;
+	asm volatile(
+		"rdmsr"
+		: "=d" (hi),
+		  "=a" (lo)
+		: "c" (msr)
+		: "memory"
+	);
+	return ((uint64_t)hi << 32) | lo;
+}
 
 void Kernel::register_syscall() {
-	asm volatile(
-		// MSR_LSTAR
-		"lea rdi, %[syscall_handler];"
-		"mov eax, edi;"
-		"shr rdi, 32;"
-		"mov edx, edi;"
-		"mov ecx, %[_MSR_LSTAR];"
-		"wrmsr;"
-
-		// MSR_STAR
-		"xor rax, rax;"
-		"mov edx, 0x00200008;"
-		"mov ecx, %[_MSR_STAR];"
-		"wrmsr;"
-
-		// MSR_SYSCALL_MASK
-		"mov eax, 0x3f7fd5;"
-		"xor rdx, rdx;"
-		"mov ecx, %[_MSR_SYSCALL_MASK];"
-		"wrmsr;"
-		:
-		: [syscall_handler] "m"(syscall_entry),
-		  [_MSR_LSTAR] "i"(MSR_LSTAR),
-		  [_MSR_STAR] "i"(MSR_STAR),
-		  [_MSR_SYSCALL_MASK] "i"(MSR_SYSCALL_MASK)
-		: "rax", "rdi", "rdx", "rcx"
-	);
+	wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
+	wrmsr(MSR_STAR, 0x0020000800000000UL);
+	wrmsr(MSR_SYSCALL_MASK, 0x3f7fd5);
 }
 
 // Warning: -fpie is needed for these to use relative addressing so it doesn't

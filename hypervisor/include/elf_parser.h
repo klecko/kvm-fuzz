@@ -99,6 +99,7 @@ class ElfParser {
 		const uint8_t* data() const;
 		void set_base(vaddr_t base);
 		vaddr_t base() const;
+		vaddr_t initial_brk() const;
 		phinfo_t phinfo() const;
 		uint16_t type() const;
 		vaddr_t entry() const;
@@ -114,6 +115,7 @@ class ElfParser {
 	private:
 		uint8_t* m_data;
 		vaddr_t m_base;
+		vaddr_t m_initial_brk;
 		phinfo_t m_phinfo;
 		uint16_t m_type;
 		vaddr_t m_entry;

@@ -28,49 +28,49 @@ enum Hypercall : size_t {
 	)
 
 __attribute__((naked))
-void hypercall_test(size_t arg) {
+void hc_test(size_t arg) {
 	hypercall(Hypercall::Test);
 }
 
 __attribute__((naked))
-void* hypercall_mmap(void* addr, size_t size, uint64_t page_flags, int flags) {
+void* hc_mmap(void* addr, size_t size, uint64_t page_flags, int flags) {
 	hypercall(Hypercall::Mmap);
 }
 
 __attribute__((naked))
-void hypercall_ready() {
+void hc_ready() {
 	hypercall(Hypercall::Ready);
 }
 
 __attribute__((naked))
-void hypercall_print(const char* msg) {
+void hc_print(const char* msg) {
 	hypercall(Hypercall::Print);
 }
 
 const size_t out_buf_size = 1024;
 char out_buf[out_buf_size];
 size_t used = 0;
-void hypercall_print(char c) {
+void hc_print(char c) {
 	// Add the char to the buffer. Print only if it's a line break or if the
 	// buffer is full
 	out_buf[used++] = c;
 	if (c == '\n' || used == out_buf_size-1) {
 		out_buf[used] = 0;
-		hypercall_print(out_buf);
+		hc_print(out_buf);
 		used = 0;
 	}
 }
 
-void hypercall_print(const string& msg) {
-	hypercall_print(msg.c_str());
+void hc_print(const string& msg) {
+	hc_print(msg.c_str());
 }
 
 __attribute__((naked))
-void hypercall_get_info(VmInfo* info) {
+void hc_get_info(VmInfo* info) {
 	hypercall(Hypercall::GetInfo);
 }
 
 __attribute__((naked))
-void hypercall_end_run() {
+void hc_end_run() {
 	hypercall(Hypercall::EndRun);
 }

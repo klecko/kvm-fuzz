@@ -44,6 +44,7 @@ ElfParser::ElfParser(const string& elf_path)
 
 	// Get segments
 	m_load_addr = numeric_limits<vaddr_t>::max();
+	m_initial_brk = 0;
 	size_t i;
 	for (i = 0; i < ehdr->e_phnum; i++) {
 		segment_t segment = {
@@ -58,8 +59,14 @@ ElfParser::ElfParser(const string& elf_path)
 			.data     = m_data + segment.offset
 		};
 		m_segments.push_back(segment);
-		if (segment.type == PT_LOAD)
+
+		// Update brk beyond any loadable segment, and load_addr as the address
+		// of the first segment in memory
+		if (segment.type == PT_LOAD) {
 			m_load_addr = min(m_load_addr, segment.vaddr);
+			m_initial_brk = max(m_initial_brk,
+			                    (segment.vaddr + segment.memsize + 0xFFF) & ~0xFFF);
+		}
 		if (segment.type == PT_INTERP)
 			m_interpreter = string((char*)segment.data);
 	}
@@ -137,6 +144,10 @@ void ElfParser::set_base(vaddr_t base) {
 
 vaddr_t ElfParser::base() const {
 	return m_base;
+}
+
+vaddr_t ElfParser::initial_brk() const {
+	return m_initial_brk;
 }
 
 phinfo_t ElfParser::phinfo() const {

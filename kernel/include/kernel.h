@@ -6,11 +6,9 @@
 #include <sys/uio.h>
 #include "common.h"
 #include "file.h"
+#include "aux.h"
 
 #define unordered_map map
-
-class Kernel;
-extern Kernel kernel;
 
 class Kernel {
 public:
@@ -30,6 +28,7 @@ private:
 
 	// User brk
 	static void* m_brk;
+	static void* m_min_brk;
 
 	// Open files indexed by file descriptor
 	static unordered_map<int, File> m_open_files;
@@ -37,6 +36,8 @@ private:
 	// Files contents indexed by filename
 	static unordered_map<string, struct iovec> m_file_contents;
 
+	static void wrmsr(unsigned int msr, uint64_t val);
+	static uint64_t rdmsr(unsigned int msr);
 	static void register_syscall();
 	static void syscall_entry();
 	static uint64_t _handle_syscall(uint64_t, uint64_t, uint64_t, uint64_t,

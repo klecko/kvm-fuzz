@@ -39,7 +39,7 @@
 // Custom config and putchar implementation for KVM-FUZZ
 #define PRINTF_DISABLE_SUPPORT_FLOAT
 void _putchar(char character) {
-  hypercall_print(character);
+  hc_print(character);
 }
 
 // define this globally (e.g. gcc -DPRINTF_INCLUDE_CONFIG_H ...) to include the
