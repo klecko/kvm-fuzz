@@ -14,7 +14,7 @@ enum Hypercall : size_t {
 	GetInfo,
 	GetFileLen,
 	GetFileName,
-	GetFile,
+	SetFileBuf,
 	EndRun,
 };
 
@@ -31,7 +31,7 @@ vaddr_t Vm::do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flag
 	} else {
 		ret = m_mmu.alloc(size, page_flags);
 	}
-	dbgprintf("hc alloc %lu at 0x%lx with page flags 0x%lx\n", size, ret, page_flags);
+	dbgprintf("hc mmap %lu at 0x%lx with page flags 0x%lx\n", size, ret, page_flags);
 	return ret;
 }
 
@@ -72,21 +72,23 @@ vsize_t Vm::do_hc_get_file_len(size_t n) {
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
-	return it->second.iov_len;
+	return it->second.length + 1;
 }
 
 void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
-	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size());
+	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size() + 1);
 }
 
-void Vm::do_hc_get_file(size_t n, vaddr_t buf_addr) {
+void Vm::do_hc_set_file_buf(size_t n, vaddr_t buf_addr) {
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
-	m_mmu.write_mem(buf_addr, it->second.iov_base, it->second.iov_len);
+	it->second.guest_buf = buf_addr;
+	m_mmu.write_mem(buf_addr, it->second.data, it->second.length + 1);
+	dbgprintf("kernel set buf addr for file %s: 0x%lx\n", it->first.c_str(), buf_addr);
 }
 
 void Vm::handle_hypercall() {
@@ -112,8 +114,8 @@ void Vm::handle_hypercall() {
 		case Hypercall::GetFileName:
 			do_hc_get_file_name(m_regs->rdi, m_regs->rsi);
 			break;
-		case Hypercall::GetFile:
-			do_hc_get_file(m_regs->rdi, m_regs->rsi);
+		case Hypercall::SetFileBuf:
+			do_hc_set_file_buf(m_regs->rdi, m_regs->rsi);
 			break;
 		case Hypercall::EndRun:
 			m_running = false;

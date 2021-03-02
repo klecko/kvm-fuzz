@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
+#include <asm-generic/errno-base.h>
 
 using namespace std;
 
@@ -143,9 +144,7 @@ uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
 			TODO
 	}
 	if (ret < 0)
-		TODO
-		/* return -EINVAL; */
-	//ASSERT(ret >= 0, "lseek: set negative offset: %ld", offset);
+		return -EINVAL;
 	file.set_offset(ret);
 	return ret;
 }
@@ -236,7 +235,14 @@ uint64_t Kernel::do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	                         int fd, off_t offset)
 {
 	// We'll remove this checks little by little :)
-	TODO
+	ASSERT(fd == -1, "fd %d", fd);
+	ASSERT(offset == 0, "offset %ld", offset);
+	uint64_t page_flags = PDE64_USER;
+	if (prot & PROT_WRITE)
+		page_flags |= PDE64_RW;
+	if (!(prot & PROT_EXEC))
+		page_flags |= PDE64_NX;
+	return (uint64_t)hc_mmap(addr, length, page_flags, flags);
 	/* ASSERT(addr == 0, "mmap: not null addr %lx", addr);
 	ASSERT((length & PTL1_MASK) == length, "mmap: not aligned length %lx", length);
 	ASSERT((flags & MAP_TYPE) == MAP_PRIVATE, "mmap: shared mmaping");
@@ -380,7 +386,7 @@ uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t a
 			ret = do_sys_readlink((const char*)arg0, (char*)arg1, arg2);
 			break;
 		case SYS_mmap:
-			ret = do_sys_mmap((void*)arg0, arg1, arg2, arg3, arg4, arg4);
+			ret = do_sys_mmap((void*)arg0, arg1, arg2, arg3, arg4, arg5);
 			break;
 		case SYS_munmap:
 			ret = do_sys_munmap((void*)arg0, arg1);

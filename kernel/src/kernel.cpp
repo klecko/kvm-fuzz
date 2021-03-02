@@ -43,7 +43,7 @@ void Kernel::init() {
 	printf("Brk: 0x%lx\n", m_brk);
 	printf("Files: %d\n", m_file_contents.size());
 	for (auto v : m_file_contents) {
-		printf("\t%s\n", v.f.c_str());
+		printf("\t%s, length %lu\n", v.f.c_str(), v.s.iov_len);
 	}
 
 	// We are ready
@@ -51,6 +51,8 @@ void Kernel::init() {
 }
 
 void Kernel::init_file_contents(size_t n) {
+	// For each file, get its filename and its length, allocate a buffer
+	// and submit it to the hypervisor, which will write the file content to it
 	void* buf;
 	size_t size;
 	char filename[PATH_MAX];
@@ -58,7 +60,7 @@ void Kernel::init_file_contents(size_t n) {
 		hc_get_file_name(i, filename);
 		size = hc_get_file_len(i);
 		buf = kmalloc(size);
-		hc_get_file(i, buf);
+		hc_set_file_buf(i, buf);
 		m_file_contents[string(filename)] = {
 			.iov_base = buf,
 			.iov_len  = size,

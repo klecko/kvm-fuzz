@@ -12,8 +12,9 @@ void print_stats(const Stats& stats) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	uint64_t cases;
 	double fcps, run_time, reset_time, reset1_time, reset2_time, reset3_time,
-	       syscall_time, kvm_time, mut_time, vm_exits, vm_exits_sys,
-		   vm_exits_debug, vm_exits_cov, reset_pages;
+	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
+		   reset_pages, vm_exits, vm_exits_sys,
+		   vm_exits_debug, vm_exits_cov;
 	while (true) {
 		this_thread::sleep_for(chrono::seconds(1));
 		elapsed        = chrono::steady_clock::now() - start;
@@ -24,9 +25,11 @@ void print_stats(const Stats& stats) {
 		reset1_time    = (double)stats.reset1_cycles / stats.total_cycles;
 		reset2_time    = (double)stats.reset2_cycles / stats.total_cycles;
 		reset3_time    = (double)stats.reset3_cycles / stats.total_cycles;
-		syscall_time   = (double)stats.syscall_cycles / stats.total_cycles;
 		kvm_time       = (double)stats.kvm_cycles / stats.total_cycles;
 		mut_time       = (double)stats.mut_cycles / stats.total_cycles;
+		mut1_time      = (double)stats.mut1_cycles / stats.total_cycles;
+		mut2_time      = (double)stats.mut2_cycles / stats.total_cycles;
+		set_input_time = (double)stats.set_input_cycles / stats.total_cycles;
 		reset_pages    = (double)stats.reset_pages / stats.cases;
 		vm_exits       = (double)stats.vm_exits / stats.cases;
 		vm_exits_sys   = (double)stats.vm_exits_sys / stats.cases;
@@ -36,17 +39,19 @@ void print_stats(const Stats& stats) {
 		       cases, fcps, vm_exits);
 
 		if (TIMETRACE >= 1)
-			printf("\trun: %.3f, reset: %.3f, mut: %.3f\n",
-			       run_time, reset_time, mut_time);
+			printf("\trun: %.3f, reset: %.3f, mut: %.3f, set_input: %.3f\n",
+			       run_time, reset_time, mut_time, set_input_time);
 
 		if (TIMETRACE >= 2) {
-			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f, syscall: %.3f"
+			printf("\treset1: %.3f, reset2: %.3f, reset3: %.3f"
 			       ", kvm: %.3f, pages: %.3f\n",
-			       reset1_time, reset2_time, reset3_time, syscall_time,
+			       reset1_time, reset2_time, reset3_time,
 				   kvm_time, reset_pages);
+			printf("\tmut1: %.3f, mut2: %.3f\n",
+			       mut1_time, mut2_time);
 			printf("\tvm exits sys: %.3f, vm exits debug: %.3f, vm exits cov: "
 			       "%.3f\n",
-					vm_exits_sys, vm_exits_debug, vm_exits_cov);
+			       vm_exits_sys, vm_exits_debug, vm_exits_cov);
 		}
 	}
 }
@@ -69,9 +74,16 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 		while (_rdtsc() - cycles_init < 50000000) {
 			// Get new input
 			cycles = rdtsc1();
-			/* const string& input = corpus.get_new_input(id, rng);
-			runner.set_file("test", input); */
+			const string& input = corpus.get_new_input(id, rng, stats);
 			local_stats.mut_cycles += rdtsc1() - cycles;
+
+			// Update input file. Make sure kernel has already submitted a
+			// buffer so the input is being copied into its memory.
+			// TODO: DON'T RESET THIS MEMORY AREA, maybe add other memory slot
+			// for memory that we don't want to reset?
+			cycles = rdtsc1();
+			runner.set_file("test", input, true);
+			local_stats.set_input_cycles += rdtsc1() - cycles;
 
 			// Perform run
 			cycles = rdtsc1();
@@ -95,17 +107,22 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 
 
 int main(int argc, char** argv) {
+	cout << "Number of threads: " << num_threads << endl;
 	init_kvm();
 	Stats stats;
 	Corpus corpus(num_threads, "../corpus");
 	Vm vm(
-		4 * 1024 * 1024,
+		8 * 1024 * 1024,
 		"./kernel/kernel",
 		"../test_bins/readelf",
 		{"./readelf", "-l", "test"}
 	);
 
-	string file = read_file("/usr/bin/ls");
+	// Virtual file, whose content will be provided by the corpus and will be
+	// set before each run. We set its size to the maximum input size so kernel
+	// allocs a buffer of that size.
+	// Other real files should be set here as well.
+	string file(corpus.max_input_size(), 'a');
 	vm.set_file("test", file);
 
 	vm.init();

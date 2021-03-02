@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define ENABLE_KVM_DIRTY_LOG_RING
+//#define ENABLE_KVM_DIRTY_LOG_RING
 //#define ENABLE_COVERAGE
 
 //#define DEBUG 1

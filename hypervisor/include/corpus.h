@@ -1,7 +1,7 @@
 #include <vector>
 #include <string>
 #include <atomic>
-#include <x86intrin.h>
+#include <stats.h>
 #include "common.h"
 
 std::string read_file(const std::string& filepath);
@@ -43,10 +43,11 @@ public:
 
 	size_t size() const;
 	size_t memsize() const;
+	size_t max_input_size() const;
 
 	// Get a new mutated input, which will be a constant reference to
 	// `mutated_inputs[id]
-	const std::string& get_new_input(int id, Rng& rng);
+	const std::string& get_new_input(int id, Rng& rng, Stats& stats);
 
 private:
 	// Corpus and its lock

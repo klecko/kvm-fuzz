@@ -82,10 +82,11 @@ Vm::Vm(const Vm& other)
 	, m_sregs(&m_vcpu_run->s.regs.sregs)
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
-	, m_interpreter(NULL)
+	, m_interpreter(other.m_interpreter)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
+	, m_file_contents(other.m_file_contents)
 {
 	setup_kvm();
 
@@ -523,12 +524,23 @@ void Vm::remove_breakpoint(vaddr_t addr) {
 }
 #endif
 
-void Vm::set_file(const string& filename, const string& content) {
-	struct iovec iov = {
-		.iov_base = (void*)content.c_str(),
-		.iov_len  = content.size()
+void Vm::set_file(const string& filename, const string& content, bool check) {
+	bool existed = m_file_contents.count(filename);
+	file_t& file = m_file_contents[filename];
+	file.data    = (const void*)content.c_str();
+	file.length  = content.size();
+	if (existed) {
+		// File already existed. If kernel submitted a buffer for it, write
+		// content into its memory.
+		ASSERT(!check || file.guest_buf, "kernel didn't submit buf for file %s",
+				filename.c_str());
+		if (file.guest_buf)
+			m_mmu.write_mem(file.guest_buf, file.data, file.length + 1);
+	} else {
+		// File didn't exist. Set guest buffer address to 0, and wait for guest
+		// kernel to do hc_set_file_buf.
+		file.guest_buf = 0;
 	};
-	m_file_contents[filename] = iov;
 }
 
 void Vm::dump_regs() {
@@ -562,11 +574,11 @@ void Vm::vm_err(const string& msg) {
 	//dump_memory();
 
 	// Dump current input file to mem
-	ofstream os("crash");
+	/* ofstream os("crash");
 	struct iovec& iov = m_file_contents["test"];
 	os.write((char*)iov.iov_base, iov.iov_len);
 	assert(os.good());
-	cout << "Dumped crash file of size " << iov.iov_len << endl;
+	cout << "Dumped crash file of size " << iov.iov_len << endl; */
 
 	die("%s\n", msg.c_str());
 }

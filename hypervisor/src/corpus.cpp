@@ -73,13 +73,22 @@ size_t Corpus::memsize() const {
 	return size;
 }
 
-const std::string& Corpus::get_new_input(int id, Rng& rng){
-	// Copy a random input to slot `id`, and mutate it and return a
+size_t Corpus::max_input_size() const {
+	return m_max_input_size;
+}
+
+const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
+	// Copy a random input to slot `id`, mutate it and return a
 	// constant reference to it
+	cycle_t cycles = rdtsc2();
 	while (m_lock_corpus.test_and_set());
 	m_mutated_inputs[id] = m_corpus[rng.rnd() % m_corpus.size()];
 	m_lock_corpus.clear();
+	stats.mut1_cycles += rdtsc2() - cycles;
+
+	cycles = rdtsc2();
 	mutate_input(id, rng);
+	stats.mut2_cycles += rdtsc2() - cycles;
 	return m_mutated_inputs[id];
 }
 

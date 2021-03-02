@@ -13,6 +13,12 @@
 
 void init_kvm();
 
+struct file_t {
+	const void* data;
+	size_t length;
+	vaddr_t guest_buf;
+};
+
 class Vm {
 public:
 	Vm(vsize_t mem_size, const std::string& kernelpath,
@@ -40,8 +46,12 @@ public:
 
 	// Associate `filename` with `content` to emulate file operations in the
 	// guest. String `content` shouldn't be modified and it could be shared
-	// by all threads
-	void set_file(const std::string& filename, const std::string& content);
+	// by all threads. File content will be copied to kernel memory when kernel
+	// submits a buffer, or immediately if it already submitted one.
+	// If `check` is set, make sure a buffer was already provided so `content`
+	// is immediately copied.
+	void set_file(const std::string& filename, const std::string& content,
+	              bool check = false);
 
 	void dump_regs();
 	void dump_memory() const;
@@ -67,7 +77,7 @@ private:
 
 	// Files contents indexed by filename. Kernel will synchronize with this
 	// on startup
-	std::unordered_map<std::string, struct iovec> m_file_contents;
+	std::unordered_map<std::string, file_t> m_file_contents;
 
 	void setup_kvm();
 	void load_elf();
@@ -83,7 +93,7 @@ private:
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
-	void do_hc_get_file(size_t n, vaddr_t buf_addr);
+	void do_hc_set_file_buf(size_t n, vaddr_t buf_addr);
 	void do_hc_end_run();
 
 	/* void handle_syscall();
