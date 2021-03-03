@@ -41,10 +41,10 @@ public:
 	// Allocate a physical page
 	paddr_t alloc_frame();
 
-	// Get page table entry of given virtual address, performing a page walk and
-	// allocating entries if needed. This is a wrapper for PageWalker. If needed
-	// for a range, use PageWalker instead
-	paddr_t* get_pte(vaddr_t vaddr);
+	// Get page table entry value of given virtual address, performing a page
+	// walk and allocating entries if needed. This is a wrapper for PageWalker.
+	// If needed for a range, use PageWalker instead
+	paddr_t get_pte_val(vaddr_t vaddr);
 
 	// Translate a virtual address to a physical address. Same as in `get_pte`
 	// applies here
@@ -73,6 +73,12 @@ public:
 	template <class T>
 	void write(vaddr_t addr, const T& value);
 
+	template<class T>
+	T readp(paddr_t addr);
+
+	template <class T>
+	void writep(paddr_t addr, const T& value);
+
 	// Read a null-terminated string from `addr`
 	std::string read_string(vaddr_t addr);
 
@@ -98,7 +104,7 @@ private:
 
 	// Pointer to page table level 4
 	// (at physical address PAGE_TABLE_PADDR)
-	paddr_t* m_ptl4;
+	paddr_t  m_ptl4;
 
 	// Physical address of the next page allocated
 	paddr_t  m_next_page_alloc;
@@ -134,5 +140,26 @@ T Mmu::read(vaddr_t addr) {
 template<class T>
 void Mmu::write(vaddr_t addr, const T& value) {
 	write_mem(addr, &value, sizeof(T));
+}
+
+template<class T>
+T Mmu::readp(paddr_t addr) {
+	ASSERT(addr + sizeof(T) <= m_length, "OOB: 0x%lx", addr);
+	T value;
+	memcpy(&value, m_memory + addr, sizeof(T));
+	return value;
+}
+
+template <class T>
+void Mmu::writep(paddr_t addr, const T& value) {
+	ASSERT(addr + sizeof(T) <= m_length, "OOB: 0x%lx", addr);
+	memcpy(m_memory + addr, &value, sizeof(value));
+
+	// Set region as dirty
+	paddr_t p = addr;
+	while (p < addr + sizeof(T)) {
+		m_dirty_extra.push_back(addr & PTL1_MASK);
+		p += PAGE_SIZE - PAGE_OFFSET(p);
+	}
 }
 #endif

@@ -7,9 +7,15 @@ public:
 	// Range page walker
 	PageWalker(vaddr_t start, vsize_t len, Mmu& mmu);
 
-	vaddr_t  start();
-	vsize_t  len();
-	paddr_t* pte();
+	vaddr_t start();
+	vsize_t len();
+
+	// Physical address of the PTE of the current page
+	paddr_t pte();
+
+	// Content of `pte()`. Note the result is a physical address with some bits
+	// set corresponding to page flags
+	paddr_t pte_val();
 
 	// Current virtual address (virtual address of current page, with
 	// offset in case it is the first one)
@@ -29,8 +35,6 @@ public:
 	// Get and set current page flags
 	uint64_t flags();
 	void set_flags(uint64_t flags);
-	void add_flags(uint64_t flags);
-	void clear_flags(uint64_t flags);
 
 	// Alloc a frame for current page. Fail if it has already a frame
 	void alloc_frame(uint64_t flags);
@@ -53,9 +57,9 @@ private:
 	vsize_t  m_len;
 	Mmu&     m_mmu;
 	vsize_t  m_offset;
-	paddr_t* m_ptl3;
-	paddr_t* m_ptl2;
-	paddr_t* m_ptl1;
+	paddr_t  m_ptl3;
+	paddr_t  m_ptl2;
+	paddr_t  m_ptl1;
 	uint64_t m_ptl4_i;
 	uint64_t m_ptl3_i;
 	uint64_t m_ptl2_i;

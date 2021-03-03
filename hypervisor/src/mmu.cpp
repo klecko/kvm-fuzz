@@ -17,7 +17,7 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	, m_memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
 	                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
 	, m_length(mem_size)
-	, m_ptl4((paddr_t*)(m_memory + PAGE_TABLE_PADDR))
+	, m_ptl4(PAGE_TABLE_PADDR)
 	, m_next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
 	, m_next_mapping(MAPPINGS_START_ADDR)
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
@@ -166,9 +166,9 @@ paddr_t Mmu::alloc_frame() {
 	return ret;
 }
 
-paddr_t* Mmu::get_pte(vaddr_t vaddr) {
+paddr_t Mmu::get_pte_val(vaddr_t vaddr) {
 	PageWalker walker(vaddr, *this);
-	return walker.pte();
+	return walker.pte_val();
 }
 
 paddr_t Mmu::virt_to_phys(vaddr_t vaddr) {

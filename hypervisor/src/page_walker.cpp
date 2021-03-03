@@ -34,8 +34,12 @@ vaddr_t Mmu::PageWalker::len() {
 	return m_len;
 }
 
-paddr_t* Mmu::PageWalker::pte() {
-	return &m_ptl1[m_ptl1_i];
+paddr_t Mmu::PageWalker::pte() {
+	return m_ptl1 + m_ptl1_i*sizeof(paddr_t);
+}
+
+paddr_t Mmu::PageWalker::pte_val() {
+	return m_mmu.readp<paddr_t>(pte());
 }
 
 vsize_t Mmu::PageWalker::offset() {
@@ -47,8 +51,8 @@ vaddr_t Mmu::PageWalker::vaddr() {
 }
 
 paddr_t Mmu::PageWalker::paddr() {
-	ASSERT(*pte(), "Trying to translate not mapped vaddr: 0x%lx", vaddr());
-	return (*pte() & PTL1_MASK) + PAGE_OFFSET(vaddr());
+	ASSERT(pte_val(), "Trying to translate not mapped vaddr: 0x%lx", vaddr());
+	return (pte_val() & PTL1_MASK) + PAGE_OFFSET(vaddr());
 }
 
 vsize_t Mmu::PageWalker::page_size() {
@@ -59,37 +63,25 @@ vsize_t Mmu::PageWalker::page_size() {
 }
 
 uint64_t Mmu::PageWalker::flags() {
-	ASSERT(*pte(), "Trying to get flags of not mapped vaddr: 0x%lx", vaddr());
-	return PAGE_OFFSET(*pte()); // FIXME NX
+	ASSERT(pte_val(), "Trying to get flags of not mapped vaddr: 0x%lx", vaddr());
+	return PAGE_OFFSET(pte_val()); // FIXME NX
 }
 
 void Mmu::PageWalker::set_flags(uint64_t flags) {
-	ASSERT(*pte(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
+	ASSERT(pte_val(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
 	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
-	*pte() = (*pte() & PTL1_MASK) | flags;
-}
-
-void Mmu::PageWalker::add_flags(uint64_t flags) {
-	ASSERT(*pte(), "Trying to add flags to not mapped vaddr: 0x%lx", vaddr());
-	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
-	*pte() |= flags;
-}
-
-void Mmu::PageWalker::clear_flags(uint64_t flags) {
-	ASSERT(*pte(), "Trying to clear flags to not mapped vaddr: 0x%lx", vaddr());
-	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
-	*pte() &= ~flags;
+	m_mmu.writep(pte(), (pte_val() & PTL1_MASK) | flags);
 }
 
 void Mmu::PageWalker::alloc_frame(uint64_t flags) {
-	ASSERT(!*pte(), "vaddr already mapped: 0x%lx", vaddr());
-	*pte() = m_mmu.alloc_frame() | flags;
-	/* dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
-	          vaddr(), *pte() & PTL1_MASK, flags); */
+	ASSERT(!pte_val(), "vaddr already mapped 0x%lx: 0x%lx", vaddr(), pte_val());
+	m_mmu.writep(pte(), m_mmu.alloc_frame() | flags);
+	dbgprintf("Alloc frame: 0x%lx mapped to 0x%lx with flags 0x%lx\n",
+	          vaddr(), pte_val() & PTL1_MASK, flags);
 }
 
 bool Mmu::PageWalker::is_mapped() {
-	return *pte() != 0;
+	return pte_val() != 0;
 }
 
 bool Mmu::PageWalker::next() {
@@ -108,24 +100,27 @@ bool Mmu::PageWalker::next() {
 }
 
 void Mmu::PageWalker::update_ptl3() {
-	if (!m_mmu.m_ptl4[m_ptl4_i]) {
-		m_mmu.m_ptl4[m_ptl4_i] = m_mmu.alloc_frame() | FLAGS;
+	paddr_t p_ptl3 = m_mmu.m_ptl4 + m_ptl4_i * sizeof(paddr_t);
+	if (!m_mmu.readp<paddr_t>(p_ptl3)) {
+		m_mmu.writep(p_ptl3, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl3 = (paddr_t*)(m_mmu.m_memory + (m_mmu.m_ptl4[m_ptl4_i] & PTL1_MASK));
+	m_ptl3 = m_mmu.readp<paddr_t>(p_ptl3) & PTL1_MASK;
 }
 
 void Mmu::PageWalker::update_ptl2() {
-	if (!m_ptl3[m_ptl3_i]) {
-		m_ptl3[m_ptl3_i] = m_mmu.alloc_frame() | FLAGS;
+	paddr_t p_ptl2 = m_ptl3 + m_ptl3_i * sizeof(paddr_t);
+	if (!m_mmu.readp<paddr_t>(p_ptl2)) {
+		m_mmu.writep(p_ptl2, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl2 = (paddr_t*)(m_mmu.m_memory + (m_ptl3[m_ptl3_i] & PTL1_MASK));
+	m_ptl2 = m_mmu.readp<paddr_t>(p_ptl2) & PTL1_MASK;
 }
 
 void Mmu::PageWalker::update_ptl1() {
-	if (!m_ptl2[m_ptl2_i]) {
-		m_ptl2[m_ptl2_i] = m_mmu.alloc_frame() | FLAGS;
+	paddr_t p_ptl1 = m_ptl2 + m_ptl2_i * sizeof(paddr_t);
+	if (!m_mmu.readp<paddr_t>(p_ptl1)) {
+		m_mmu.writep(p_ptl1, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl1 = (paddr_t*)(m_mmu.m_memory + (m_ptl2[m_ptl2_i] & PTL1_MASK));
+	m_ptl1 = m_mmu.readp<paddr_t>(p_ptl1) & PTL1_MASK;
 }
 
 void Mmu::PageWalker::next_ptl4_entry() {
