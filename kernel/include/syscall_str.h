@@ -6,6 +6,7 @@
 extern const char* syscall_str[500];
 
 // cat /usr/include/x86_64-linux-gnu/asm/unistd_64.h | grep "__NR_" | awk '{ syscall = substr($2, 6); printf "\tsyscall_str[SYS_%s] = \"SYS_%s\";\n", syscall, syscall }'
+__attribute__((constructor))
 inline void init_syscall_str() {
 	syscall_str[SYS_read] = "SYS_read";
 	syscall_str[SYS_write] = "SYS_write";

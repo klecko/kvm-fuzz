@@ -16,7 +16,6 @@ void Kernel::init() {
 	// Init kernel stuff
 	register_syscall();
 	save_kernel_stack();
-	init_syscall_str();
 
 	printf("Hello from kernel\n");
 
