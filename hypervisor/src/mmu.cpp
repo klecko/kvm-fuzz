@@ -232,7 +232,7 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 
 	PageWalker pages(dst, len, *this);
 	do {
-		// Check write permissions, memcpy and mark page as dirty
+		// Check write permissions, perform memcpy and mark page as dirty
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "writing to not writable page %lx", pages.vaddr());
 		memcpy(
@@ -250,7 +250,7 @@ void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
 
 	PageWalker pages(addr, len, *this);
 	do {
-		// Check write permissions, memset and mark page as dirty
+		// Check write permissions, perform memset and mark page as dirty
 		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
 		       "memset to not writable page %lx", pages.vaddr());
 		memset(m_memory + pages.paddr(), c, pages.page_size());

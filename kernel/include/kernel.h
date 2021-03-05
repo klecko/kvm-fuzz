@@ -36,10 +36,13 @@ private:
 	// Files contents indexed by filename
 	static unordered_map<string, struct iovec> m_file_contents;
 
+	static void init_tss();
+	static void init_gdt();
+	static void init_idt();
+	static void register_syscall();
 	static void init_file_contents(size_t n);
 	static void wrmsr(unsigned int msr, uint64_t val);
 	static uint64_t rdmsr(unsigned int msr);
-	static void register_syscall();
 	static void syscall_entry();
 	static uint64_t _handle_syscall(uint64_t, uint64_t, uint64_t, uint64_t,
 	                                uint64_t, uint64_t);

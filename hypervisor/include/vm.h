@@ -21,6 +21,12 @@ struct file_t {
 
 class Vm {
 public:
+	enum RunEndReason {
+		Exit,
+		Breakpoint,
+		Crash,
+	};
+
 	Vm(vsize_t mem_size, const std::string& kernelpath,
 	   const std::string& filepath, const std::vector<std::string>& argv);
 
@@ -37,7 +43,7 @@ public:
 	// as a copy of `other`
 	void reset(const Vm& other, Stats& stats);
 
-	void run(Stats& stats);
+	RunEndReason run(Stats& stats);
 
 	void run_until(vaddr_t pc, Stats& stats);
 
@@ -52,6 +58,8 @@ public:
 	// is immediately copied.
 	void set_file(const std::string& filename, const std::string& content,
 	              bool check = false);
+
+	vaddr_t resolve_symbol(const std::string& symbol_name);
 
 	void dump_regs();
 	void dump_memory() const;

@@ -142,49 +142,29 @@ void Vm::setup_kvm() {
 	sregs.cr0  = CR0_PE | CR0_MP | CR0_ET| CR0_NE | CR0_WP | CR0_AM | CR0_PG;
 	sregs.efer = EFER_LME | EFER_LMA | EFER_SCE;
 
-	// Setup segments
-	// https://wiki.osdev.org/Global_Descriptor_Table
-	// https://wiki.osdev.org/GDT_Tutorial
+	// Setup dummy segments. This is needed so we start directly in long mode.
+	// However, this doesn't set the GDT. It will be properly set by the kernel
+	// inside the VM.
 	kvm_segment seg = {
 		.base     = 0,          // base address
 		.limit    = 0xffffffff, // limit
 		.selector = 0x8,        // index 1 (index 0 is null segment descriptor)
-		.type     = 11,         // execute, read, accessed, idk why ???
+		.type     = 11,         // read, execute, accessed
 		.present  = 1,          // bit P
-		.dpl      = 0,          // Descriptor Privilege Level. 3 = user mode
+		.dpl      = 0,          // Descriptor Privilege Level. 0 for kernel
 		.db       = 0,          // Default operand size / Big
 		.s        = 1,          // Descriptor type
 		.l        = 1,          // Long: 64-bit segment. db must be zero
-		.g        = 1           // Granularity: limit unit is byte and not page
+		.g        = 1           // Granularity: needs to be 1 here
 	};
 	sregs.cs = seg;
-	seg.type     = 3;    // read, write, accessed, idk why ???
+	seg.type     = 3;    // write, accessed
 	seg.selector = 0x10; // index 2
 	sregs.ds = sregs.es = sregs.fs = sregs.gs = sregs.ss = seg;
 	ioctl_chk(m_vcpu_fd, KVM_SET_SREGS, &sregs);
 
-	// Setup MSRs. I'd say MSR_STAR value is wrong, I just copy-pasted from
-	// somewhere but it also works if that entry is removed so idk
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*2;
-	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
-	memset(msrs, 0, sz);
-	msrs->nmsrs = 3;
-	msrs->entries[0] = {
-		.index = MSR_LSTAR, // Long Syscall TARget
-		.data = 0x515C411, //Mmu::SYSCALL_HANDLER_ADDR
-	};
-	msrs->entries[1] = {
-		.index = MSR_STAR, // legacy Syscall TARget
-		.data = 0x0020000800000000
-	};
-	msrs->entries[2] = {
-		.index = MSR_SYSCALL_MASK,
-		.data = 0x3f7fd5
-	};
-	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
-
 	// Setup cpuid
-	sz = sizeof(kvm_cpuid2) + sizeof(kvm_cpuid_entry2)*100;
+	size_t sz = sizeof(kvm_cpuid2) + sizeof(kvm_cpuid_entry2)*100;
 	kvm_cpuid2* cpuid = (kvm_cpuid2*)alloca(sz);
 	memset(cpuid, 0, sz);
 	cpuid->nent = 100;
@@ -333,22 +313,10 @@ psize_t Vm::memsize() const {
 }
 
 void Vm::reset(const Vm& other, Stats& stats) {
-	cycle_t cycles;
-
-	// Reset mmu
-	cycles = rdtsc2();
+	// Reset mmu, regs and sregs
 	stats.reset_pages += m_mmu.reset(other.m_mmu);
-	stats.reset1_cycles += rdtsc2() - cycles;
-
-	// Reset registers
-	cycles = rdtsc2();
 	memcpy(m_regs, other.m_regs, sizeof(*m_regs));
-	stats.reset2_cycles += rdtsc2() - cycles;
-
-	// Reset sregs
-	cycles = rdtsc2();
 	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
-	stats.reset3_cycles += rdtsc2() - cycles;
 
 	// Indicate we have dirtied registers
 	set_regs_dirty();
@@ -358,8 +326,9 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	m_breakpoints_original_bytes = other.m_breakpoints_original_bytes;
 }
 
-void Vm::run(Stats& stats) {
+Vm::RunEndReason Vm::run(Stats& stats) {
 	cycle_t cycles;
+	RunEndReason reason = RunEndReason::Exit;
 	m_running = true;
 
 	while (m_running) {
@@ -376,27 +345,28 @@ void Vm::run(Stats& stats) {
 				if (m_vcpu_run->io.direction == KVM_EXIT_IO_OUT &&
 					m_vcpu_run->io.port == 16)
 				{
+					// This will set m_running to false when kernel performs
+					// hc_exit
 					cycles = rdtsc2();
 					handle_hypercall();
-					//handle_syscall();
-					stats.syscall_cycles += rdtsc2() - cycles;
-					stats.vm_exits_sys++;
+					stats.hypercall_cycles += rdtsc2() - cycles;
+					stats.vm_exits_hc++;
 				} else {
 					vm_err("IO");
 				}
 				break;
 
 			case KVM_EXIT_DEBUG:
-				// TODO: VmExitReason?
 				/* printf("breakpoint hit\n");
 				dump_regs();
 				m_regs->rip += 1;
 				set_regs_dirty();
 				cout << endl;
 				break; */
-				stats.vm_exits_debug++;
 				m_running = false;
-				return;
+				stats.vm_exits_debug++;
+				reason = RunEndReason::Breakpoint;
+				break;
 
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
 				stats.vm_exits_cov++;
@@ -405,26 +375,37 @@ void Vm::run(Stats& stats) {
 
 			case KVM_EXIT_FAIL_ENTRY:
 				vm_err("KVM_EXIT_FAIL_ENTRY");
+				break;
 
 			case KVM_EXIT_INTERNAL_ERROR:
 				vm_err("KVM_EXIT_INTERNAL_ERROR");
+				break;
 
 			case KVM_EXIT_SHUTDOWN:
-				vm_err("KVM_EXIT_SHUTDOWN");
+				//vm_err("KVM_EXIT_SHUTDOWN");
+				printf("crash\n");
+				dump_regs();
+				m_running = false;
+				reason = RunEndReason::Crash;
+				break;
 
 			default:
 				vm_err("UNKNOWN EXIT " + to_string(m_vcpu_run->exit_reason));
 		}
 	}
+
+	return reason;
 }
 
 void Vm::run_until(vaddr_t pc, Stats& stats) {
 	set_breakpoint(pc);
-	run(stats);
+	RunEndReason reason = run(stats);
 	remove_breakpoint(pc);
 
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 		   m_regs->rip, pc);
+	ASSERT(reason == RunEndReason::Breakpoint, "run intil end reason: %d",
+	       reason);
 }
 
 void Vm::get_coverage() {
@@ -541,6 +522,13 @@ void Vm::set_file(const string& filename, const string& content, bool check) {
 		// kernel to do hc_set_file_buf.
 		file.guest_buf = 0;
 	};
+}
+
+vaddr_t Vm::resolve_symbol(const string& symbol_name) {
+	for (const symbol_t symbol : m_elf.symbols())
+		if (symbol.name == symbol_name)
+			return symbol.value;
+	ASSERT(false, "not found symbol: %s", symbol_name.c_str());
 }
 
 void Vm::dump_regs() {
