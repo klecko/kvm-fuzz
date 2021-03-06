@@ -454,6 +454,8 @@ void Vm::get_coverage() {
 	decoder_result_t ret = libxdc_decode(m_pt_decoder, buf, size);
 	ASSERT(ret == 0, "libxdc decode: %d", ret);
 
+	free(buf);
+
 	//printf("full %lu\n", size);
 #endif
 }
