@@ -28,36 +28,9 @@ void init_kvm() {
 #endif
 }
 
-int ioctl_create_vm() {
-	int fd = ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0);
-
-#ifdef ENABLE_KVM_DIRTY_LOG_RING
-	int max_size = ioctl_chk(fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
-	ASSERT(max_size, "kvm dirty log ring not available");
-
-	kvm_enable_cap cap = {
-		.cap = KVM_CAP_DIRTY_LOG_RING,
-		.args = {max_size}
-	};
-	ioctl_chk(fd, KVM_ENABLE_CAP, &cap);
-#endif
-
-	return fd;
-}
-
 Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
        const vector<string>& argv)
-	: m_vm_fd(ioctl_create_vm())
-	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
-	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
-		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
-#ifdef ENABLE_COVERAGE
-	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
-	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
-	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
-#endif
-	, m_regs(&m_vcpu_run->s.regs.regs)
-	, m_sregs(&m_vcpu_run->s.regs.sregs)
+	: m_vm_fd(create_vm())
 	, m_elf(filepath)
 	, m_kernel(kernelpath)
 	, m_interpreter(NULL)
@@ -69,17 +42,7 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 }
 
 Vm::Vm(const Vm& other)
-	: m_vm_fd(ioctl_create_vm())
-	, m_vcpu_fd(ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0))
-	, m_vcpu_run((kvm_run*)mmap(NULL, ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0),
-		                        PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, 0))
-#ifdef ENABLE_COVERAGE
-	, m_vmx_pt_fd(ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0))
-	, m_vmx_pt((uint8_t*)mmap(NULL, ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0),
-	                          PROT_READ, MAP_SHARED, m_vmx_pt_fd, 0))
-#endif
-	, m_regs(&m_vcpu_run->s.regs.regs)
-	, m_sregs(&m_vcpu_run->s.regs.sregs)
+	: m_vm_fd(create_vm())
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
 	, m_interpreter(other.m_interpreter)
@@ -111,6 +74,54 @@ Vm::Vm(const Vm& other)
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
+}
+
+int Vm::create_vm() {
+	m_vm_fd = ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0);
+#ifdef ENABLE_KVM_DIRTY_LOG_RING
+	int max_size = ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
+	ASSERT(max_size, "kvm dirty log ring not available");
+
+	kvm_enable_cap cap = {
+		.cap = KVM_CAP_DIRTY_LOG_RING,
+		.args = {max_size}
+	};
+	ioctl_chk(m_vm_fd, KVM_ENABLE_CAP, &cap);
+#endif
+
+	m_vcpu_fd = ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0);
+
+	size_t vcpu_run_size = ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
+	m_vcpu_run = (kvm_run*)mmap(NULL, vcpu_run_size, PROT_READ|PROT_WRITE,
+	                            MAP_SHARED, m_vcpu_fd, 0);
+	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap vcpu_run");
+
+#ifdef ENABLE_COVERAGE
+	// VMX PT
+	m_vmx_pt_fd = ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0);
+	size_t vmx_pt_size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0);
+	m_vmx_pt = (uint8_t*)mmap(NULL, vmx_pt_size, PROT_READ|PROT_WRITE,
+	                          MAP_SHARED, m_vmx_pt_fd, 0);
+	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
+	m_vmx_pt_bitmap = malloc(COVERAGE_BITMAP_SIZE);
+
+	// libxdc
+	typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
+	typedef void  (*bb_callback_t)(void*, uint64_t, uint64_t);
+	typedef void  (*edge_callback_t)(void*, uint64_t, uint64_t);
+	uint64_t filter[4][2] = {0};
+	filter[0][0] = 0x400000;
+	filter[0][1] = 0x410000;
+	m_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
+	                           this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
+	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, NULL);
+	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
+	//libxdc_enable_tracing(decoder);
+#endif
+
+	m_regs  = &m_vcpu_run->s.regs.regs;
+	m_sregs = &m_vcpu_run->s.regs.sregs;
+	return m_vm_fd;
 }
 
 void Vm::init() {
@@ -408,9 +419,43 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 	       reason);
 }
 
+void* Vm::fetch_page(uint64_t page, bool* success) {
+	thread_local uint64_t last_page = 0;
+	thread_local void* last_result = NULL;
+	page &= PTL1_MASK;
+	//printf("fetching 0x%lx\n", page);
+
+	*success = true;
+	if (page == last_page)
+		return last_result;
+	last_page = page;
+	last_result = m_mmu.get(page);
+
+	return last_result;
+}
+
+void test_bb(void*, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+	printf("bb callback: %lx %lx %lx\n", arg1, arg2, arg3);
+}
+
+void test_edge(void*, uint64_t arg1, uint64_t arg2) {
+	printf("edge callback: %lx %lx\n", arg1, arg2);
+}
+
 void Vm::get_coverage() {
-	//size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
+#ifdef ENABLE_COVERAGE
+	//printf("Getting coverage!\n");
+	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
+
+	uint8_t* buf = (uint8_t*)malloc(size+1);
+	memcpy(buf, m_vmx_pt, size);
+	buf[size] = 0x55;
+
+	decoder_result_t ret = libxdc_decode(m_pt_decoder, buf, size);
+	ASSERT(ret == 0, "libxdc decode: %d", ret);
+
 	//printf("full %lu\n", size);
+#endif
 }
 
 #ifdef HW_BPS

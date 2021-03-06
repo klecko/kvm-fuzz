@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <sys/uio.h>
+#include <libxdc.h>
 #include "stats.h"
 #include "mmu.h"
 #include "common.h"
@@ -68,15 +69,20 @@ public:
 	void dump_memory(psize_t len) const;
 
 private:
+	static const size_t COVERAGE_BITMAP_SIZE = 0x10000;
+
 	int m_vm_fd;
 	int m_vcpu_fd;
 	kvm_run*   m_vcpu_run;
 #ifdef ENABLE_COVERAGE
 	int m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
+	void*      m_vmx_pt_bitmap;
+	libxdc_t*  m_pt_decoder;
 #endif
 	kvm_regs*  m_regs;
 	kvm_sregs* m_sregs;
+
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
 	ElfParser* m_interpreter;
@@ -91,11 +97,14 @@ private:
 
 	FaultInfo m_fault;
 
+	int create_vm();
+	void setup_vmx_pt();
 	void setup_kvm();
 	void load_elf();
 	void load_kernel();
 	void set_regs_dirty();
 	void set_sregs_dirty();
+	void* fetch_page(uint64_t page, bool* success);
 	void get_coverage();
 	void vm_err(const std::string& err);
 

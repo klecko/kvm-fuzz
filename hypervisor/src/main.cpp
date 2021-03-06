@@ -131,8 +131,8 @@ int main(int argc, char** argv) {
 	Vm vm(
 		8 * 1024 * 1024,
 		"./kernel/kernel",
-		"../test_bins/target",
-		{"./target"}
+		"../test_bins/readelf",
+		{"./readelf", "-l", "test"}
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
