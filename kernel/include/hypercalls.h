@@ -4,7 +4,16 @@
 #include <string>
 #include <linux/limits.h>
 #include "common.h"
-#include "aux.h"
+
+// PTE bits, needed for argument `page_flags` in `hc_mmap`
+#define PDE64_PRESENT  (1 << 0)
+#define PDE64_RW       (1 << 1)
+#define PDE64_USER     (1 << 2)
+#define PDE64_ACCESSED (1 << 5)
+#define PDE64_DIRTY    (1 << 6)
+#define PDE64_PS       (1 << 7)
+#define PDE64_G        (1 << 8)
+#define PDE64_NX       0 // (1LU << 63) // TODO
 
 struct VmInfo {
 	char elf_path[PATH_MAX];

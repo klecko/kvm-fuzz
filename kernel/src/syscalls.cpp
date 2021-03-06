@@ -1,9 +1,9 @@
 #define _GNU_SOURCE
+#include "syscalls.h"
 #include "common.h"
-#include "libcpp.h"
 #include "kernel.h"
-#include "hypercalls.h"
 #include "syscall_str.h"
+#include "asm.h"
 
 #include <string>
 #include <unistd.h>
@@ -25,7 +25,7 @@ using namespace std;
 
 const char* syscall_str[500];
 
-uint64_t Kernel::do_sys_arch_prctl(int code, unsigned long addr) {
+static uint64_t do_sys_arch_prctl(int code, unsigned long addr) {
 	uint64_t ret = 0;
 	switch (code) {
 		case ARCH_SET_FS:
@@ -43,8 +43,8 @@ uint64_t Kernel::do_sys_arch_prctl(int code, unsigned long addr) {
 	return ret;
 }
 
-uint64_t Kernel::do_sys_openat(int dirfd, const char* pathname, int flags,
-                               mode_t mode)
+static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
+                              mode_t mode)
 {
 	string pathname_s(pathname);
 	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
@@ -63,7 +63,7 @@ uint64_t Kernel::do_sys_openat(int dirfd, const char* pathname, int flags,
 	return fd;
 }
 
-uint64_t Kernel::do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
+static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 	TODO
 	/* ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
 	uint64_t ret  = 0;
@@ -80,12 +80,12 @@ uint64_t Kernel::do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 	return ret; */
 }
 
-uint64_t Kernel::do_sys_read(int fd, void* buf, size_t count) {
+static uint64_t do_sys_read(int fd, void* buf, size_t count) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	return m_open_files[fd].read(buf, count);
 }
 
-uint64_t Kernel::do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
+static uint64_t do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	ASSERT(offset >= 0, "negative offset on fd %d: %ld", fd, offset);
 
@@ -98,29 +98,29 @@ uint64_t Kernel::do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
 	return ret;
 }
 
-uint64_t Kernel::do_sys_access(const char* pathname, int mode) {
+static uint64_t do_sys_access(const char* pathname, int mode) {
 	TODO
 }
 
-uint64_t Kernel::do_sys_write(int fd, const void* buf, size_t count) {
+static uint64_t do_sys_write(int fd, const void* buf, size_t count) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	return m_open_files[fd].write(buf, count);
 }
 
-uint64_t Kernel::do_sys_stat(const char* pathname, struct stat* statbuf) {
+static uint64_t do_sys_stat(const char* pathname, struct stat* statbuf) {
 	string pathname_s(pathname);
 	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
 	stat_regular(statbuf, m_file_contents[pathname_s].iov_len);
 	return 0;
 }
 
-uint64_t Kernel::do_sys_fstat(int fd, struct stat* statbuf) {
+static uint64_t do_sys_fstat(int fd, struct stat* statbuf) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	m_open_files[fd].stat(statbuf);
 	return 0;
 }
 
-uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
+static uint64_t do_sys_lseek(int fd, off_t offset, int whence) {
 	// We use signed types here, as the syscall does, but we use unsigned types
 	// in File. The syscall fails if the resulting offset is negative, so
 	// there isn't any problem about that
@@ -149,14 +149,14 @@ uint64_t Kernel::do_sys_lseek(int fd, off_t offset, int whence) {
 	return ret;
 }
 
-uint64_t Kernel::do_sys_close(int fd) {
+static uint64_t do_sys_close(int fd) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	//m_open_files.erase(fd); // ADAPTACIÓN STL
 	m_open_files.erase({fd, m_open_files[fd]});
 	return 0;
 }
 
-uint64_t Kernel::do_sys_brk(void* addr) {
+static uint64_t do_sys_brk(void* addr) {
 	dbgprintf("trying to set brk to 0x%lx\n", addr);
 	if (addr < m_min_brk)
 		return (uint64_t)m_brk;
@@ -176,7 +176,7 @@ uint64_t Kernel::do_sys_brk(void* addr) {
 	return (uint64_t)m_brk;
 }
 
-uint64_t Kernel::do_sys_uname(struct utsname* buf) {
+static uint64_t do_sys_uname(struct utsname* buf) {
 	struct utsname uname = {
 		"Linux",                                              // sysname
 		"pep1t0",                                             // nodename
@@ -188,8 +188,8 @@ uint64_t Kernel::do_sys_uname(struct utsname* buf) {
 	return 0;
 }
 
-uint64_t Kernel::do_sys_readlink(const char* pathname, char* buf,
-                                 size_t bufsize)
+static uint64_t do_sys_readlink(const char* pathname, char* buf,
+                                size_t bufsize)
 {
 	string pathname_s(pathname);
 	ASSERT(pathname_s == "/proc/self/exe", "not implemented %s", pathname);
@@ -200,13 +200,13 @@ uint64_t Kernel::do_sys_readlink(const char* pathname, char* buf,
 	return size;
 }
 
-uint64_t Kernel::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
+static uint64_t do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	TODO
 	return 0;
 }
 
-uint64_t Kernel::do_sys_fcntl(int fd, int cmd, unsigned long arg) {
+static uint64_t do_sys_fcntl(int fd, int cmd, unsigned long arg) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	File& file = m_open_files[fd];
 	uint64_t ret = 0;
@@ -231,8 +231,8 @@ uint64_t Kernel::do_sys_fcntl(int fd, int cmd, unsigned long arg) {
 	return ret;
 }
 
-uint64_t Kernel::do_sys_mmap(void* addr, size_t length, int prot, int flags,
-	                         int fd, off_t offset)
+static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
+	                        int fd, off_t offset)
 {
 	// We'll remove this checks little by little :)
 	ASSERT(fd == -1, "fd %d", fd);
@@ -258,13 +258,13 @@ uint64_t Kernel::do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	return m_mmu.alloc(length, mmu_flags); */
 }
 
-uint64_t Kernel::do_sys_munmap(void* addr, size_t length) {
-	// TODO
+static uint64_t do_sys_munmap(void* addr, size_t length) {
+	printf("TODO: munmap\n");
 	return 0;
 }
 
-uint64_t Kernel::do_sys_mprotect(void* addr, size_t length, int prot) {
-	TODO;
+static uint64_t do_sys_mprotect(void* addr, size_t length, int prot) {
+	printf("TODO: mprotect\n");
 	/* ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "mprotect todo");
 	uint64_t flags = 0;
 	if (prot & PROT_WRITE)
@@ -276,9 +276,9 @@ uint64_t Kernel::do_sys_mprotect(void* addr, size_t length, int prot) {
 	return 0;
 }
 
-uint64_t Kernel::do_sys_prlimit(pid_t pid, int resource,
-                                const struct rlimit* new_limit,
-                                struct rlimit* old_limit)
+static uint64_t do_sys_prlimit(pid_t pid, int resource,
+                               const struct rlimit* new_limit,
+                               struct rlimit* old_limit)
 {
 	ASSERT(pid == 0, "TODO pid %d", pid);
 	ASSERT(new_limit == NULL, "TODO set limit");
@@ -295,7 +295,7 @@ uint64_t Kernel::do_sys_prlimit(pid_t pid, int resource,
 	return 0;
 }
 
-uint64_t Kernel::do_sys_sysinfo(struct sysinfo* info) {
+static uint64_t do_sys_sysinfo(struct sysinfo* info) {
 	struct sysinfo sys = {
 		.uptime    = 1234,
 		.loads     = {102176, 105792, 94720},
@@ -324,9 +324,8 @@ uint64_t Kernel::do_sys_sysinfo(struct sysinfo* info) {
 	}
 	printf("total: %d\n", sum);
 } */
-
-uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                                uint64_t arg3, uint64_t arg4, uint64_t arg5)
+uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
+                        uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
 	dbgprintf("--> syscall: %s\n", syscall_str[nr]);
 	uint64_t ret = 0;
@@ -392,7 +391,7 @@ uint64_t Kernel::handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t a
 			ret = do_sys_munmap((void*)arg0, arg1);
 			break;
 		case SYS_mprotect:
-			ret = 0; // TODO
+			ret = do_sys_mprotect((void*)arg0, arg1, arg2);
 			break;
 		case SYS_fstat:
 			ret = do_sys_fstat(arg0, (struct stat*)arg1);
