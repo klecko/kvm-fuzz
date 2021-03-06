@@ -1,5 +1,5 @@
-#ifndef _IDT_GDT_H
-#define _IDT_GDT_H
+#ifndef _GDT_H
+#define _GDT_H
 
 #include "common.h"
 

@@ -10,7 +10,7 @@ struct InterruptFrame {
 };
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
-	// Default interrupt handler
+	// Default interrupt handler, called by default ISRs
 	printf("Interrupt %d at 0x%lx\n", interrupt, frame->rip);
 	TODO
 }

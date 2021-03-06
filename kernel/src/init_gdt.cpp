@@ -2,7 +2,7 @@
 #include "gdt.h"
 #include "tss.h"
 
-static TSSEntry tss;
+static TSSEntry g_tss;
 static GlobalDescriptor g_gdt[N_GDT_ENTRIES];
 
 void init_tss() {
@@ -11,12 +11,12 @@ void init_tss() {
 	static_assert(sizeof(TSSEntry) == 104);
 
 	// Stack used when switching from ring3 to ring0 because of an interruption
-	tss.rsp0 = (uint64_t)kmalloc(0x2000) + 0x2000;
+	g_tss.rsp0 = (uint64_t)kmalloc(0x2000) + 0x2000;
 
 	// Stack used when an exception occurs in ring 0
 	// (requires ist field in IDT to be 1) TODO
-	tss.ist1 = (uint64_t)kmalloc(0x2000) + 0x2000;
-	tss.iopb = sizeof(TSSEntry);
+	g_tss.ist1 = (uint64_t)kmalloc(0x2000) + 0x2000;
+	g_tss.iopb = sizeof(TSSEntry);
 }
 
 void init_gdt() {
@@ -43,7 +43,7 @@ void init_gdt() {
 	// TSS, offset 0x28. Ugly memcpy because TSSDescriptor is twice the size of
 	// GlobalDescriptor
 	TSSDescriptor tss_descriptor;
-	tss_descriptor.set_base((uint64_t)&tss);
+	tss_descriptor.set_base((uint64_t)&g_tss);
 	memcpy(&g_gdt[5], &tss_descriptor, sizeof(tss_descriptor));
 
 	GDTPtr gdt_ptr = {

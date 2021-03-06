@@ -3,9 +3,9 @@
 #include "hypercalls.h"
 #include <sys/mman.h>
 
-void* next_alloc = NULL;
-size_t remaining = 0;
 void* kmalloc(size_t size) {
+	static void* next_alloc = NULL;
+	static size_t remaining = 0;
 	size_t to_alloc = (size*2 + 0xFFF) & ~0xFFF;
 	if (next_alloc == NULL) {
 		// Initial allocation

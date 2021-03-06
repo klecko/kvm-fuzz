@@ -13,9 +13,9 @@ defaultISR %+ i:
 %assign i i+1
 %endrep
 
-; Vector of defaultISRS
-global _defaultISRS
-_defaultISRS:
+; Vector of defaultISRs
+global _defaultISRs
+_defaultISRs:
 %assign i 0
 %rep 256
 	dq defaultISR %+ i

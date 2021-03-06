@@ -8,11 +8,11 @@ void init_idt() {
 	static_assert(sizeof(InterruptDescriptor) == 16);
 
 	// These are defined in isrs.asm, and they just call handle_interrupt.
-	extern uint64_t _defaultISRS;
-	uint64_t* defaultISRS = &_defaultISRS;
+	extern uint64_t _defaultISRs;
+	uint64_t* defaultISRs = &_defaultISRs;
 	for (size_t i = 0; i < 256; i++) {
 		g_idt[i].set_present();
-		g_idt[i].set_offset(defaultISRS[i]);
+		g_idt[i].set_offset(defaultISRs[i]);
 		g_idt[i].set_dpl(3);
 		if (i < 32)
 			g_idt[i].set_type(InterruptDescriptor::Type::Trap);
