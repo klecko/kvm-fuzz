@@ -9,7 +9,7 @@
 #include "mmu.h"
 #include "common.h"
 #include "kvm_aux.h"
-
+#include "fault.h"
 
 void init_kvm();
 
@@ -25,6 +25,7 @@ public:
 		Exit,
 		Breakpoint,
 		Crash,
+		Unknown = -1,
 	};
 
 	Vm(vsize_t mem_size, const std::string& kernelpath,
@@ -38,6 +39,7 @@ public:
 	void init();
 
 	psize_t memsize() const;
+	FaultInfo fault() const;
 
 	// Reset Vm state to `other`, given that current Vm has been constructed
 	// as a copy of `other`
@@ -87,6 +89,8 @@ private:
 	// on startup
 	std::unordered_map<std::string, file_t> m_file_contents;
 
+	FaultInfo m_fault;
+
 	void setup_kvm();
 	void load_elf();
 	void load_kernel();
@@ -95,13 +99,14 @@ private:
 	void get_coverage();
 	void vm_err(const std::string& err);
 
-	void handle_hypercall();
+	void handle_hypercall(RunEndReason&);
 	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
 	void do_hc_set_file_buf(size_t n, vaddr_t buf_addr);
+	void do_hc_fault(vaddr_t fault_info_addr);
 	void do_hc_end_run();
 
 	/* void handle_syscall();

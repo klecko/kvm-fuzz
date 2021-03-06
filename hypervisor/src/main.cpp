@@ -10,7 +10,7 @@ using namespace std;
 void print_stats(const Stats& stats, const Corpus& corpus) {
 	chrono::duration<double> elapsed;
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
-	uint64_t cases, corpus_n;
+	uint64_t cases, corpus_n, crashes, unique_crashes;
 	double fcps, run_time, reset_time, hypercall_time, corpus_mem,
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
 		   reset_pages, vm_exits, vm_exits_hc,
@@ -19,8 +19,10 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		this_thread::sleep_for(chrono::seconds(1));
 		elapsed        = chrono::steady_clock::now() - start;
 		cases          = stats.cases;
-		fcps           = (double)cases / elapsed.count();
 		corpus_n       = corpus.size();
+		crashes        = stats.crashes;
+		unique_crashes = corpus.unique_crashes();
+		fcps           = (double)cases / elapsed.count();
 		corpus_mem     = (double)corpus.memsize() / 1024;
 		vm_exits       = (double)stats.vm_exits / stats.cases;
 		vm_exits_hc    = (double)stats.vm_exits_hc / stats.cases;
@@ -37,8 +39,10 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		mut2_time      = (double)stats.mut2_cycles / stats.total_cycles;
 
 		// Free stats (no rdtsc)
-		printf("[%.3f] cases: %lu, fcps: %.3f, corpus: %lu/%.3fKB\n",
-		       elapsed.count(), cases, fcps, corpus_n, corpus_mem);
+		printf("[%.3f] cases: %lu, fcps: %.3f, corpus: %lu/%.3fKB, "
+		       "unique crashes: %lu (total: %lu)\n",
+		       elapsed.count(), cases, fcps, corpus_n, corpus_mem,
+			   unique_crashes, crashes);
 		printf("\tvm exits: %.3f (hc: %.3f, cov: %.3f, debug: %.3f), "
 		       "reset pages: %.3f\n",
 		       vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug,
@@ -92,11 +96,10 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			local_stats.cases++;
 			local_stats.run_cycles += rdtsc1() - cycles;
 
-			if (reason == Vm::RunEndReason::Exit) {
-
-			} else if (reason == Vm::RunEndReason::Crash) {
-				//corpus.report_crash(id, runner.reg)
-			} else {
+			if (reason == Vm::RunEndReason::Crash) {
+				stats.crashes++;
+				corpus.report_crash(id, runner.fault());
+			} else if (reason != Vm::RunEndReason::Exit) {
 				die("unexpected RunEndReason: %d\n", reason);
 			}
 

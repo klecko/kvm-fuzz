@@ -19,6 +19,7 @@ string read_file(const string& filepath) {
 
 Corpus::Corpus(int nthreads, const string& folder)
 	: m_lock_corpus(false)
+	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
 {
 	// Try to open the directory
@@ -77,6 +78,10 @@ size_t Corpus::max_input_size() const {
 	return m_max_input_size;
 }
 
+size_t Corpus::unique_crashes() const {
+	return m_crashes.size();
+}
+
 const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	// Copy a random input to slot `id`, mutate it and return a
 	// constant reference to it
@@ -90,6 +95,25 @@ const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	mutate_input(id, rng);
 	stats.mut2_cycles += rdtsc2() - cycles;
 	return m_mutated_inputs[id];
+}
+
+void Corpus::report_crash(int id, const FaultInfo& fault) {
+	// Try to insert fault information into our set
+	while (m_lock_crashes.test_and_set());
+	bool inserted = m_crashes.insert(fault).second;
+	m_lock_crashes.clear();
+
+	// If it was new, print fault information and dump input file to disk
+	if (inserted) {
+		cout << fault << endl;
+		ostringstream filename;
+		filename << fault.type_str() << "_0x" << hex << fault.rip << "_0x"
+		         << fault.fault_addr;
+		ofstream ofs("./crashes/" + filename.str());
+		ofs << m_mutated_inputs[id];
+		ERROR_ON(!ofs.good(), "Error saving crash file to disk");
+		ofs.close();
+	}
 }
 
 void Corpus::add_input(const string& new_input){

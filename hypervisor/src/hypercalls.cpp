@@ -15,6 +15,7 @@ enum Hypercall : size_t {
 	GetFileLen,
 	GetFileName,
 	SetFileBuf,
+	Fault,
 	EndRun,
 };
 
@@ -91,7 +92,11 @@ void Vm::do_hc_set_file_buf(size_t n, vaddr_t buf_addr) {
 	dbgprintf("kernel set buf addr for file %s: 0x%lx\n", it->first.c_str(), buf_addr);
 }
 
-void Vm::handle_hypercall() {
+void Vm::do_hc_fault(vaddr_t fault_addr) {
+	m_fault = m_mmu.read<FaultInfo>(fault_addr);
+}
+
+void Vm::handle_hypercall(RunEndReason& reason) {
 	uint64_t ret = 0;
 	switch (m_regs->rax) {
 		case Hypercall::Test:
@@ -117,8 +122,14 @@ void Vm::handle_hypercall() {
 		case Hypercall::SetFileBuf:
 			do_hc_set_file_buf(m_regs->rdi, m_regs->rsi);
 			break;
+		case Hypercall::Fault:
+			do_hc_fault(m_regs->rdi);
+			m_running = false;
+			reason = RunEndReason::Crash;
+			break;
 		case Hypercall::EndRun:
 			m_running = false;
+			reason = RunEndReason::Exit;
 			return;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);

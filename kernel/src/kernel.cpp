@@ -109,19 +109,20 @@ void Kernel::init_gdt() {
 	printf("GDT set\n");
 }
 
-void test_handler() {
-	printf("hello world\n");
-	hlt();
-}
-
 void Kernel::init_idt() {
 	static_assert(sizeof(InterruptDescriptor) == 16);
-	for (size_t i = 0; i < N_IDT_ENTRIES; i++) {
-		g_idt[i].set_offset(test_handler);
-		g_idt[i].set_selector(SEGMENT_SELECTOR_KCODE);
-		g_idt[i].set_dpl(3);
+	// Defined in isrs.asm. Those ISRS just call Kernel::handle_interrupt or
+	// Kernel::handle_exception
+	extern uint64_t _isrs;
+	uint64_t* isrs = &_isrs;
+	for (size_t i = 0; i < 256; i++) {
 		g_idt[i].set_present();
-		g_idt[i].set_type(InterruptDescriptor::Type::Interrupt);
+		g_idt[i].set_offset(isrs[i]);
+		g_idt[i].set_dpl(3);
+		if (i < 32)
+			g_idt[i].set_type(InterruptDescriptor::Type::Trap);
+		else
+			g_idt[i].set_type(InterruptDescriptor::Type::Interrupt);
 	}
 
 	IDTR idtr = {
@@ -154,6 +155,16 @@ uint64_t Kernel::rdmsr(unsigned int msr) {
 		: "memory"
 	);
 	return ((uint64_t)hi << 32) | lo;
+}
+
+uint64_t Kernel::rdCR2() {
+	uint64_t val;
+	asm volatile(
+		"mov %0, cr2"
+		: "=r" (val)
+		: :
+	);
+	return val;
 }
 
 void Kernel::register_syscall() {
@@ -271,4 +282,55 @@ uint64_t Kernel::_handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
 {
 	register int nr asm("eax");
 	return Kernel::handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5);
+}
+
+
+void Kernel::handle_exception(int exception, InterruptFrame* frame,
+                              uint64_t error_code)
+{
+	dbgprintf("Exception: %d\n", exception);
+	switch (exception) {
+		case ExceptionNumber::PageFault:
+			handle_page_fault(frame, error_code);
+			break;
+
+		default:
+			ASSERT(false, "Not handled exception: %d", exception);
+	}
+}
+
+void Kernel::handle_interrupt(int interrupt, InterruptFrame* frame) {
+	printf("Interrupt: %d\n", interrupt);
+	printf("%lx %lx\n", frame->rip, frame->cs);
+	TODO
+}
+
+void Kernel::handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
+	bool present = error_code & (1 << 0);
+	bool write   = error_code & (1 << 1);
+	bool user    = error_code & (1 << 2);
+	bool execute = error_code & (1 << 4);
+	uint64_t fault_addr = rdCR2();
+	ASSERT(user, "woops, kernel PF. addr: 0x%lx, present: %d, write: %d, ex: %d",
+	       fault_addr, present, write, execute);
+
+	FaultInfo fault = {
+		.rip = frame->rip,
+		.fault_addr = fault_addr
+	};
+	if (present)
+		if (execute)
+			fault.type = FaultInfo::Type::Exec;
+		else
+			fault.type = (write ? FaultInfo::Type::Write :
+			                      FaultInfo::Type::Read);
+	else
+		if (execute)
+			fault.type = FaultInfo::Type::OutOfBoundsExec;
+		else
+			fault.type = (write ? FaultInfo::Type::OutOfBoundsWrite :
+			                      FaultInfo::Type::OutOfBoundsRead);
+
+	// This won't return
+	hc_fault(&fault);
 }

@@ -11,6 +11,7 @@ enum Hypercall : size_t {
 	GetFileLen,
 	GetFileName,
 	SetFileBuf,
+	Fault,
 	EndRun,
 };
 
@@ -86,6 +87,11 @@ void hc_get_file_name(size_t n, char* buf) {
 __attribute__((naked))
 void hc_set_file_buf(size_t n, void* buf) {
 	hypercall(Hypercall::SetFileBuf);
+}
+
+__attribute__((naked))
+void hc_fault(FaultInfo* fault) {
+	hypercall(Hypercall::Fault);
 }
 
 __attribute__((naked))

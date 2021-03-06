@@ -312,6 +312,10 @@ psize_t Vm::memsize() const {
 	return m_mmu.size();
 }
 
+FaultInfo Vm::fault() const {
+	return m_fault;
+}
+
 void Vm::reset(const Vm& other, Stats& stats) {
 	// Reset mmu, regs and sregs
 	stats.reset_pages += m_mmu.reset(other.m_mmu);
@@ -328,7 +332,7 @@ void Vm::reset(const Vm& other, Stats& stats) {
 
 Vm::RunEndReason Vm::run(Stats& stats) {
 	cycle_t cycles;
-	RunEndReason reason = RunEndReason::Exit;
+	RunEndReason reason = RunEndReason::Unknown;
 	m_running = true;
 
 	while (m_running) {
@@ -345,10 +349,10 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				if (m_vcpu_run->io.direction == KVM_EXIT_IO_OUT &&
 					m_vcpu_run->io.port == 16)
 				{
-					// This will set m_running to false when kernel performs
-					// hc_exit
+					// This will change `reason` in case it sets `m_running`
+					// to false
 					cycles = rdtsc2();
-					handle_hypercall();
+					handle_hypercall(reason);
 					stats.hypercall_cycles += rdtsc2() - cycles;
 					stats.vm_exits_hc++;
 				} else {
@@ -364,8 +368,8 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				cout << endl;
 				break; */
 				m_running = false;
-				stats.vm_exits_debug++;
 				reason = RunEndReason::Breakpoint;
+				stats.vm_exits_debug++;
 				break;
 
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
@@ -382,11 +386,7 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				break;
 
 			case KVM_EXIT_SHUTDOWN:
-				//vm_err("KVM_EXIT_SHUTDOWN");
-				printf("crash\n");
-				dump_regs();
-				m_running = false;
-				reason = RunEndReason::Crash;
+				vm_err("KVM_EXIT_SHUTDOWN");
 				break;
 
 			default:

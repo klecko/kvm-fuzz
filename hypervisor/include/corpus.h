@@ -1,8 +1,10 @@
 #include <vector>
+#include <unordered_set>
 #include <string>
 #include <atomic>
 #include <stats.h>
 #include "common.h"
+#include "fault.h"
 
 std::string read_file(const std::string& filepath);
 
@@ -44,17 +46,25 @@ public:
 	size_t size() const;
 	size_t memsize() const;
 	size_t max_input_size() const;
+	size_t unique_crashes() const;
 
 	// Get a new mutated input, which will be a constant reference to
 	// `mutated_inputs[id]
 	const std::string& get_new_input(int id, Rng& rng, Stats& stats);
+
+	// Report a new crash
+	void report_crash(int id, const FaultInfo& fault);
 
 private:
 	// Corpus and its lock
 	std::vector<std::string> m_corpus;
 	std::atomic_flag m_lock_corpus;
 
-	// Vector with one mutated input for each thread
+	// Unique crashes and its lock
+	std::unordered_set<FaultInfo> m_crashes;
+	std::atomic_flag m_lock_crashes;
+
+	// Vector with one mutated input for each thread. No need to lock
 	std::vector<std::string> m_mutated_inputs;
 
 	// Max input size, used in expand mutation

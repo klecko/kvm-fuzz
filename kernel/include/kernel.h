@@ -10,6 +10,13 @@
 
 #define unordered_map map
 
+struct InterruptFrame {
+	uint64_t rip;
+	uint64_t cs;
+	uint64_t rflags;
+	uint64_t rsp;
+};
+
 class Kernel {
 public:
 	static void init();
@@ -43,6 +50,15 @@ private:
 	static void init_file_contents(size_t n);
 	static void wrmsr(unsigned int msr, uint64_t val);
 	static uint64_t rdmsr(unsigned int msr);
+	static uint64_t rdCR2();
+
+	// Interrupts stuff
+	static void handle_exception(int exception, InterruptFrame* frame,
+	                             uint64_t error_code);
+	static void handle_interrupt(int interrupt, InterruptFrame* frame);
+	static void handle_page_fault(InterruptFrame* frame, uint64_t error_code);
+
+	// Syscall stuff
 	static void syscall_entry();
 	static uint64_t _handle_syscall(uint64_t, uint64_t, uint64_t, uint64_t,
 	                                uint64_t, uint64_t);
