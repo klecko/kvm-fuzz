@@ -113,17 +113,20 @@ void Kernel::init_idt() {
 	static_assert(sizeof(InterruptDescriptor) == 16);
 	// Defined in isrs.asm. Those ISRS just call Kernel::handle_interrupt or
 	// Kernel::handle_exception
-	extern uint64_t _isrs;
-	uint64_t* isrs = &_isrs;
+	extern uint64_t _defaultISRS;
+	uint64_t* defaultISRS = &_defaultISRS;
 	for (size_t i = 0; i < 256; i++) {
 		g_idt[i].set_present();
-		g_idt[i].set_offset(isrs[i]);
+		g_idt[i].set_offset(defaultISRS[i]);
 		g_idt[i].set_dpl(3);
 		if (i < 32)
 			g_idt[i].set_type(InterruptDescriptor::Type::Trap);
 		else
 			g_idt[i].set_type(InterruptDescriptor::Type::Interrupt);
 	}
+
+	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)_handle_page_fault);
+	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)_handle_breakpoint);
 
 	IDTR idtr = {
 		.size   = sizeof(g_idt) - 1,
@@ -284,25 +287,22 @@ uint64_t Kernel::_handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
 	return Kernel::handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
-
-void Kernel::handle_exception(int exception, InterruptFrame* frame,
-                              uint64_t error_code)
-{
-	dbgprintf("Exception: %d\n", exception);
-	switch (exception) {
-		case ExceptionNumber::PageFault:
-			handle_page_fault(frame, error_code);
-			break;
-
-		default:
-			ASSERT(false, "Not handled exception: %d", exception);
-	}
+void Kernel::handle_interrupt(int interrupt, InterruptFrame* frame) {
+	// Default interrupt handler
+	printf("Interrupt %d at 0x%lx\n", interrupt, frame->rip);
+	TODO
 }
 
-void Kernel::handle_interrupt(int interrupt, InterruptFrame* frame) {
-	printf("Interrupt: %d\n", interrupt);
-	printf("%lx %lx\n", frame->rip, frame->cs);
-	TODO
+__attribute__((naked))
+void Kernel::_handle_page_fault() {
+	asm volatile(
+		"pop rsi;"
+		"mov rdi, rsp;"
+		"call %0;"
+		"hlt;"
+		:
+		: "i" (handle_page_fault)
+	);
 }
 
 void Kernel::handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
@@ -333,4 +333,18 @@ void Kernel::handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 
 	// This won't return
 	hc_fault(&fault);
+}
+
+__attribute__((naked))
+void Kernel::_handle_breakpoint() {
+	asm volatile(
+		"mov rdi, rsp;"
+		"call %0;"
+		"hlt;"
+		:
+		: "i" (handle_breakpoint)
+	);
+}
+void Kernel::handle_breakpoint(InterruptFrame* frame) {
+	TODO
 }

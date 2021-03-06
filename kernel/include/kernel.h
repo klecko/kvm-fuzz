@@ -25,7 +25,7 @@ public:
 	static void restore_kernel_stack();
 	static void restore_user_stack();
 
-private:
+//private:
 	// Saved kernel and user stack
 	static void* m_kernel_stack;
 	static void* m_user_stack;
@@ -53,10 +53,11 @@ private:
 	static uint64_t rdCR2();
 
 	// Interrupts stuff
-	static void handle_exception(int exception, InterruptFrame* frame,
-	                             uint64_t error_code);
 	static void handle_interrupt(int interrupt, InterruptFrame* frame);
+	static void _handle_page_fault();
+	static void _handle_breakpoint();
 	static void handle_page_fault(InterruptFrame* frame, uint64_t error_code);
+	static void handle_breakpoint(InterruptFrame* frame);
 
 	// Syscall stuff
 	static void syscall_entry();

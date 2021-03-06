@@ -1,38 +1,43 @@
 BITS 64
 
 ; This is ugly. I'm sorry.
-%define exception_handler _ZN6Kernel16handle_exceptionEiP14InterruptFramem
-%define interrupt_handler _ZN6Kernel16handle_interruptEiP14InterruptFrame
-extern exception_handler
-extern interrupt_handler
+%define handle_interrupt  _ZN6Kernel16handle_interruptEiP14InterruptFrame
+%define handle_page_fault _ZN6Kernel17handle_page_faultEP14InterruptFramem
+%define handle_breakpoint _ZN6Kernel17handle_breakpointEP14InterruptFrame
+extern handle_interrupt
+extern handle_page_fault
+extern handle_breakpoint
 
-; Exception handlers
-%assign i 0
-%rep 32
-isr %+ i:
-	mov rdi, i
-	pop rdx
-	mov rsi, rsp
-	call exception_handler
-	hlt
-%assign i i+1
-%endrep
-
-; Interrupt handlers
-%rep 256-32
-isr %+ i:
-	mov rdi, i
-	mov rsi, rsp
-	call interrupt_handler
-	hlt
-%assign i i+1
-%endrep
-
-; Vector of ISRS
-global _isrs
-_isrs:
+; Default handlers
 %assign i 0
 %rep 256
-	dq isr %+ i
+defaultISR %+ i:
+	mov rdi, i
+	mov rsi, rsp
+	call handle_interrupt
+	hlt
 %assign i i+1
 %endrep
+
+; Vector of defaultISRS
+global _defaultISRS
+_defaultISRS:
+%assign i 0
+%rep 256
+	dq defaultISR %+ i
+%assign i i+1
+%endrep
+
+; Specific handlers
+global _handle_page_fault
+_handle_page_fault:
+	pop rsi
+	mov rdi, rsp
+	call handle_page_fault
+	hlt
+
+global _handle_breakpoint
+_handle_breakpoint:
+	mov rdi, rsp
+	call handle_breakpoint
+	hlt
