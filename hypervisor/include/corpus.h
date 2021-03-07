@@ -47,6 +47,7 @@ public:
 	size_t memsize() const;
 	size_t max_input_size() const;
 	size_t unique_crashes() const;
+	size_t coverage() const;
 
 	// Get a new mutated input, which will be a constant reference to
 	// `mutated_inputs[id]
@@ -54,6 +55,8 @@ public:
 
 	// Report a new crash
 	void report_crash(int id, const FaultInfo& fault);
+
+	void report_coverage(int id, uint8_t* cov);
 
 private:
 	// Corpus and its lock
@@ -66,6 +69,10 @@ private:
 
 	// Vector with one mutated input for each thread. No need to lock
 	std::vector<std::string> m_mutated_inputs;
+
+	// Bitmap of recorded coverage
+	uint8_t* m_recorded_cov_bitmap;
+	std::atomic<size_t> m_recorded_cov;
 
 	// Max input size, used in expand mutation
 	size_t m_max_input_size;

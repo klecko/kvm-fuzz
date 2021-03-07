@@ -103,7 +103,7 @@ int Vm::create_vm() {
 	m_vmx_pt = (uint8_t*)mmap(NULL, vmx_pt_size, PROT_READ|PROT_WRITE,
 	                          MAP_SHARED, m_vmx_pt_fd, 0);
 	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
-	m_vmx_pt_bitmap = malloc(COVERAGE_BITMAP_SIZE);
+	m_vmx_pt_bitmap = (uint8_t*)malloc(COVERAGE_BITMAP_SIZE);
 
 	// libxdc
 	typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
@@ -112,8 +112,8 @@ int Vm::create_vm() {
 	uint64_t filter[4][2] = {0};
 	filter[0][0] = 0x400000;
 	filter[0][1] = 0x410000;
-	m_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
-	                           this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
+	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
+	                               this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
 	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, NULL);
 	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
 	//libxdc_enable_tracing(decoder);
@@ -327,6 +327,14 @@ FaultInfo Vm::fault() const {
 	return m_fault;
 }
 
+uint8_t* Vm::coverage_bitmap() const {
+	return m_vmx_pt_bitmap;
+}
+
+void Vm::reset_coverage() {
+	memset(m_vmx_pt_bitmap, 0, COVERAGE_BITMAP_SIZE);
+}
+
 void Vm::reset(const Vm& other, Stats& stats) {
 	// Reset mmu, regs and sregs
 	stats.reset_pages += m_mmu.reset(other.m_mmu);
@@ -385,7 +393,7 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
 				stats.vm_exits_cov++;
-				get_coverage();
+				update_coverage(stats);
 				break;
 
 			case KVM_EXIT_FAIL_ENTRY:
@@ -404,6 +412,11 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				vm_err("UNKNOWN EXIT " + to_string(m_vcpu_run->exit_reason));
 		}
 	}
+
+#ifdef ENABLE_COVERAGE
+	// Before returning, update coverage
+	update_coverage(stats);
+#endif
 
 	return reason;
 }
@@ -442,22 +455,25 @@ void test_edge(void*, uint64_t arg1, uint64_t arg2) {
 	printf("edge callback: %lx %lx\n", arg1, arg2);
 }
 
-void Vm::get_coverage() {
-#ifdef ENABLE_COVERAGE
-	//printf("Getting coverage!\n");
+void Vm::update_coverage(Stats& stats) {
+	cycle_t cycles = rdtsc2();
 	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
 
-	uint8_t* buf = (uint8_t*)malloc(size+1);
+	/* uint8_t* buf = (uint8_t*)malloc(size+1);
 	memcpy(buf, m_vmx_pt, size);
-	buf[size] = 0x55;
+	buf[size] = 0x55; */
 
-	decoder_result_t ret = libxdc_decode(m_pt_decoder, buf, size);
+	// KVM-PT was modified to allow this, because I thought the memcpy was
+	// very expensive, but it seems it isn't
+	m_vmx_pt[size] = 0x55;
+
+	decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
 	ASSERT(ret == 0, "libxdc decode: %d", ret);
 
-	free(buf);
+	//free(buf);
 
 	//printf("full %lu\n", size);
-#endif
+	stats.update_cov_cycles += rdtsc2() - cycles;
 }
 
 #ifdef HW_BPS

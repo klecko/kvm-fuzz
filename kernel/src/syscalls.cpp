@@ -259,7 +259,7 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 }
 
 static uint64_t do_sys_munmap(void* addr, size_t length) {
-	printf("TODO: munmap\n");
+	//printf("TODO: munmap\n");
 	return 0;
 }
 

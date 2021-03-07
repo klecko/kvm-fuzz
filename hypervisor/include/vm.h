@@ -41,6 +41,9 @@ public:
 
 	psize_t memsize() const;
 	FaultInfo fault() const;
+	uint8_t* coverage_bitmap() const;
+
+	void reset_coverage();
 
 	// Reset Vm state to `other`, given that current Vm has been constructed
 	// as a copy of `other`
@@ -69,17 +72,13 @@ public:
 	void dump_memory(psize_t len) const;
 
 private:
-	static const size_t COVERAGE_BITMAP_SIZE = 0x10000;
-
 	int m_vm_fd;
 	int m_vcpu_fd;
 	kvm_run*   m_vcpu_run;
-#ifdef ENABLE_COVERAGE
 	int m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
-	void*      m_vmx_pt_bitmap;
-	libxdc_t*  m_pt_decoder;
-#endif
+	uint8_t*   m_vmx_pt_bitmap;
+	libxdc_t*  m_vmx_pt_decoder;
 	kvm_regs*  m_regs;
 	kvm_sregs* m_sregs;
 
@@ -105,7 +104,7 @@ private:
 	void set_regs_dirty();
 	void set_sregs_dirty();
 	void* fetch_page(uint64_t page, bool* success);
-	void get_coverage();
+	void update_coverage(Stats& stats);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);

@@ -21,6 +21,8 @@ Corpus::Corpus(int nthreads, const string& folder)
 	: m_lock_corpus(false)
 	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
+	, m_recorded_cov_bitmap(new uint8_t[COVERAGE_BITMAP_SIZE])
+	, m_recorded_cov(0)
 {
 	// Try to open the directory
 	DIR* dir = opendir(folder.c_str());
@@ -61,6 +63,9 @@ Corpus::Corpus(int nthreads, const string& folder)
 
 	ASSERT(m_corpus.size() != 0, "empty corpus: %s", folder.c_str());
 	cout << "Total files read: " << m_corpus.size() << endl;
+
+	// Reset coverage bitmap
+	memset(m_recorded_cov_bitmap, 0, COVERAGE_BITMAP_SIZE);
 }
 
 size_t Corpus::size() const {
@@ -80,6 +85,10 @@ size_t Corpus::max_input_size() const {
 
 size_t Corpus::unique_crashes() const {
 	return m_crashes.size();
+}
+
+size_t Corpus::coverage() const {
+	return m_recorded_cov;
 }
 
 const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
@@ -113,6 +122,50 @@ void Corpus::report_crash(int id, const FaultInfo& fault) {
 		ofs << m_mutated_inputs[id];
 		ERROR_ON(!ofs.good(), "Error saving crash file to disk");
 		ofs.close();
+	}
+}
+
+__attribute__((always_inline)) inline
+bool lock_bts(int i, uint8_t* p) {
+	bool test = false;
+	asm(
+		"lock bts %[i], %[val];"
+		"setc %[test];"
+		: [val] "+m" (*p),
+		  [test] "+r" (test)
+		: [i] "r" (i)
+		:
+	);
+	return test;
+}
+
+void Corpus::report_coverage(int id, uint8_t* cov) {
+	size_t new_cov = 0;
+	size_t rec_cov_v, cov_v, i, j, j_q, j_r;
+
+	// Go over both bitmaps using size_t. When there is new coverage in one
+	// of those words, go over its bits to see which is the new one.
+	for (i = 0; i < COVERAGE_BITMAP_SIZE; i += sizeof(cov_v)) {
+		cov_v     = *(size_t*)(cov + i);
+		rec_cov_v = *(size_t*)(m_recorded_cov_bitmap + i);
+		if ((cov_v | rec_cov_v) != rec_cov_v) {
+			// There is new coverage. Test each bit in cov_v
+			for (j = i*8; j < (i+sizeof(size_t))*8; j++) {
+				j_q = j / 8;
+				j_r = j % 8;
+				if (cov[j_q] & (1 << j_r)) {
+					// Set bit in recorded cov bitmap. If it was 0, then that's
+					// a new bit
+					new_cov += !lock_bts(j_r, &m_recorded_cov_bitmap[j_q]);
+				}
+			}
+		}
+	}
+
+	// If there was new coverage, update count and add input to corpus
+	if (new_cov) {
+		m_recorded_cov += new_cov;
+		add_input(m_mutated_inputs[id]);
 	}
 }
 

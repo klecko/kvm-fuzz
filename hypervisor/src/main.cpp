@@ -10,51 +10,58 @@ using namespace std;
 void print_stats(const Stats& stats, const Corpus& corpus) {
 	chrono::duration<double> elapsed;
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
-	uint64_t cases, corpus_n, crashes, unique_crashes;
+	uint64_t cases, cov, corpus_n, crashes, unique_crashes;
 	double fcps, run_time, reset_time, hypercall_time, corpus_mem,
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
-		   reset_pages, vm_exits, vm_exits_hc,
+		   reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
 		   vm_exits_debug, vm_exits_cov;
 	while (true) {
 		this_thread::sleep_for(chrono::seconds(1));
-		elapsed        = chrono::steady_clock::now() - start;
-		cases          = stats.cases;
-		corpus_n       = corpus.size();
-		crashes        = stats.crashes;
-		unique_crashes = corpus.unique_crashes();
-		fcps           = (double)cases / elapsed.count();
-		corpus_mem     = (double)corpus.memsize() / 1024;
-		vm_exits       = (double)stats.vm_exits / stats.cases;
-		vm_exits_hc    = (double)stats.vm_exits_hc / stats.cases;
-		vm_exits_cov   = (double)stats.vm_exits_cov / stats.cases;
-		vm_exits_debug = (double)stats.vm_exits_debug / stats.cases;
-		reset_pages    = (double)stats.reset_pages / stats.cases;
-		run_time       = (double)stats.run_cycles / stats.total_cycles;
-		reset_time     = (double)stats.reset_cycles / stats.total_cycles;
-		mut_time       = (double)stats.mut_cycles / stats.total_cycles;
-		set_input_time = (double)stats.set_input_cycles / stats.total_cycles;
-		kvm_time       = (double)stats.kvm_cycles / stats.total_cycles;
-		hypercall_time = (double)stats.hypercall_cycles / stats.total_cycles;
-		mut1_time      = (double)stats.mut1_cycles / stats.total_cycles;
-		mut2_time      = (double)stats.mut2_cycles / stats.total_cycles;
+		elapsed         = chrono::steady_clock::now() - start;
+		cases           = stats.cases;
+		cov             = corpus.coverage();
+		corpus_n        = corpus.size();
+		crashes         = stats.crashes;
+		unique_crashes  = corpus.unique_crashes();
+		fcps            = (double)cases / elapsed.count();
+		corpus_mem      = (double)corpus.memsize() / 1024;
+		vm_exits        = (double)stats.vm_exits / stats.cases;
+		vm_exits_hc     = (double)stats.vm_exits_hc / stats.cases;
+		vm_exits_cov    = (double)stats.vm_exits_cov / stats.cases;
+		vm_exits_debug  = (double)stats.vm_exits_debug / stats.cases;
+		reset_pages     = (double)stats.reset_pages / stats.cases;
+		run_time        = (double)stats.run_cycles / stats.total_cycles;
+		reset_time      = (double)stats.reset_cycles / stats.total_cycles;
+		mut_time        = (double)stats.mut_cycles / stats.total_cycles;
+		set_input_time  = (double)stats.set_input_cycles / stats.total_cycles;
+		kvm_time        = (double)stats.kvm_cycles / stats.total_cycles;
+		hypercall_time  = (double)stats.hypercall_cycles / stats.total_cycles;
+		mut1_time       = (double)stats.mut1_cycles / stats.total_cycles;
+		mut2_time       = (double)stats.mut2_cycles / stats.total_cycles;
+		update_cov_time = (double)stats.update_cov_cycles / stats.total_cycles;
+		report_cov_time = (double)stats.report_cov_cycles / stats.total_cycles;
 
 		// Free stats (no rdtsc)
-		printf("[%.3f] cases: %lu, fcps: %.3f, corpus: %lu/%.3fKB, "
+		printf("[%.3f] cases: %lu, fcps: %.3f, cov: %lu, corpus: %lu/%.3fKB, "
 		       "unique crashes: %lu (total: %lu)\n",
-		       elapsed.count(), cases, fcps, corpus_n, corpus_mem,
-			   unique_crashes, crashes);
+		       elapsed.count(), cases, fcps, cov, corpus_n, corpus_mem,
+		       unique_crashes, crashes);
 		printf("\tvm exits: %.3f (hc: %.3f, cov: %.3f, debug: %.3f), "
 		       "reset pages: %.3f\n",
 		       vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug,
-			   reset_pages);
+		       reset_pages);
 
 		if (TIMETRACE >= 1)
-			printf("\trun: %.3f, reset: %.3f, mut: %.3f, set_input: %.3f\n",
-			       run_time, reset_time, mut_time, set_input_time);
+			printf("\trun: %.3f, reset: %.3f, mut: %.3f, set_input: %.3f, "
+			       "report_cov: %.3f\n",
+			       run_time, reset_time, mut_time, set_input_time,
+			       report_cov_time);
 
 		if (TIMETRACE >= 2) {
-			printf("\tkvm: %.3f, hc: %.3f, mut1: %.3f, mut2: %.3f\n",
-				   kvm_time, hypercall_time, mut1_time, mut2_time);
+			printf("\tkvm: %.3f, hc: %.3f, update_cov: %.3f, mut1: %.3f, "
+			       "mut2: %.3f\n",
+			       kvm_time, hypercall_time, update_cov_time, mut1_time,
+			       mut2_time);
 		}
 	}
 }
@@ -96,12 +103,21 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			local_stats.cases++;
 			local_stats.run_cycles += rdtsc1() - cycles;
 
+			// Check RunEndReason
 			if (reason == Vm::RunEndReason::Crash) {
 				stats.crashes++;
 				corpus.report_crash(id, runner.fault());
 			} else if (reason != Vm::RunEndReason::Exit) {
 				die("unexpected RunEndReason: %d\n", reason);
 			}
+
+#ifdef ENABLE_COVERAGE
+			// Report coverage
+			cycles = rdtsc1();
+			corpus.report_coverage(id, runner.coverage_bitmap());
+			runner.reset_coverage();
+			local_stats.report_cov_cycles += rdtsc1() - cycles;
+#endif
 
 			// Reset vm
 			cycles = rdtsc1();

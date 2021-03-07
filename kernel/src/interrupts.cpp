@@ -11,7 +11,9 @@ struct InterruptFrame {
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
-	printf("Interrupt %d at 0x%lx\n", interrupt, frame->rip);
+	// Some exceptions push a error code, that's why we don't know where's
+	// actually rip
+	printf("Interrupt %d at 0x%lx or 0x%lx\n", interrupt, frame->rip, frame->cs);
 	TODO
 }
 

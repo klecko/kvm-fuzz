@@ -13,6 +13,7 @@
 
 //#define ENABLE_KVM_DIRTY_LOG_RING
 #define ENABLE_COVERAGE
+#define COVERAGE_BITMAP_SIZE 64*1024
 
 //#define DEBUG 1
 

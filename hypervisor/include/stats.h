@@ -33,26 +33,30 @@ struct Stats {
 	cycle_t  mut1_cycles {0};
 	cycle_t  mut2_cycles {0};
 	cycle_t  set_input_cycles {0};
+	cycle_t  update_cov_cycles {0};
+	cycle_t  report_cov_cycles {0};
 	std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
 	void update(const Stats& stats){
 		while (lock.test_and_set());
-		cases            += stats.cases;
-		crashes          += stats.crashes;
-		vm_exits         += stats.vm_exits;
-		vm_exits_hc      += stats.vm_exits_hc;
-		vm_exits_debug   += stats.vm_exits_debug;
-		vm_exits_cov     += stats.vm_exits_cov;
-		total_cycles     += stats.total_cycles;
-		reset_cycles     += stats.reset_cycles;
-		reset_pages      += stats.reset_pages;
-		run_cycles       += stats.run_cycles;
-		hypercall_cycles += stats.hypercall_cycles;
-		kvm_cycles       += stats.kvm_cycles;
-		mut_cycles       += stats.mut_cycles;
-		mut1_cycles      += stats.mut1_cycles;
-		mut2_cycles      += stats.mut2_cycles;
-		set_input_cycles += stats.set_input_cycles;
+		cases             += stats.cases;
+		crashes           += stats.crashes;
+		vm_exits          += stats.vm_exits;
+		vm_exits_hc       += stats.vm_exits_hc;
+		vm_exits_debug    += stats.vm_exits_debug;
+		vm_exits_cov      += stats.vm_exits_cov;
+		total_cycles      += stats.total_cycles;
+		reset_cycles      += stats.reset_cycles;
+		reset_pages       += stats.reset_pages;
+		run_cycles        += stats.run_cycles;
+		hypercall_cycles  += stats.hypercall_cycles;
+		kvm_cycles        += stats.kvm_cycles;
+		mut_cycles        += stats.mut_cycles;
+		mut1_cycles       += stats.mut1_cycles;
+		mut2_cycles       += stats.mut2_cycles;
+		set_input_cycles  += stats.set_input_cycles;
+		update_cov_cycles += stats.update_cov_cycles;
+		report_cov_cycles += stats.report_cov_cycles;
 		lock.clear();
 	}
 };
