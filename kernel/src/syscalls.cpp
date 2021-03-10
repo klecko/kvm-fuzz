@@ -4,6 +4,7 @@
 #include "kernel.h"
 #include "syscall_str.h"
 #include "asm.h"
+#include "mem.h"
 
 #include <string>
 #include <unistd.h>
@@ -64,20 +65,18 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
 }
 
 static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
-	TODO
-	/* ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
+	ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
 	uint64_t ret  = 0;
 	File&    file = m_open_files[fd];
 
-	// Read iovec structs from guest memory
-	struct iovec iov[iovcnt];
-	m_mmu.read_mem(&iov, iov_addr, iovcnt * sizeof(struct iovec));
-
 	// Write each iovec to file
 	for (int i = 0; i < iovcnt; i++) {
-		ret += file.write((vaddr_t)iov[i].iov_base, iov[i].iov_len);
+		// FIXME
+		hc_print((const char*)iov[i].iov_base, iov[i].iov_len);
+		ret += iov[i].iov_len; //file.write(iov[i].iov_base, iov[i].iov_len);
 	}
-	return ret; */
+
+	return ret;
 }
 
 static uint64_t do_sys_read(int fd, void* buf, size_t count) {
@@ -156,24 +155,26 @@ static uint64_t do_sys_close(int fd) {
 	return 0;
 }
 
-static uint64_t do_sys_brk(void* addr) {
+static uint64_t do_sys_brk(uintptr_t addr) {
 	dbgprintf("trying to set brk to 0x%lx\n", addr);
 	if (addr < m_min_brk)
-		return (uint64_t)m_brk;
+		return m_brk;
 
-	// Allocate space if needed
-	// Too many castings. There must be a better way to do this
-	uintptr_t next_page = ((uintptr_t)m_brk + 0xFFF) & ~0xFFF;
-	if ((uintptr_t)addr > next_page) {
-		size_t sz = ((uintptr_t)addr - next_page + 0xFFF) & ~0xFFF;
-		hc_mmap((void*)next_page, sz, PDE64_RW | PDE64_USER,
-		        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED);
+	uintptr_t next_page = (m_brk + PAGE_SIZE - 1) & PTL1_MASK; // + 0xFFF & ~0xFFF
+	uintptr_t cur_page  = m_brk & PTL1_MASK;
+	if (addr > next_page) {
+		// Allocate space
+		size_t sz = (addr - next_page + PAGE_SIZE - 1) & PTL1_MASK;
+		Mem::Virt::alloc((void*)next_page, sz, PDE64_USER | PDE64_RW);
+	} else if (addr <= cur_page) {
+		// Free space
+		uintptr_t addr_next_page = (addr + PAGE_SIZE - 1) & PTL1_MASK;
+		Mem::Virt::free((void*)addr_next_page, next_page - addr_next_page);
 	}
 
 	dbgprintf("brk set to 0x%lx\n", addr);
 	m_brk = addr;
-
-	return (uint64_t)m_brk;
+	return m_brk;
 }
 
 static uint64_t do_sys_uname(struct utsname* buf) {
@@ -235,44 +236,34 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	                        int fd, off_t offset)
 {
 	// We'll remove this checks little by little :)
+	ASSERT(addr == NULL, "not null addr 0x%lx", addr);
+	ASSERT((length & PTL1_MASK) == length, "not aligned length %lx", length);
 	ASSERT(fd == -1, "fd %d", fd);
 	ASSERT(offset == 0, "offset %ld", offset);
+	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED;
+	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
+
 	uint64_t page_flags = PDE64_USER;
 	if (prot & PROT_WRITE)
 		page_flags |= PDE64_RW;
 	if (!(prot & PROT_EXEC))
 		page_flags |= PDE64_NX;
-	return (uint64_t)hc_mmap(addr, length, page_flags, flags);
-	/* ASSERT(addr == 0, "mmap: not null addr %lx", addr);
-	ASSERT((length & PTL1_MASK) == length, "mmap: not aligned length %lx", length);
-	ASSERT((flags & MAP_TYPE) == MAP_PRIVATE, "mmap: shared mmaping");
-	ASSERT((flags & ~MAP_TYPE) == MAP_ANONYMOUS, "mmap: flags");
-	ASSERT(fd == -1, "mmap: fd %d", fd);
-	ASSERT(offset == 0, "mmap: offset %ld", offset);
-
-	uint64_t mmu_flags = 0;
-	if (prot & PROT_WRITE)
-		mmu_flags |= PDE64_RW;
-	if (!(prot & PROT_EXEC))
-		mmu_flags |= PDE64_NX;
-	return m_mmu.alloc(length, mmu_flags); */
+	return (uint64_t)Mem::Virt::alloc(length, page_flags);
 }
 
 static uint64_t do_sys_munmap(void* addr, size_t length) {
-	//printf("TODO: munmap\n");
+	Mem::Virt::free(addr, length);
 	return 0;
 }
 
 static uint64_t do_sys_mprotect(void* addr, size_t length, int prot) {
-	printf("TODO: mprotect\n");
-	/* ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "mprotect todo");
-	uint64_t flags = 0;
+	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "prot: %d", prot);
+	uint64_t flags = PDE64_USER;
 	if (prot & PROT_WRITE)
 		flags |= PDE64_RW;
 	if (!(prot & PROT_EXEC))
 		flags |= PDE64_NX;
-
-	m_mmu.set_flags(addr, length, flags); */
+	Mem::Virt::set_flags(addr, length, flags);
 	return 0;
 }
 
@@ -355,7 +346,7 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			ret = do_sys_close(arg0);
 			break;
 		case SYS_brk:
-			ret = do_sys_brk((void*)arg0);
+			ret = do_sys_brk(arg0);
 			break;
 		case SYS_exit:
 		case SYS_exit_group:
@@ -413,10 +404,7 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			ret = do_sys_sysinfo((struct sysinfo*)arg0);
 			break;
 		default:
-			//dump_regs();
-			TODO
-			//die("Unimplemented syscall: %s (%lld)\n", syscall_str[m_regs->rax],
-			//    m_regs->rax);
+			die("Unimplemented syscall: %s (%lld)\n", syscall_str[nr], nr);
 	}
 
 	dbgprintf("<-- syscall: %s returned 0x%lx\n", syscall_str[nr], ret);

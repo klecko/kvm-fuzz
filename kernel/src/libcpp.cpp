@@ -1,27 +1,32 @@
 #define _GNU_SOURCE
 #include "libcpp.h"
 #include "hypercalls.h"
+#include "mem.h"
 #include <sys/mman.h>
 
 void* kmalloc(size_t size) {
-	static void* next_alloc = NULL;
+	static const size_t INITIAL_ALLOCATION_SIZE = 0x2000;
+	static uint8_t* next_alloc = NULL;
 	static size_t remaining = 0;
-	size_t to_alloc = (size*2 + 0xFFF) & ~0xFFF;
-	if (next_alloc == NULL) {
-		// Initial allocation
-		next_alloc = hc_mmap(NULL, to_alloc, PDE64_NX | PDE64_RW,
-		                            MAP_ANONYMOUS | MAP_PRIVATE);
-		remaining = to_alloc;
 
-	} else if (size > remaining) {
-		// Request more size
-		hc_mmap((uint8_t*)next_alloc + remaining, to_alloc, PDE64_NX | PDE64_RW,
-		        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED);
+	// Initial allocation
+	if (next_alloc == NULL) {
+		next_alloc = (uint8_t*)hc_get_kernel_brk();
+		printf("Kernel brk: 0x%lx\n", next_alloc);
+		Mem::Virt::alloc(next_alloc, INITIAL_ALLOCATION_SIZE, PDE64_NX | PDE64_RW);
+		remaining = INITIAL_ALLOCATION_SIZE;
+	}
+
+	// Request more size if needed
+	if (size > remaining) {
+		size_t to_alloc = (size*2 + 0xFFF) & ~0xFFF;
+		Mem::Virt::alloc(next_alloc + remaining, to_alloc, PDE64_NX | PDE64_RW);
 		remaining += to_alloc;
 	}
+
 	void* ret = next_alloc;
 	remaining -= size;
-	next_alloc = (uint8_t*)next_alloc + size;
+	next_alloc += size;
 
 	dbgprintf("Allocation of %lu: 0x%lx\n", size, ret);
 	return ret;

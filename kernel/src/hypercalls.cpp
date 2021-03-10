@@ -4,9 +4,9 @@
 // Keep this the same as in the hypervisor!
 enum Hypercall : size_t {
 	Test,
-	Mmap,
-	Ready,
 	Print,
+	GetMemInfo,
+	GetKernelBrk,
 	GetInfo,
 	GetFileLen,
 	GetFileName,
@@ -37,18 +37,14 @@ void hc_test(size_t arg) {
 }
 
 __attribute__((naked))
-void* hc_mmap(void* addr, size_t size, uint64_t page_flags, int flags) {
-	hypercall(Hypercall::Mmap);
-}
-
-__attribute__((naked))
-void hc_ready() {
-	hypercall(Hypercall::Ready);
-}
-
-__attribute__((naked))
 void hc_print(const char* msg) {
 	hypercall(Hypercall::Print);
+}
+
+void hc_print(const char* buf, size_t len) {
+	for (size_t i = 0; i < len; i++) {
+		hc_print(buf[i]);
+	}
 }
 
 const size_t out_buf_size = 1024;
@@ -67,6 +63,16 @@ void hc_print(char c) {
 
 void hc_print(const string& msg) {
 	hc_print(msg.c_str());
+}
+
+__attribute__((naked))
+void hc_get_mem_info(void** mem_start, size_t* mem_length) {
+	hypercall(Hypercall::GetMemInfo);
+}
+
+__attribute__((naked))
+void* hc_get_kernel_brk() {
+	hypercall(Hypercall::GetKernelBrk);
 }
 
 __attribute__((naked))

@@ -11,8 +11,8 @@
 
 // Access to global kernel state
 extern string m_elf_path;
-extern void* m_brk;
-extern void* m_min_brk;
+extern uintptr_t m_brk;
+extern uintptr_t m_min_brk;
 extern unordered_map<int, File> m_open_files;
 extern unordered_map<string, struct iovec> m_file_contents;
 

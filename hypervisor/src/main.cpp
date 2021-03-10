@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
 		8 * 1024 * 1024,
 		"./kernel/kernel",
 		"../test_bins/readelf",
-		{"./readelf", "-l", "test"}
+		{"./readelf", "-a", "test"}
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
@@ -157,18 +157,11 @@ int main(int argc, char** argv) {
 	// Other real files should be set here as well.
 	string file(corpus.max_input_size(), 'a');
 	vm.set_file("test", file);
+	string localtime(read_file("/etc/localtime"));
+	vm.set_file("/etc/localtime", localtime);
 
-	vm.init();
-
-/* 	vm.run_until(0x401c80, stats); // readelf
-	Vm runner(vm);
-	runner.dump_regs();
-	runner.run(stats);
-
-	printf("\n\n\n");
-	runner.reset(vm, stats);
-	runner.run(stats);
-	return 0 ; */
+	/* vm.run(stats);
+	return 0; */
 
 	vm.run_until(vm.resolve_symbol("main"), stats);
 	//vm.run_until(0x404dd5, stats);

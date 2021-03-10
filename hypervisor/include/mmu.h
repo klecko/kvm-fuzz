@@ -9,12 +9,11 @@
 class Mmu {
 public:
 	inline uint8_t* memory() const { return m_memory; }
-	static const paddr_t PAGE_TABLE_PADDR     = 0x1000;
-	static const vaddr_t ELF_ADDR             = 0x400000; // base for DYN ELF
-	static const vaddr_t STACK_START_ADDR     = 0x800000000000;
+	static const paddr_t PAGE_TABLE_PADDR        = 0x1000;
+	static const vaddr_t ELF_ADDR                = 0x400000; // base for DYN ELF
 	static const vaddr_t KERNEL_STACK_START_ADDR = 0xFFFFFFFFFFFFF000;
-	static const vsize_t STACK_SIZE           = 0x10000;
-	static const vaddr_t MAPPINGS_START_ADDR  = 0x7FFFF7FFE000;
+	static const vsize_t STACK_SIZE              = 0x10000;
+	static const vaddr_t PHYSMAP_ADDR            = 0xFFFFFF8000000000;
 
 	// Normal constructor
 	Mmu(int vm_fd, int vcpu_fd, size_t mem_size);
@@ -29,10 +28,10 @@ public:
 	Mmu(const Mmu&) = delete;
 	Mmu& operator=(const Mmu&) = delete;
 
-	// Getters and setters. Brk setter returns whether the change was successful
+	// Getters and setters
 	psize_t size() const;
-	vaddr_t brk() const;
-	bool set_brk(vaddr_t new_brk);
+	paddr_t next_frame_alloc() const;
+	void disable_allocations();
 
 	// Reset to the state in `other`, given that current Mmu has been
 	// constructed as a copy of `other`. Returns the number of pages resetted
@@ -55,10 +54,9 @@ public:
 
 	// Allocate given virtual memory region
 	void alloc(vaddr_t start, vsize_t len, uint64_t flags);
-	vaddr_t alloc(vsize_t len, uint64_t flags);
 
 	// Allocate a stack and return its address
-	vaddr_t alloc_stack(bool kernel);
+	vaddr_t alloc_kernel_stack();
 
 	// Basic memory modification primitives
 	void read_mem(void* dst, vaddr_t src, vsize_t len);
@@ -85,7 +83,7 @@ public:
 	// Set flags to given memory region in the page table
 	void set_flags(vaddr_t addr, vsize_t len, uint64_t flags);
 
-	// Load elf into memory, updating brk if it is not kernel
+	// Load elf into memory
 	void load_elf(const std::vector<segment_t>& segments, bool kernel);
 
 	void dump_memory(psize_t len) const;
@@ -106,11 +104,11 @@ private:
 	// (at physical address PAGE_TABLE_PADDR)
 	paddr_t  m_ptl4;
 
+	// True if guest kernel hasn't taken control of the memory yet
+	bool     m_can_alloc;
+
 	// Physical address of the next page allocated
 	paddr_t  m_next_page_alloc;
-
-	// Virtual address of the next allocation
-	vaddr_t  m_next_mapping;
 
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
 	size_t m_dirty_ring_i;

@@ -24,7 +24,7 @@ class Vm {
 public:
 	enum RunEndReason {
 		Exit,
-		Breakpoint,
+		Debug,
 		Crash,
 		Unknown = -1,
 	};
@@ -35,10 +35,8 @@ public:
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
 
-	// Load kernel, run until it finishes initialization, and finally load user
-	// elf. Then, we're ready to run
-	void init();
-
+	kvm_regs& regs();
+	kvm_regs regs() const;
 	psize_t memsize() const;
 	FaultInfo fault() const;
 	uint8_t* coverage_bitmap() const;
@@ -52,6 +50,9 @@ public:
 	RunEndReason run(Stats& stats);
 
 	void run_until(vaddr_t pc, Stats& stats);
+
+	void set_single_step(bool enabled);
+	RunEndReason single_step(Stats& stats);
 
 	void set_breakpoint(vaddr_t addr);
 	void remove_breakpoint(vaddr_t addr);
@@ -97,10 +98,9 @@ private:
 	FaultInfo m_fault;
 
 	int create_vm();
-	void setup_vmx_pt();
 	void setup_kvm();
-	void load_elf();
-	void load_kernel();
+	void load_elfs();
+	void setup_kernel_execution();
 	void set_regs_dirty();
 	void set_sregs_dirty();
 	void* fetch_page(uint64_t page, bool* success);
@@ -110,6 +110,8 @@ private:
 	void handle_hypercall(RunEndReason&);
 	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
+	void do_hc_get_mem_info(vaddr_t mem_start_addr, vaddr_t mem_length_addr);
+	vaddr_t do_hc_get_kernel_brk();
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);

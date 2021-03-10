@@ -39,6 +39,12 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 	, m_running(false)
 {
 	setup_kvm();
+
+	load_elfs();
+
+	setup_kernel_execution();
+
+	printf("Ready to run!\n");
 }
 
 Vm::Vm(const Vm& other)
@@ -124,18 +130,6 @@ int Vm::create_vm() {
 	return m_vm_fd;
 }
 
-void Vm::init() {
-	// Load kernel, and run it until it's ready
-	Stats dummy;
-	load_kernel();
-	dbgprintf("Starting vm\n");
-	run(dummy);
-	dbgprintf("Kernel startup finished\n");
-
-	// Load user elf
-	load_elf();
-}
-
 void Vm::setup_kvm() {
 	// Check if mmap failed
 	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap kvm_run");
@@ -183,10 +177,7 @@ void Vm::setup_kvm() {
 	ioctl_chk(m_vcpu_fd, KVM_SET_CPUID2, cpuid);
 
 	// Set debug
-	kvm_guest_debug debug;
-	memset(&debug, 0, sizeof(debug));
-	debug.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP | KVM_GUESTDBG_USE_SW_BP;
-	ioctl_chk(m_vcpu_fd, KVM_SET_GUEST_DEBUG, &debug);
+	set_single_step(false);
 
 	// Set register sync
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
@@ -204,45 +195,33 @@ void Vm::setup_kvm() {
 #endif
 }
 
-void Vm::load_elf() {
-	// EXEC (no PIE) or DYN (PIE)
-	if (m_elf.type() == ET_DYN)
-		m_elf.set_base(0x400000);
+void Vm::load_elfs() {
+	// First, the kernel
+	// Check it's static and no PIE and load it
+	ASSERT(m_kernel.type() == ET_EXEC, "Kernel is PIE?");
+	ASSERT(m_kernel.interpreter().empty(), "Kernel is dynamically linked");
+	dbgprintf("Loading kernel at 0x%lx\n", m_kernel.load_addr());
+	m_mmu.load_elf(m_kernel.segments(), true);
 
+	// Now, user elf. Assign base address if it's DYN (PIE) and load it
+	if (m_elf.type() == ET_DYN)
+		m_elf.set_base(Mmu::ELF_ADDR);
 	dbgprintf("Loading elf at 0x%lx\n", m_elf.load_addr());
 	m_mmu.load_elf(m_elf.segments(), false);
 
-	// Check if there's interpreter
+	// Check if user elf has interpreter
 	string interpreter_path = m_elf.interpreter();
 	if (!interpreter_path.empty()) {
 		TODO
-		// Load interpreter and set RIP to its entry point
-		m_interpreter = new ElfParser(interpreter_path);
-		m_interpreter->set_base(0x7ffff7fcf000); // always DYN ?
-		dbgprintf("Loading interpreter %s at 0x%lx\n", interpreter_path.c_str(),
-		          m_interpreter->load_addr());
-		m_mmu.load_elf(m_interpreter->segments(), false);
-		m_regs->rip = m_interpreter->entry();
-	} else {
-		// Set RIP to elf entry point
-		m_regs->rip = m_elf.entry();
 	}
+}
 
-	// Allocate stack
-	// http://articles.manugarg.com/aboutelfauxiliaryvectors.html
-	m_regs->rsp = m_mmu.alloc_stack(false);
+void Vm::setup_kernel_execution() {
+	m_regs->rsp = m_mmu.alloc_kernel_stack();
+	m_regs->rflags = 2; // TODO: what about IOPL
+	m_regs->rip = m_kernel.entry();
 
-	// NULL
-	m_regs->rsp -= 16;
-	m_mmu.write<vaddr_t>(m_regs->rsp, 0);
-	m_mmu.write<vaddr_t>(m_regs->rsp + 8, 0);
-
-	// Random bytes for auxv. Seed is not initialized
-	m_regs->rsp -= 16;
-	vaddr_t random_bytes = m_regs->rsp;
-	for (int i = 0; i < 16; i++)
-		m_mmu.write<uint8_t>(random_bytes + i, rand());
-
+	// Let's write argv to kernel stack, so he can then write it to user stack
 	// Write argv strings saving pointers to each arg
 	vector<vaddr_t> argv_addrs;
 	for (const string& arg : m_argv) {
@@ -254,29 +233,6 @@ void Vm::load_elf() {
 
 	// Align rsp
 	m_regs->rsp &= ~0x7;
-	//regs->rsp = (regs->rsp - 0x7) & ~0x7;
-
-	// Set up auxp
-	phinfo_t phinfo      = m_elf.phinfo();
-	vaddr_t  load_addr   = m_elf.load_addr();
-	vaddr_t  interp_base = (m_interpreter ? m_interpreter->base() : 0);
-	Elf64_auxv_t auxv[]  = {
-		{AT_PHDR,   {load_addr + phinfo.e_phoff}}, // Pointer to program headers
-		{AT_PHENT,  {phinfo.e_phentsize}},         // Size of each entry
-		{AT_PHNUM,  {phinfo.e_phnum}},             // Number of entries
-		{AT_PAGESZ, {PAGE_SIZE}},                  // Page size
-		{AT_BASE,   {interp_base}},                // Interpreter base address
-		{AT_ENTRY,  {m_elf.entry()}},              // Entry point of the program
-		{AT_RANDOM, {random_bytes}},               // Address of 16 random bytes
-		{AT_EXECFN, {argv_addrs[0]}},              // Filename of the program
-		{AT_NULL,   {0}},                          // Auxv end
-	};
-	m_regs->rsp -= sizeof(auxv);
-	m_mmu.write_mem(m_regs->rsp, auxv, sizeof(auxv));
-
-	// Set up envp
-	m_regs->rsp -= 8;
-	m_mmu.write<vaddr_t>(m_regs->rsp, 0);
 
 	// Set up argv
 	for (auto it = argv_addrs.rbegin(); it != argv_addrs.rend(); ++it) {
@@ -284,31 +240,10 @@ void Vm::load_elf() {
 		m_mmu.write<vaddr_t>(m_regs->rsp, *it);
 	}
 
-	// Set up argc
-	m_regs->rsp -= 8;
-	m_mmu.write<uint64_t>(m_regs->rsp, m_argv.size());
-
-	m_regs->rflags = 2;
-
+	// Setup args for kmain
+	m_regs->rdi = m_argv.size(); // argc
+	m_regs->rsi = m_regs->rsp;   // argv
 	set_regs_dirty();
-
-	dbgprintf("Elf loaded and rip set to 0x%llx\n", m_regs->rip);
-}
-
-void Vm::load_kernel() {
-	// Check it's static and no PIE
-	ASSERT(m_kernel.type() == ET_EXEC, "Kernel is PIE?");
-	ASSERT(m_kernel.interpreter().empty(), "Kernel is dynamically linked");
-	dbgprintf("Loading kernel at 0x%lx\n", m_kernel.load_addr());
-
-	// Load kernel to memory, allocate stack and set up registers
-	m_mmu.load_elf(m_kernel.segments(), true);
-	m_regs->rsp = m_mmu.alloc_stack(true) - 0x10;
-	m_regs->rflags = 2;
-	m_regs->rip = m_kernel.entry();
-	set_regs_dirty();
-
-	dbgprintf("Kernel loaded and rip set to 0x%llx\n", m_regs->rip);
 }
 
 void Vm::set_regs_dirty() {
@@ -317,6 +252,14 @@ void Vm::set_regs_dirty() {
 
 void Vm::set_sregs_dirty() {
 	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_SREGS;
+}
+
+kvm_regs& Vm::regs() {
+	return *m_regs;
+}
+
+kvm_regs Vm::regs() const {
+	return *m_regs;
 }
 
 psize_t Vm::memsize() const {
@@ -387,7 +330,7 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				cout << endl;
 				break; */
 				m_running = false;
-				reason = RunEndReason::Breakpoint;
+				reason = RunEndReason::Debug;
 				stats.vm_exits_debug++;
 				break;
 
@@ -428,21 +371,49 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 		   m_regs->rip, pc);
-	ASSERT(reason == RunEndReason::Breakpoint, "run intil end reason: %d",
-	       reason);
+	ASSERT(reason == RunEndReason::Debug, "run until end reason: %d", reason);
+}
+
+void Vm::set_single_step(bool enabled) {
+	kvm_guest_debug debug;
+	memset(&debug, 0, sizeof(debug));
+	debug.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP |
+	                KVM_GUESTDBG_USE_SW_BP;
+	if (enabled)
+		debug.control |= KVM_GUESTDBG_SINGLESTEP;
+	ioctl_chk(m_vcpu_fd, KVM_SET_GUEST_DEBUG, &debug);
+}
+
+Vm::RunEndReason Vm::single_step(Stats& stats) {
+	set_single_step(true);
+	RunEndReason reason = run(stats);
+	ASSERT(reason == RunEndReason::Debug, "single step end reason: %d", reason);
+	set_single_step(false);
+	return reason;
 }
 
 void* Vm::fetch_page(uint64_t page, bool* success) {
+	thread_local unordered_map<uint64_t, void*> cache;
 	thread_local uint64_t last_page = 0;
 	thread_local void* last_result = NULL;
 	page &= PTL1_MASK;
 	//printf("fetching 0x%lx\n", page);
 
 	*success = true;
+
+	// If it's the last page fetched, just return the last result
 	if (page == last_page)
 		return last_result;
+
+	// If it's in the cache, get the result from there. Otherwise, get it and
+	// update the cache.
 	last_page = page;
-	last_result = m_mmu.get(page);
+	if (cache.count(page))
+		last_result = cache[page];
+	else {
+		last_result = m_mmu.get(page);
+		cache[page] = last_result;
+	}
 
 	return last_result;
 }
@@ -625,11 +596,11 @@ void Vm::vm_err(const string& msg) {
 	//dump_memory();
 
 	// Dump current input file to mem
-	/* ofstream os("crash");
-	struct iovec& iov = m_file_contents["test"];
-	os.write((char*)iov.iov_base, iov.iov_len);
+	ofstream os("crash");
+	file_t& buf = m_file_contents["test"];
+	os.write((char*)buf.data, buf.length);
 	assert(os.good());
-	cout << "Dumped crash file of size " << iov.iov_len << endl; */
+	cout << "Dumped crash file of size " << buf.length << endl;
 
 	die("%s\n", msg.c_str());
 }

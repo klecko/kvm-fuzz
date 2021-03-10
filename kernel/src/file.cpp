@@ -154,11 +154,8 @@ size_t File::do_read_regular(void* buf, size_t len) {
 }
 
 size_t File::do_write_stdout(const void* buf, size_t len) {
-#if 0
-	// We have no way of printing buffers yet. Print char by char
-	for (size_t i = 0; i < len; i++) {
-		hc_print(((char*)buf)[i]);
-	}
+#ifdef ENABLE_GUEST_OUTPUT
+	hc_print((const char*)buf, len);
 #endif
 	return len;
 }

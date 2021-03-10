@@ -52,8 +52,8 @@ Corpus::Corpus(int nthreads, const string& folder)
 		// Record the size of the largest initial file
 		max_sz = max(max_sz, input.size());
 
-		cout << "Read file '" << ent->d_name << "', size: "
-		     << input.size() << endl;
+		//cout << "Read file '" << ent->d_name << "', size: "
+		//     << input.size() << endl;
 	}
 	closedir(dir);
 
@@ -63,6 +63,7 @@ Corpus::Corpus(int nthreads, const string& folder)
 
 	ASSERT(m_corpus.size() != 0, "empty corpus: %s", folder.c_str());
 	cout << "Total files read: " << m_corpus.size() << endl;
+	cout << "Max mutated input size: " << m_max_input_size << endl;
 
 	// Reset coverage bitmap
 	memset(m_recorded_cov_bitmap, 0, COVERAGE_BITMAP_SIZE);

@@ -15,12 +15,23 @@
 #define PDE64_G        (1 << 8)
 #define PDE64_NX       0 // (1LU << 63) // TODO
 
+struct phinfo_t {
+    uint64_t e_phoff;      /* Program header table file offset */
+    uint16_t e_phentsize;  /* Program header table entry size */
+    uint16_t e_phnum;      /* Program header table entry count */
+};
+
 struct VmInfo {
 	char elf_path[PATH_MAX];
-	void* brk;
+	uintptr_t brk;
 	size_t num_files;
 	void (**constructors)(void);
 	size_t num_constructors;
+	void* user_entry;
+	void* elf_entry;
+	void* elf_load_addr;
+	void* interp_base;
+	struct phinfo_t phinfo;
 };
 
 struct FaultInfo {
@@ -39,11 +50,12 @@ struct FaultInfo {
 };
 
 void hc_test(size_t arg);
-void* hc_mmap(void* addr, size_t size, uint64_t page_flags, int flags);
-void hc_ready();
 void hc_print(const char* msg);
+void hc_print(const char* buf, size_t len);
 void hc_print(char c);
 void hc_print(const string& msg);
+void hc_get_mem_info(void** mem_start, size_t* mem_length);
+void* hc_get_kernel_brk();
 void hc_get_info(VmInfo* info);
 size_t hc_get_file_len(size_t n);
 void hc_get_file_name(size_t n, char* buf);

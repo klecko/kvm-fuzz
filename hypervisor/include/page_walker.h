@@ -39,6 +39,8 @@ public:
 	// Alloc a frame for current page. Fail if it has already a frame
 	void alloc_frame(uint64_t flags);
 
+	void map(paddr_t paddr, uint64_t flags);
+
 	// Returns whether current virtual address is mapped or not
 	bool is_mapped();
 

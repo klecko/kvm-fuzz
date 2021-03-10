@@ -3,7 +3,7 @@
 #include "libcpp.h"
 #include "hypercalls.h"
 
-//#define DEBUG 0
+//#define ENABLE_GUEST_OUTPUT
 
 #define hlt() asm("hlt")
 

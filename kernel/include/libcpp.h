@@ -29,6 +29,11 @@ inline void memcpy(void* dest, const void* src, size_t n) {
 		((uint8_t*)(dest))[i] = ((uint8_t*)src)[i];
 }
 
+inline void memset(void* dest, int c, size_t n) {
+	for (size_t i = 0; i < n; i++)
+		((uint8_t*)(dest))[i] = c;
+}
+
 template <class T>
 inline T min(T v1, T v2) {
 	return (v1 < v2 ? v1 : v2);

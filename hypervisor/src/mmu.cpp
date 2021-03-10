@@ -18,8 +18,8 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
 	, m_length(mem_size)
 	, m_ptl4(PAGE_TABLE_PADDR)
+	, m_can_alloc(true)
 	, m_next_page_alloc(PAGE_TABLE_PADDR + 0x1000)
-	, m_next_mapping(MAPPINGS_START_ADDR)
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
 	, m_dirty_ring_i(0)
 	, m_dirty_ring_entries(ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING) / sizeof(kvm_dirty_gfn))
@@ -35,13 +35,11 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	ERROR_ON(m_memory == MAP_FAILED, "mmap mmu memory");
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
 	ERROR_ON(m_dirty_ring == MAP_FAILED, "mmap dirty log ring");
+#else
+	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
 #endif
 
 	madvise(m_memory, m_length, MADV_MERGEABLE);
-
-#ifndef ENABLE_KVM_DIRTY_LOG_RING
-	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
-#endif
 
 	struct kvm_userspace_memory_region memreg = {
 		.slot = 0,
@@ -52,21 +50,20 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	};
 	ioctl_chk(m_vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
 
-	// Set syscall handler
-	/* memcpy(
-		m_memory + SYSCALL_HANDLER_ADDR,
-		SYSCALL_HANDLER,
-		sizeof(SYSCALL_HANDLER)
-	); */
-
-	//init_page_table();
+	// Map all physical memory. This is needed for guest kernel to access page
+	// tables and other physical addresses. This is probably what we spaniards
+	// call 'chapuza'
+	PageWalker pages(PHYSMAP_ADDR, *this);
+	for (paddr_t p = 0; p < m_length; p += PAGE_SIZE) {
+		pages.map(p, PDE64_PRESENT | PDE64_RW);
+		pages.next();
+	}
 }
 
 Mmu::Mmu(int vm_fd, int vcpu_fd, const Mmu& other)
 	: Mmu(vm_fd, vcpu_fd, other.m_length)
 {
 	m_next_page_alloc = other.m_next_page_alloc;
-	m_next_mapping    = other.m_next_mapping;
 	memcpy(m_memory, other.m_memory, m_length);
 
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
@@ -96,6 +93,14 @@ Mmu::~Mmu() {
 
 psize_t Mmu::size() const {
 	return m_length;
+}
+
+paddr_t Mmu::next_frame_alloc() const {
+	return m_next_page_alloc;
+}
+
+void Mmu::disable_allocations() {
+	m_can_alloc = false;
 }
 
 size_t Mmu::reset(const Mmu& other) {
@@ -144,7 +149,6 @@ size_t Mmu::reset(const Mmu& other) {
 
 	// Reset state
 	m_next_page_alloc = other.m_next_page_alloc;
-	m_next_mapping    = other.m_next_mapping;
 
 	/* if (memcmp(m_memory, other.m_memory, m_length) != 0) {
 		printf("WOOPS reset is not working\n");
@@ -160,6 +164,7 @@ size_t Mmu::reset(const Mmu& other) {
 }
 
 paddr_t Mmu::alloc_frame() {
+	ASSERT(m_can_alloc, "attempt to allocate frame when we can't");
 	ASSERT(m_next_page_alloc <= m_length - PAGE_SIZE, "OOM");
 	paddr_t ret = m_next_page_alloc;
 	m_next_page_alloc += PAGE_SIZE;
@@ -189,25 +194,10 @@ void Mmu::alloc(vaddr_t start, vsize_t len, uint64_t flags) {
 	} while (pages.next());
 }
 
-vaddr_t Mmu::alloc(vsize_t len, uint64_t flags) {
-	ASSERT((len & PTL1_MASK) == len, "alloc unaligned len");
-	m_next_mapping -= len;
-	alloc(m_next_mapping, len, flags);
-	return m_next_mapping;
-}
-
-vaddr_t Mmu::alloc_stack(bool kernel) {
+vaddr_t Mmu::alloc_kernel_stack() {
 	// Allocate stack as writable and not executable
-	vaddr_t  start;
-	uint64_t flags = PDE64_RW | PDE64_NX;
-	if (kernel) {
-		start  = KERNEL_STACK_START_ADDR;
-	} else {
-		flags |= PDE64_USER;
-		start  = STACK_START_ADDR;
-	}
-	alloc(start - STACK_SIZE, STACK_SIZE, flags);
-	return start;
+	alloc(KERNEL_STACK_START_ADDR - STACK_SIZE, STACK_SIZE, PDE64_RW | PDE64_NX);
+	return KERNEL_STACK_START_ADDR;
 }
 
 void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {

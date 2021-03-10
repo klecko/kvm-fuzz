@@ -8,9 +8,9 @@ using namespace std;
 // Keep this the same as in the kernel!
 enum Hypercall : size_t {
 	Test,
-	Mmap,
-	Ready,
 	Print,
+	GetMemInfo,
+	GetKernelBrk,
 	GetInfo,
 	GetFileLen,
 	GetFileName,
@@ -19,26 +19,23 @@ enum Hypercall : size_t {
 	EndRun,
 };
 
-vaddr_t Vm::do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags) {
-	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED;
-	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
-	ASSERT(flags & MAP_PRIVATE, "shared mapping");
-	ASSERT(flags & MAP_ANONYMOUS, "file backed mapping");
-	ASSERT((size & PTL1_MASK) == size, "not aligned size %lx", size);
-	uint64_t ret = 0;
-	if (flags & MAP_FIXED) {
-		m_mmu.alloc(addr, size, page_flags);
-		ret = addr;
-	} else {
-		ret = m_mmu.alloc(size, page_flags);
-	}
-	dbgprintf("hc mmap %lu at 0x%lx with page flags 0x%lx\n", size, ret, page_flags);
-	return ret;
-}
-
 void Vm::do_hc_print(vaddr_t msg_addr) {
 	string msg = m_mmu.read_string(msg_addr);
 	cout << "[KERNEL] " << msg;
+}
+
+void Vm::do_hc_get_mem_info(vaddr_t mem_start_addr, vaddr_t mem_length_addr) {
+	paddr_t next_frame_alloc = m_mmu.next_frame_alloc();
+	m_mmu.write<vaddr_t>(mem_start_addr, next_frame_alloc);
+	m_mmu.write<vaddr_t>(mem_length_addr, m_mmu.size() - next_frame_alloc);
+
+	// From this point on, kernel is in charge of managing physical memory
+	// and not us
+	m_mmu.disable_allocations();
+}
+
+vaddr_t Vm::do_hc_get_kernel_brk() {
+	return m_kernel.initial_brk();
 }
 
 struct VmInfo {
@@ -47,6 +44,11 @@ struct VmInfo {
 	vsize_t num_files;
 	vaddr_t constructors;
 	vsize_t num_constructors;
+	vaddr_t user_entry;
+	vaddr_t elf_entry;
+	vaddr_t elf_load_addr;
+	vaddr_t interp_base;
+	phinfo_t phinfo;
 };
 
 void Vm::do_hc_get_info(vaddr_t info_addr) {
@@ -65,6 +67,12 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 			break;
 		}
 	}
+
+	info.user_entry    = (m_interpreter ? m_interpreter->entry() : m_elf.entry());
+	info.elf_entry     = m_elf.entry();
+	info.elf_load_addr = m_elf.load_addr();
+	info.interp_base   = (m_interpreter ? m_interpreter->base() : 0);
+	info.phinfo        = m_elf.phinfo();
 
 	m_mmu.write(info_addr, info);
 }
@@ -94,6 +102,7 @@ void Vm::do_hc_set_file_buf(size_t n, vaddr_t buf_addr) {
 
 void Vm::do_hc_fault(vaddr_t fault_addr) {
 	m_fault = m_mmu.read<FaultInfo>(fault_addr);
+	cout << m_fault << endl;
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -101,14 +110,14 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 	switch (m_regs->rax) {
 		case Hypercall::Test:
 			die("Hypercall test, arg=0x%llx\n", m_regs->rdi);
-		case Hypercall::Mmap:
-			ret = do_hc_mmap(m_regs->rdi, m_regs->rsi, m_regs->rdx, m_regs->rcx);
-			break;
-		case Hypercall::Ready:
-			m_running = false;
-			return;
 		case Hypercall::Print:
 			do_hc_print(m_regs->rdi);
+			break;
+		case Hypercall::GetMemInfo:
+			do_hc_get_mem_info(m_regs->rdi, m_regs->rsi);
+			break;
+		case Hypercall::GetKernelBrk:
+			ret = do_hc_get_kernel_brk();
 			break;
 		case Hypercall::GetInfo:
 			do_hc_get_info(m_regs->rdi);

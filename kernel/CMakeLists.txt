@@ -14,7 +14,8 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib \
 	-lgcc -T ${LINKER_FILE}")
 set(SOURCE_FILES src/main.cpp src/libcpp.cpp src/hypercalls.cpp src/interrupts.cpp
                  src/file.cpp src/syscalls.cpp src/printf.cpp src/isrs.asm
-                 src/init_idt.cpp src/init_gdt.cpp src/init_syscall.cpp)
+                 src/init_idt.cpp src/init_gdt.cpp src/init_syscall.cpp
+				 src/mem.cpp src/page_walker.cpp)
 add_executable(kernel ${SOURCE_FILES})
 include_directories(include include/STL)
 set_target_properties(kernel PROPERTIES LINK_DEPENDS "${LINKER_FILE}")

@@ -47,4 +47,13 @@ inline uint64_t rdcr2() {
 	return val;
 }
 
+inline uint64_t rdcr3() {
+	uint64_t val;
+	asm volatile(
+		"mov %0, cr3"
+		: "=r" (val)
+		: :
+	);
+	return val;
+}
 #endif
