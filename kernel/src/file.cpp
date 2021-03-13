@@ -72,7 +72,7 @@ File::File(uint32_t flags, const char* buf, size_t size)
 	, m_offset(0)
 { }
 
-uint32_t File::flags() {
+uint32_t File::flags() const {
 	return m_flags;
 }
 
@@ -80,25 +80,29 @@ void File::set_flags(uint32_t flags) {
 	m_flags = flags;
 }
 
-bool File::is_readable() {
+bool File::is_readable() const {
 	uint32_t accmode = m_flags & O_ACCMODE;
 	return (accmode == O_RDONLY || accmode == O_RDWR);
 }
 
-bool File::is_writable() {
+bool File::is_writable() const {
 	uint32_t accmode = m_flags & O_ACCMODE;
 	return (accmode == O_WRONLY || accmode == O_RDWR);
 }
 
-const char* File::cursor() {
+const char* File::buf() const {
+	return m_buf;
+}
+
+const char* File::cursor() const {
 	return m_buf + m_offset;
 }
 
-size_t File::size() {
+size_t File::size() const {
 	return m_size;
 }
 
-size_t File::offset() {
+size_t File::offset() const {
 	return m_offset;
 }
 
@@ -119,7 +123,7 @@ size_t File::move_cursor(size_t increment) {
 	return ret;
 }
 
-void File::stat(void* statbuf) {
+void File::stat(void* statbuf) const {
 	ASSERT(m_fops.do_stat, "not implemented stat");
 	(this->*m_fops.do_stat)(statbuf);
 }
@@ -135,11 +139,11 @@ size_t File::write(const void* buf, size_t len) {
 }
 
 // All fstat syscalls fall back to stat
-void File::do_stat_regular(void* statbuf) {
+void File::do_stat_regular(void* statbuf) const {
 	stat_regular(statbuf, m_size);
 }
 
-void File::do_stat_stdout(void* statbuf) {
+void File::do_stat_stdout(void* statbuf) const {
 	stat_stdout(statbuf);
 }
 

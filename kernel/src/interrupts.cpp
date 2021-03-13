@@ -23,8 +23,8 @@ static void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool user    = error_code & (1 << 2);
 	bool execute = error_code & (1 << 4);
 	uint64_t fault_addr = rdcr2();
-	ASSERT(user, "woops, kernel PF. addr: 0x%lx, present: %d, write: %d, ex: %d",
-	       fault_addr, present, write, execute);
+	ASSERT(user, "woops, kernel PF at 0x%lx. addr: 0x%lx, present: %d, write: %d, ex: %d",
+	       frame->rip, fault_addr, present, write, execute);
 
 	FaultInfo fault = {
 		.rip        = frame->rip,
@@ -51,6 +51,12 @@ static void handle_breakpoint(InterruptFrame* frame) {
 	TODO
 }
 
+static void handle_general_protection_fault(InterruptFrame* frame,
+                                            uint64_t error_code)
+{
+	die("GPF at 0x%lx, segment: 0x%lx\n", frame->rip, error_code);
+}
+
 __attribute__((naked))
 void _handle_page_fault() {
 	asm volatile(
@@ -72,4 +78,17 @@ void _handle_breakpoint() {
 		:
 		: "i" (handle_breakpoint)
 	);
+}
+
+__attribute__((naked))
+void _handle_general_protection_fault() {
+	asm volatile(
+		"pop rsi;"
+		"mov rdi, rsp;"
+		"call %0;"
+		"hlt;"
+		:
+		: "i" (handle_general_protection_fault)
+	);
+
 }

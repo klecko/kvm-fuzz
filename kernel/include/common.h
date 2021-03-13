@@ -34,3 +34,12 @@
 	printf(__VA_ARGS__);                                         \
 	hlt();                                                       \
 } while(0)
+
+#define printf_once(...) do {                                    \
+	static bool once = false;                                    \
+	if (!once) {                                                 \
+		printf("[ONCE] ");                                       \
+		printf(__VA_ARGS__);                                     \
+		once = true;                                             \
+	}                                                            \
+} while (0)

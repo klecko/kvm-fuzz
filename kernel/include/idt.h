@@ -8,6 +8,7 @@
 
 enum ExceptionNumber {
 	Breakpoint = 3,
+	GeneralProtectionFault = 13,
 	PageFault  = 14,
 };
 

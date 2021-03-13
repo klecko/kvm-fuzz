@@ -12,7 +12,7 @@
 #define PDE64_ACCESSED (1 << 5)
 #define PDE64_DIRTY    (1 << 6)
 #define PDE64_PS       (1 << 7)
-#define PDE64_G        (1 << 8)
+#define PDE64_PROTNONE (1 << 8)
 #define PDE64_NX       0 // (1LU << 63) // TODO
 
 struct phinfo_t {

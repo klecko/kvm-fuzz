@@ -55,7 +55,7 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	}
 
 	// Align stack
-	user_stack = (uint8_t*)((uintptr_t)user_stack & ~7);
+	user_stack = (uint8_t*)((uintptr_t)user_stack & ~0xF);
 
 	// Set up auxp
 	// Note for future Klecko: the only mandatory one seems to be AT_RANDOM.
@@ -96,7 +96,7 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 }
 
 void jump_to_user(void* entry, void* stack) {
-	printf("Jumping to user!\n");
+	printf("Jumping to user at 0x%lx!\n", entry);
 	asm volatile (
 		// Set user stack, RIP and RFLAGS
 		"mov rsp, %[rsp];"

@@ -10,7 +10,7 @@ void stat_stdout(void* statbuf);
 
 class File;
 struct file_ops {
-	void (File::*do_stat)(void* statbuf);
+	void (File::*do_stat)(void* statbuf) const;
 	size_t (File::*do_read)(void* buf, size_t len);
 	size_t (File::*do_write)(const void* buf, size_t len);
 };
@@ -19,17 +19,18 @@ class File {
 public:
 	File(uint32_t flags = 0, const char* buf = NULL, size_t size = 0);
 
-	uint32_t flags();
+	uint32_t flags() const;
 	void set_flags(uint32_t flags);
-	const char* cursor();
-	bool    is_readable();
-	bool    is_writable();
-	size_t size();
-	size_t offset();
-	void    set_offset(size_t offset);
+	const char* buf() const;
+	const char* cursor() const;
+	bool is_readable() const;
+	bool is_writable() const;
+	size_t size() const;
+	size_t offset() const;
+	void set_offset(size_t offset);
 
 	// File operations
-	void    stat(void* statbuf);
+	void stat(void* statbuf) const;
 	size_t read(void* buf, size_t len);
 	size_t write(const void* buf, size_t len);
 
@@ -61,8 +62,8 @@ private:
 	size_t move_cursor(size_t increment);
 
 	// Actual implementations of file operations
-	void    do_stat_regular(void* statbuf);
-	void    do_stat_stdout(void* statbuf);
+	void   do_stat_regular(void* statbuf) const;
+	void   do_stat_stdout(void* statbuf) const;
 	size_t do_read_regular(void* buf, size_t len);
 	size_t do_write_stdout(const void* buf, size_t len);
 };

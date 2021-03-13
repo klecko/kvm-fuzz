@@ -98,7 +98,11 @@ static uint64_t do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
 }
 
 static uint64_t do_sys_access(const char* pathname, int mode) {
-	TODO
+	if (!m_file_contents.count(pathname)) {
+		return -ENOENT;
+	}
+	ASSERT(false, "access: %s 0x%lx\n", pathname, mode);
+	return 0;
 }
 
 static uint64_t do_sys_write(int fd, const void* buf, size_t count) {
@@ -232,38 +236,78 @@ static uint64_t do_sys_fcntl(int fd, int cmd, unsigned long arg) {
 	return ret;
 }
 
+uint64_t prot_to_page_flags(int prot) {
+	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "prot: %d", prot);
+	uint64_t page_flags = PDE64_USER;
+	if (prot == PROT_NONE)
+		page_flags |= PDE64_PROTNONE;
+	else {
+		// There's no way of having writable but not readable pages
+		if (prot & PROT_WRITE)
+			page_flags |= PDE64_RW;
+		if (!(prot & PROT_EXEC))
+			page_flags |= PDE64_NX;
+	}
+	return page_flags;
+}
+
 static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
-	                        int fd, off_t offset)
+                            int fd, size_t offset)
 {
 	// We'll remove this checks little by little :)
-	ASSERT(addr == NULL, "not null addr 0x%lx", addr);
-	ASSERT((length & PTL1_MASK) == length, "not aligned length %lx", length);
-	ASSERT(fd == -1, "fd %d", fd);
-	ASSERT(offset == 0, "offset %ld", offset);
-	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED;
+	dbgprintf("mmap(0x%lx, 0x%lx, %d, %d, %d, 0x%lx)\n", addr, length, prot,
+	          flags, fd, offset);
+	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
+	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
 	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
 
-	uint64_t page_flags = PDE64_USER;
-	if (prot & PROT_WRITE)
-		page_flags |= PDE64_RW;
-	if (!(prot & PROT_EXEC))
-		page_flags |= PDE64_NX;
-	return (uint64_t)Mem::Virt::alloc(length, page_flags);
+	// Parse perms
+	uint64_t page_flags = prot_to_page_flags(prot);
+	if (!(prot & PROT_WRITE) && fd != -1)
+		page_flags |= PDE64_RW; // read only file: map as writable first
+
+	// Round length to upper page boundary
+	size_t length_upper = (length + PAGE_SIZE - 1) & PTL1_MASK;
+
+	// Allocate memory
+	void* ret;
+	if (flags & MAP_FIXED) {
+		ASSERT(addr, "MAP_FIXED with no addr");
+		ret = addr;
+		Mem::Virt::alloc(addr, length_upper, page_flags);
+	} else {
+		ret = Mem::Virt::alloc(length_upper, page_flags);
+	}
+
+	// If a file descriptor was specified, copy its content to memory
+	if (fd != -1) {
+		const File& f = m_open_files[fd];
+		// User seems to be allowed to map beyond the file limits (when
+		// offset + length > f.size()). Let's see if offset > f.size() is
+		// supposed to be allowed.
+		ASSERT(offset <= f.size(), "offset OOB: 0x%lx / 0x%lx", offset, f.size());
+		memcpy(ret, f.buf() + offset, min(f.size() - offset, length));
+
+		// If it was read only, remove write permissions after copying content
+		if (!(prot & PROT_WRITE)) {
+			page_flags &= ~PDE64_RW;
+			Mem::Virt::set_flags(ret, length_upper, page_flags);
+		}
+	}
+
+	return (uint64_t)ret;
 }
 
 static uint64_t do_sys_munmap(void* addr, size_t length) {
+	// Round length to upper page boundary
+	length = (length + PAGE_SIZE - 1) & PTL1_MASK;
 	Mem::Virt::free(addr, length);
 	return 0;
 }
 
 static uint64_t do_sys_mprotect(void* addr, size_t length, int prot) {
-	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "prot: %d", prot);
-	uint64_t flags = PDE64_USER;
-	if (prot & PROT_WRITE)
-		flags |= PDE64_RW;
-	if (!(prot & PROT_EXEC))
-		flags |= PDE64_NX;
-	Mem::Virt::set_flags(addr, length, flags);
+	uint64_t page_flags = prot_to_page_flags(prot);
+	Mem::Virt::set_flags(addr, length, page_flags);
 	return 0;
 }
 

@@ -21,8 +21,13 @@ PageWalker::PageWalker(void* start, size_t len)
 }
 
 void PageWalker::alloc_frame(uint64_t flags) {
-	ASSERT(!*pte(), "address already mapped: 0x%lx to 0x%lx", addr(), *pte());
+	//ASSERT(!*pte(), "address already mapped: 0x%lx to 0x%lx", addr(), *pte());
+	if (*pte()) {
+		printf_once("mapping 0x%lx twice, discarding old mapping\n", addr());
+		free_frame();
+	}
 	*pte() = Mem::Phys::alloc_frame() | flags;
+	//dbgprintf("mapping: 0x%lx to phys 0x%lx\n", addr(), *pte() & PTL1_MASK);
 }
 
 void PageWalker::free_frame() {

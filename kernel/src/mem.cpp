@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <sys/mman.h>
 #include "common.h"
+#include "stack"
 #include "mem.h"
 #include "page_walker.h"
 
@@ -12,10 +13,16 @@ namespace Phys {
 static const uintptr_t PHYSMAP_ADDR = 0xFFFFFF8000000000;
 uintptr_t g_next_frame_alloc;
 size_t    g_memory_length;
+stack<uintptr_t> g_free_frames;
 
 uintptr_t alloc_frame() {
 	if (g_next_frame_alloc == 0) {
 		hc_get_mem_info((void**)&g_next_frame_alloc, &g_memory_length);
+	}
+	if (!g_free_frames.empty()) {
+		uintptr_t ret = g_free_frames.top();
+		g_free_frames.pop();
+		return ret;
 	}
 	ASSERT(g_next_frame_alloc <= g_memory_length - PAGE_SIZE, "OOM");
 	uintptr_t ret = g_next_frame_alloc;
@@ -25,7 +32,9 @@ uintptr_t alloc_frame() {
 
 void free_frame(uintptr_t frame) {
 	// TODO Kappa
+	ASSERT((frame & PTL1_MASK) == frame, "not aligned frame: 0x%lx", frame);
 	memset(virt(frame), 0, PAGE_SIZE);
+	g_free_frames.push(frame);
 }
 
 void* virt(uintptr_t phys) {
@@ -51,7 +60,8 @@ void* alloc(size_t len, uint64_t flags) {
 }
 
 void alloc(void* addr, size_t len, uint64_t flags) {
-	flags |= PDE64_PRESENT;
+	if (!(flags & PDE64_PROTNONE))
+		flags |= PDE64_PRESENT;
 	PageWalker pages(addr, len);
 	do {
 		pages.alloc_frame(flags);
@@ -72,7 +82,8 @@ void free(void* addr, size_t len) {
 }
 
 void set_flags(void* addr, size_t len, uint64_t flags) {
-	flags |= PDE64_PRESENT;
+	if (!(flags & PDE64_PROTNONE))
+		flags |= PDE64_PRESENT;
 	PageWalker pages(addr, len);
 	do {
 		pages.set_flags(flags);

@@ -28,7 +28,7 @@ void* kmalloc(size_t size) {
 	remaining -= size;
 	next_alloc += size;
 
-	dbgprintf("Allocation of %lu: 0x%lx\n", size, ret);
+	//dbgprintf("Allocation of %lu: 0x%lx\n", size, ret);
 	return ret;
 }
 

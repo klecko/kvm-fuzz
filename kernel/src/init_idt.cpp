@@ -20,8 +20,11 @@ void init_idt() {
 			g_idt[i].set_type(InterruptDescriptor::Type::Interrupt);
 	}
 
-	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)_handle_page_fault);
+	// Custom ISRS
 	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)_handle_breakpoint);
+	g_idt[ExceptionNumber::GeneralProtectionFault].
+		set_offset((uint64_t)_handle_general_protection_fault);
+	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)_handle_page_fault);
 
 	IDTR idtr = {
 		.size   = sizeof(g_idt) - 1,

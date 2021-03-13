@@ -140,26 +140,34 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 #endif
 
 int main(int argc, char** argv) {
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
 	cout << "Number of threads: " << num_threads << endl;
 	init_kvm();
 	Stats stats;
 	Corpus corpus(num_threads, "../corpus");
 	Vm vm(
-		8 * 1024 * 1024,
+		12 * 1024 * 1024,
 		"./kernel/kernel",
 		"../test_bins/readelf",
-		{"./readelf", "-a", "test"}
+		{"./readelf", "-l", "test"}
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
 	// set before each run. We set its size to the maximum input size so kernel
 	// allocs a buffer of that size.
-	// Other real files should be set here as well.
 	string file(corpus.max_input_size(), 'a');
 	vm.set_file("test", file);
+	// Other real files should be set here as well. TODO this is ugly
 	string localtime(read_file("/etc/localtime"));
 	vm.set_file("/etc/localtime", localtime);
+	string ld_so_cache(read_file("/etc/ld.so.cache"));
+	vm.set_file("/etc/ld.so.cache", ld_so_cache);
+	string libc(read_file("/lib/x86_64-linux-gnu/libc.so.6"));
+	vm.set_file("/lib/x86_64-linux-gnu/libc.so.6", libc);
 
+	//string crash(read_file("./crash"));
+	//vm.set_file("test", crash);
 	/* vm.run(stats);
 	return 0; */
 
