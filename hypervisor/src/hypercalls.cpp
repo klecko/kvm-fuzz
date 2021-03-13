@@ -27,7 +27,7 @@ void Vm::do_hc_print(vaddr_t msg_addr) {
 void Vm::do_hc_get_mem_info(vaddr_t mem_start_addr, vaddr_t mem_length_addr) {
 	paddr_t next_frame_alloc = m_mmu.next_frame_alloc();
 	m_mmu.write<vaddr_t>(mem_start_addr, next_frame_alloc);
-	m_mmu.write<vaddr_t>(mem_length_addr, m_mmu.size() - next_frame_alloc);
+	m_mmu.write<vaddr_t>(mem_length_addr, m_mmu.size());
 
 	// From this point on, kernel is in charge of managing physical memory
 	// and not us

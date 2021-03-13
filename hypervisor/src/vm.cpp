@@ -270,6 +270,10 @@ kvm_regs Vm::regs() const {
 	return *m_regs;
 }
 
+Mmu& Vm::mmu() {
+	return m_mmu;
+}
+
 psize_t Vm::memsize() const {
 	return m_mmu.size();
 }

@@ -37,6 +37,7 @@ public:
 
 	kvm_regs& regs();
 	kvm_regs regs() const;
+	Mmu& mmu();
 	psize_t memsize() const;
 	FaultInfo fault() const;
 	uint8_t* coverage_bitmap() const;
