@@ -13,31 +13,31 @@ PageWalker::PageWalker(void* start, size_t len)
 	, m_ptl2_i(PTL2_INDEX(m_start))
 	, m_ptl1_i(PTL1_INDEX(m_start))
 {
-	ASSERT((m_start & PTL1_MASK) == m_start, "not aligned start: 0x%lx", m_start);
-	ASSERT((m_len & PTL1_MASK) == m_len, "not aligned len: 0x%lx", m_len);
+	ASSERT((m_start & PTL1_MASK) == m_start, "not aligned start: %p", m_start);
+	ASSERT((m_len & PTL1_MASK) == m_len, "not aligned len: %p", m_len);
 	update_ptl3();
 	update_ptl2();
 	update_ptl1();
 }
 
 void PageWalker::alloc_frame(uint64_t flags) {
-	//ASSERT(!*pte(), "address already mapped: 0x%lx to 0x%lx", addr(), *pte());
+	//ASSERT(!*pte(), "address already mapped: %p to %p", addr(), *pte());
 	if (*pte()) {
-		printf_once("mapping 0x%lx twice, discarding old mapping\n", addr());
+		printf_once("mapping %p twice, discarding old mapping\n", addr());
 		free_frame();
 	}
 	*pte() = Mem::Phys::alloc_frame() | flags;
-	//dbgprintf("mapping: 0x%lx to phys 0x%lx\n", addr(), *pte() & PTL1_MASK);
+	//dbgprintf("mapping: %p to phys %p\n", addr(), *pte() & PTL1_MASK);
 }
 
 void PageWalker::free_frame() {
-	ASSERT(*pte(), "address not mapped: 0x%lx", addr());
+	ASSERT(*pte(), "address not mapped: %p", addr());
 	Mem::Phys::free_frame(*pte() & PTL1_MASK);
 	*pte() = 0;
 }
 
 void PageWalker::set_flags(uint64_t flags) {
-	ASSERT(*pte(), "address not mapped: 0x%lx", addr());
+	ASSERT(*pte(), "address not mapped: %p", addr());
 	*pte() = (*pte() & PTL1_MASK) | flags;
 }
 

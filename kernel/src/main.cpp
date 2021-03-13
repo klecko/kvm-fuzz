@@ -96,7 +96,7 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 }
 
 void jump_to_user(void* entry, void* stack) {
-	printf("Jumping to user at 0x%lx!\n", entry);
+	printf("Jumping to user at %p!\n", entry);
 	asm volatile (
 		// Set user stack, RIP and RFLAGS
 		"mov rsp, %[rsp];"
@@ -155,7 +155,7 @@ extern "C" void kmain(int argc, char** argv) {
 	init_file_contents(info.num_files);
 
 	printf("Elf path: %s\n", m_elf_path.c_str());
-	printf("Brk: 0x%lx\n", m_brk);
+	printf("Brk: %p\n", m_brk);
 	printf("Files: %d\n", m_file_contents.size());
 	for (auto v : m_file_contents) {
 		printf("\t%s, length %lu\n", v.f.c_str(), v.s.iov_len);

@@ -101,7 +101,7 @@ static uint64_t do_sys_access(const char* pathname, int mode) {
 	if (!m_file_contents.count(pathname)) {
 		return -ENOENT;
 	}
-	ASSERT(false, "access: %s 0x%lx\n", pathname, mode);
+	ASSERT(false, "access: %s 0x%x\n", pathname, mode);
 	return 0;
 }
 
@@ -160,7 +160,7 @@ static uint64_t do_sys_close(int fd) {
 }
 
 static uint64_t do_sys_brk(uintptr_t addr) {
-	dbgprintf("trying to set brk to 0x%lx\n", addr);
+	dbgprintf("trying to set brk to %p\n", addr);
 	if (addr < m_min_brk)
 		return m_brk;
 
@@ -176,7 +176,7 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 		Mem::Virt::free((void*)addr_next_page, next_page - addr_next_page);
 	}
 
-	dbgprintf("brk set to 0x%lx\n", addr);
+	dbgprintf("brk set to %p\n", addr);
 	m_brk = addr;
 	return m_brk;
 }
@@ -255,7 +255,7 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
                             int fd, size_t offset)
 {
 	// We'll remove this checks little by little :)
-	dbgprintf("mmap(0x%lx, 0x%lx, %d, %d, %d, 0x%lx)\n", addr, length, prot,
+	dbgprintf("mmap(%p, %p, %d, %d, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
 	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
 	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
@@ -285,7 +285,7 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 		// User seems to be allowed to map beyond the file limits (when
 		// offset + length > f.size()). Let's see if offset > f.size() is
 		// supposed to be allowed.
-		ASSERT(offset <= f.size(), "offset OOB: 0x%lx / 0x%lx", offset, f.size());
+		ASSERT(offset <= f.size(), "offset OOB: %p / %p", offset, f.size());
 		memcpy(ret, f.buf() + offset, min(f.size() - offset, length));
 
 		// If it was read only, remove write permissions after copying content

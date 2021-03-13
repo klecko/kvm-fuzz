@@ -32,7 +32,7 @@ uintptr_t alloc_frame() {
 
 void free_frame(uintptr_t frame) {
 	// TODO Kappa
-	ASSERT((frame & PTL1_MASK) == frame, "not aligned frame: 0x%lx", frame);
+	ASSERT((frame & PTL1_MASK) == frame, "not aligned frame: %p", frame);
 	memset(virt(frame), 0, PAGE_SIZE);
 	g_free_frames.push(frame);
 }

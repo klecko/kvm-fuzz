@@ -13,7 +13,7 @@ extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
 	// Some exceptions push a error code, that's why we don't know where's
 	// actually rip
-	printf("Interrupt %d at 0x%lx or 0x%lx\n", interrupt, frame->rip, frame->cs);
+	printf("Interrupt %d at %p or %p\n", interrupt, frame->rip, frame->cs);
 	TODO
 }
 
@@ -23,7 +23,7 @@ static void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool user    = error_code & (1 << 2);
 	bool execute = error_code & (1 << 4);
 	uint64_t fault_addr = rdcr2();
-	ASSERT(user, "woops, kernel PF at 0x%lx. addr: 0x%lx, present: %d, write: %d, ex: %d",
+	ASSERT(user, "woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",
 	       frame->rip, fault_addr, present, write, execute);
 
 	FaultInfo fault = {
@@ -54,7 +54,7 @@ static void handle_breakpoint(InterruptFrame* frame) {
 static void handle_general_protection_fault(InterruptFrame* frame,
                                             uint64_t error_code)
 {
-	die("GPF at 0x%lx, segment: 0x%lx\n", frame->rip, error_code);
+	die("GPF at %p, segment: 0x%lx\n", frame->rip, error_code);
 }
 
 __attribute__((naked))

@@ -826,8 +826,11 @@ static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const
       }
 
       case 'p' : {
-        width = sizeof(void*) * 2U;
-        flags |= FLAGS_ZEROPAD | FLAGS_UPPERCASE;
+        // CHANGED BY KLECKO
+        //width = sizeof(void*) * 2U;
+        //flags |= FLAGS_ZEROPAD | FLAGS_UPPERCASE;
+        out('0', buffer, idx++, maxlen);
+        out('x', buffer, idx++, maxlen);
 #if defined(PRINTF_SUPPORT_LONG_LONG)
         const bool is_ll = sizeof(uintptr_t) == sizeof(long long);
         if (is_ll) {
