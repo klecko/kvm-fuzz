@@ -3,21 +3,22 @@
 #include "libcpp.h"
 
 void stat_regular(void* statbuf, size_t filesize) {
+	static unsigned long ino = 11349843;
 	struct stat st;
 	st.st_dev          = 2052;
-	st.st_ino          = 11349843;
+	st.st_ino          = ino++;
 	st.st_mode         = 0100664;
 	st.st_nlink        = 1;
 	st.st_uid          = 0;
 	st.st_gid          = 0;
 	st.st_rdev         = 0;
 	st.st_size         = filesize;
-	st.st_atim.tv_sec  = 0;
-	st.st_atim.tv_nsec = 0;
-	st.st_mtim.tv_sec  = 0;
+	st.st_atim.tv_sec  = 1615575193;
+	st.st_atim.tv_nsec = 228169446;
+	st.st_mtim.tv_sec  = 1596888770;
 	st.st_mtim.tv_nsec = 0;
-	st.st_ctim.tv_sec  = 0;
-	st.st_ctim.tv_nsec = 0;
+	st.st_ctim.tv_sec  = 1612697533;
+	st.st_ctim.tv_nsec = 117084367;
 	st.st_blksize      = 4096;
 	st.st_blocks       = (filesize/512) + 1;
 	memcpy(statbuf, &st, sizeof(st));

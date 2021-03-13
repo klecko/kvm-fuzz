@@ -81,7 +81,7 @@ vsize_t Vm::do_hc_get_file_len(size_t n) {
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
-	return it->second.length + 1;
+	return it->second.length;
 }
 
 void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
@@ -102,7 +102,6 @@ void Vm::do_hc_set_file_buf(size_t n, vaddr_t buf_addr) {
 
 void Vm::do_hc_fault(vaddr_t fault_addr) {
 	m_fault = m_mmu.read<FaultInfo>(fault_addr);
-	cout << m_fault << endl;
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {

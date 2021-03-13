@@ -31,6 +31,19 @@ void init_file_contents(size_t n) {
 	}
 }
 
+const char* environ[] = {
+	"SHELL=/bin/bash",
+	"EDITOR=vim",
+	"PWD=/home/klecko/",
+	"LOGNAME=klecko",
+	"HOME=/home/klecko",
+	"USERNAME=klecko",
+	"TERM=xterm-256color",
+	"PATH=/home/klecko/.cargo/bin:/home/klecko/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/klecko/.local/bin/:/opt/x86_64-elf/bin/:/home/klecko/zig/",
+	"_=/usr/bin/env",
+};
+const int environ_n = sizeof(environ)/sizeof(*environ);
+
 void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	// Allocate stack
 	uint8_t* user_stack = (uint8_t*)Mem::Virt::alloc_user_stack();
@@ -54,8 +67,18 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 		argv_addrs[i] = (char*)user_stack;
 	}
 
+	// Write environ strings saving pointers to each env
+	char* environ_addrs[environ_n];
+	for (int i = 0; i < environ_n; i++) {
+		arg_len = strlen(environ[i]) + 1;
+		user_stack -= arg_len;
+		memcpy(user_stack, environ[i], arg_len);
+		environ_addrs[i] = (char*)user_stack;
+	}
+
 	// Align stack
 	user_stack = (uint8_t*)((uintptr_t)user_stack & ~0xF);
+	user_stack -= 8;
 
 	// Set up auxp
 	// Note for future Klecko: the only mandatory one seems to be AT_RANDOM.
@@ -76,8 +99,9 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	memcpy(user_stack, &auxv, sizeof(auxv));
 
 	// Set up envp
-	user_stack -= 8;
-	*(uint64_t*)user_stack = 0;
+	user_stack -= sizeof(environ_addrs) + 8;
+	memcpy(user_stack, environ_addrs, sizeof(environ_addrs));
+	((uint64_t*)user_stack)[environ_n] = 0;
 
 	// Set up argv
 	user_stack -= sizeof(argv_addrs) + 8;

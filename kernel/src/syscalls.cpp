@@ -48,10 +48,12 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
                               mode_t mode)
 {
 	string pathname_s(pathname);
-	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
+	ASSERT(m_file_contents.count(pathname_s), "unknown file '%s'", pathname);
 	ASSERT(dirfd == AT_FDCWD, "%s dirfd %d", pathname, dirfd);
 	ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
 	       "%s with write permisions", pathname);
+
+	dbgprintf("opening %s\n", pathname);
 
 	// Find unused fd
 	int fd = 3;
@@ -360,9 +362,9 @@ static uint64_t do_sys_sysinfo(struct sysinfo* info) {
 	printf("total: %d\n", sum);
 } */
 uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                        uint64_t arg3, uint64_t arg4, uint64_t arg5)
+                        uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t rip)
 {
-	dbgprintf("--> syscall: %s\n", syscall_str[nr]);
+	dbgprintf("--> syscall at %p: %s\n", rip, syscall_str[nr]);
 	uint64_t ret = 0;
 	switch (nr) {
 		case SYS_openat:
@@ -409,6 +411,9 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			break;
 		case SYS_getegid:
 			ret = 0;
+			break;
+		case SYS_getpid:
+			ret = 1234;
 			break;
 		case SYS_arch_prctl:
 			ret = do_sys_arch_prctl(arg0, arg1);

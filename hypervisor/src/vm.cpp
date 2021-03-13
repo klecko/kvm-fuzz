@@ -395,7 +395,6 @@ void Vm::set_single_step(bool enabled) {
 Vm::RunEndReason Vm::single_step(Stats& stats) {
 	set_single_step(true);
 	RunEndReason reason = run(stats);
-	ASSERT(reason == RunEndReason::Debug, "single step end reason: %d", reason);
 	set_single_step(false);
 	return reason;
 }
@@ -558,7 +557,7 @@ void Vm::set_file(const string& filename, const string& content, bool check) {
 		ASSERT(!check || file.guest_buf, "kernel didn't submit buf for file %s",
 				filename.c_str());
 		if (file.guest_buf)
-			m_mmu.write_mem(file.guest_buf, file.data, file.length + 1);
+			m_mmu.write_mem(file.guest_buf, file.data, file.length);
 	} else {
 		// File didn't exist. Set guest buffer address to 0, and wait for guest
 		// kernel to do hc_set_file_buf.

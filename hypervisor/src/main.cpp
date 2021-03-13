@@ -145,6 +145,13 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 #define num_threads 8
 #endif
 
+void read_and_set_file(const string& filename, Vm& vm) {
+	static vector<string> file_contents;
+	string content = read_file(filename);
+	vm.set_file(filename, content);
+	file_contents.push_back(move(content));
+}
+
 int main(int argc, char** argv) {
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
@@ -153,9 +160,9 @@ int main(int argc, char** argv) {
 	Stats stats;
 	Corpus corpus(num_threads, "../corpus");
 	Vm vm(
-		12 * 1024 * 1024,
+		16 * 1024 * 1024,
 		"./kernel/kernel",
-		"../test_bins/readelf",
+		"../test_bins/target",
 		{"./readelf", "-l", "test"}
 	);
 
@@ -165,12 +172,11 @@ int main(int argc, char** argv) {
 	string file(corpus.max_input_size(), 'a');
 	vm.set_file("test", file);
 	// Other real files should be set here as well. TODO this is ugly
-	string localtime(read_file("/etc/localtime"));
-	vm.set_file("/etc/localtime", localtime);
-	string ld_so_cache(read_file("/etc/ld.so.cache"));
-	vm.set_file("/etc/ld.so.cache", ld_so_cache);
-	string libc(read_file("/lib/x86_64-linux-gnu/libc.so.6"));
-	vm.set_file("/lib/x86_64-linux-gnu/libc.so.6", libc);
+	read_and_set_file("/etc/ld.so.cache", vm);
+	read_and_set_file("/lib/x86_64-linux-gnu/libc.so.6", vm);
+	read_and_set_file("/lib/x86_64-linux-gnu/libstdc++.so.6", vm);
+	read_and_set_file("/lib/x86_64-linux-gnu/libgcc_s.so.1", vm);
+	read_and_set_file("/lib/x86_64-linux-gnu/libm.so.6", vm);
 
 	//string crash(read_file("./crash"));
 	//vm.set_file("test", crash);

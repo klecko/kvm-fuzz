@@ -10,10 +10,11 @@ static void* g_user_stack;
 // This needs to be in the same file as syscall_entry, so it can be called
 // from there without dirtying any reg
 static uint64_t _handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                                uint64_t arg3, uint64_t arg4, uint64_t arg5)
+                                uint64_t arg3, uint64_t arg4, uint64_t arg5,
+                                uint64_t rip)
 {
 	register int nr asm("eax");
-	return handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5);
+	return handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5, rip);
 }
 
 // Warning: -fpie is needed for these to use relative addressing so it doesn't
@@ -56,14 +57,18 @@ static void syscall_entry() {
 		"push r10;"
 		"push r11;"
 
-	// The forth argument is set in r10. We need to move it to r10 to conform to
-	// C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9
+	// Push return address as 7th argument for the handler
+		"push rcx;"
+
+	// The forth argument is set in r10. We need to move it to rcx to conform to
+	// C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9.
 		"mov rcx, r10;"
 
 	// Handle syscall. Return value will be held in rax
 		"call %[handler];"
 
 	// Restore registers
+		"pop rcx;"
 		"pop r11;"
 		"pop r10;"
 		"pop r9;"
