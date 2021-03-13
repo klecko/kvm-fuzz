@@ -37,6 +37,29 @@ struct Stats {
 	cycle_t  report_cov_cycles {0};
 	std::atomic_flag lock = ATOMIC_FLAG_INIT;
 
+	Stats() {};
+
+	Stats(const Stats& other) {
+		cases             = other.cases;
+		crashes           = other.crashes;
+		vm_exits          = other.vm_exits;
+		vm_exits_hc       = other.vm_exits_hc;
+		vm_exits_debug    = other.vm_exits_debug;
+		vm_exits_cov      = other.vm_exits_cov;
+		total_cycles      = other.total_cycles;
+		reset_cycles      = other.reset_cycles;
+		reset_pages       = other.reset_pages;
+		run_cycles        = other.run_cycles;
+		hypercall_cycles  = other.hypercall_cycles;
+		kvm_cycles        = other.kvm_cycles;
+		mut_cycles        = other.mut_cycles;
+		mut1_cycles       = other.mut1_cycles;
+		mut2_cycles       = other.mut2_cycles;
+		set_input_cycles  = other.set_input_cycles;
+		update_cov_cycles = other.update_cov_cycles;
+		report_cov_cycles = other.report_cov_cycles;
+	}
+
 	void update(const Stats& stats){
 		while (lock.test_and_set());
 		cases             += stats.cases;
