@@ -186,6 +186,13 @@ vector<symbol_t> ElfParser::symbols() const {
 	return m_symbols;
 }
 
+pair<vaddr_t, vaddr_t> ElfParser::section_limits(const string& name) const {
+	for (const section_t& section : sections()) {
+		if (section.name == name)
+			return {section.addr, section.addr + section.size};
+	}
+	ASSERT(false, "not found section: %s", name.c_str());
+}
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;
 } */

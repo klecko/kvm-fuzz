@@ -12,7 +12,7 @@
 #include <string.h>
 
 //#define ENABLE_KVM_DIRTY_LOG_RING
-//#define ENABLE_COVERAGE
+#define ENABLE_COVERAGE
 #define COVERAGE_BITMAP_SIZE 64*1024
 
 //#define DEBUG 1
@@ -76,6 +76,14 @@ typedef paddr_t psize_t;
 	fflush(stdout);                     \
 	abort();                            \
 } while(0)
+
+#define printf_once(...) do {                                    \
+	static atomic_flag once = ATOMIC_FLAG_INIT;                  \
+	if (!once.test_and_set()) {                                  \
+		printf("[ONCE] ");                                       \
+		printf(__VA_ARGS__);                                     \
+	}                                                            \
+} while (0)
 
 #define ioctl_chk(fd, req, arg)         \
 	({                                  \

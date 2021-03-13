@@ -76,12 +76,13 @@ private:
 	int m_vm_fd;
 	int m_vcpu_fd;
 	kvm_run*   m_vcpu_run;
+	kvm_regs*  m_regs;
+	kvm_sregs* m_sregs;
+
 	int m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
 	uint8_t*   m_vmx_pt_bitmap;
 	libxdc_t*  m_vmx_pt_decoder;
-	kvm_regs*  m_regs;
-	kvm_sregs* m_sregs;
 
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
@@ -100,6 +101,7 @@ private:
 	int create_vm();
 	void setup_kvm();
 	void load_elfs();
+	void setup_coverage();
 	void setup_kernel_execution();
 	void set_regs_dirty();
 	void set_sregs_dirty();

@@ -111,6 +111,7 @@ class ElfParser {
 		std::vector<section_t> sections() const;
 		std::vector<symbol_t> symbols() const;
 		//std::vector<relocation_t> relocations() const;
+		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 
 	private:
 		uint8_t* m_data;

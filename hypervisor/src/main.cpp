@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
 	Vm vm(
 		12 * 1024 * 1024,
 		"./kernel/kernel",
-		"../test_bins/readelf-static",
+		"../test_bins/readelf",
 		{"./readelf", "-l", "test"}
 	);
 

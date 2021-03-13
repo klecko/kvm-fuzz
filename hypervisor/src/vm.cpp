@@ -38,9 +38,15 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
 {
-	setup_kvm();
-
 	load_elfs();
+
+	// This has to be done after elfs have been loaded an relocated, so we know
+	// the address range we want to get coverage from
+#ifdef ENABLE_COVERAGE
+	setup_coverage();
+#endif
+
+	setup_kvm();
 
 	setup_kernel_execution();
 
@@ -52,11 +58,17 @@ Vm::Vm(const Vm& other)
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
 	, m_interpreter(other.m_interpreter)
+	, m_argv(other.m_argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
 	, m_file_contents(other.m_file_contents)
 {
+	// Elfs are already relocated by the other VM, we can init vmx pt
+#ifdef ENABLE_COVERAGE
+	setup_coverage();
+#endif
+
 	setup_kvm();
 
 	// Copy registers
@@ -102,41 +114,12 @@ int Vm::create_vm() {
 	                            MAP_SHARED, m_vcpu_fd, 0);
 	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap vcpu_run");
 
-#ifdef ENABLE_COVERAGE
-	// VMX PT
-	m_vmx_pt_fd = ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0);
-	size_t vmx_pt_size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0);
-	m_vmx_pt = (uint8_t*)mmap(NULL, vmx_pt_size, PROT_READ|PROT_WRITE,
-	                          MAP_SHARED, m_vmx_pt_fd, 0);
-	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
-	m_vmx_pt_bitmap = (uint8_t*)malloc(COVERAGE_BITMAP_SIZE);
-
-	// libxdc
-	typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
-	typedef void  (*bb_callback_t)(void*, uint64_t, uint64_t);
-	typedef void  (*edge_callback_t)(void*, uint64_t, uint64_t);
-	uint64_t filter[4][2] = {0};
-	filter[0][0] = 0x400000;
-	filter[0][1] = 0x410000;
-	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
-	                               this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
-	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, NULL);
-	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
-	//libxdc_enable_tracing(decoder);
-#endif
-
 	m_regs  = &m_vcpu_run->s.regs.regs;
 	m_sregs = &m_vcpu_run->s.regs.sregs;
 	return m_vm_fd;
 }
 
 void Vm::setup_kvm() {
-	// Check if mmap failed
-	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap kvm_run");
-#ifdef ENABLE_COVERAGE
-	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
-#endif
-
 	ioctl_chk(m_vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
 
 	// Set special registers for long mode
@@ -181,18 +164,38 @@ void Vm::setup_kvm() {
 
 	// Set register sync
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
+}
 
-#ifdef ENABLE_COVERAGE
-	// Setup VMX PT
-	vmx_pt_filter_iprs filter = {
-		.a = 0x400000, // readelf text range
-		.b = 0x410000
-	};
-	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter);
+void Vm::setup_coverage() {
+	// Get coverage range. Elf should have been loaded by now
+	auto limits = m_elf.section_limits(".text");
+	vmx_pt_filter_iprs filter0 = { limits.first, limits.second };
+	printf_once("Coverage range: 0x%llx to 0x%llx\n", filter0.a, filter0.b);
+
+	// VMX PT
+	m_vmx_pt_fd = ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0);
+	size_t vmx_pt_size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0);
+	m_vmx_pt = (uint8_t*)mmap(NULL, vmx_pt_size, PROT_READ|PROT_WRITE,
+	                          MAP_SHARED, m_vmx_pt_fd, 0);
+	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
+	m_vmx_pt_bitmap = (uint8_t*)malloc(COVERAGE_BITMAP_SIZE);
+
+	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter0);
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE_ADDR0, 0);
-
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE, 0);
-#endif
+
+	// libxdc
+	typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
+	typedef void  (*bb_callback_t)(void*, uint64_t, uint64_t);
+	typedef void  (*edge_callback_t)(void*, uint64_t, uint64_t);
+	uint64_t filter[4][2] = {0};
+	filter[0][0] = filter0.a;
+	filter[0][1] = filter0.b;
+	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
+	                               this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
+	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, NULL);
+	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
+	//libxdc_enable_tracing(decoder);
 }
 
 void Vm::load_elfs() {
@@ -435,20 +438,20 @@ void Vm::update_coverage(Stats& stats) {
 	cycle_t cycles = rdtsc2();
 	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
 
-	/* uint8_t* buf = (uint8_t*)malloc(size+1);
-	memcpy(buf, m_vmx_pt, size);
-	buf[size] = 0x55; */
+	if (size) {
+		/* uint8_t* buf = (uint8_t*)malloc(size+1);
+		memcpy(buf, m_vmx_pt, size);
+		buf[size] = 0x55; */
 
-	// KVM-PT was modified to allow this, because I thought the memcpy was
-	// very expensive, but it seems it isn't
-	m_vmx_pt[size] = 0x55;
+		// KVM-PT was modified to allow this, because I thought the memcpy was
+		// very expensive, but it seems it isn't
+		m_vmx_pt[size] = 0x55;
 
-	decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
-	ASSERT(ret == 0, "libxdc decode: %d", ret);
+		decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
+		ASSERT(ret == decoder_result_t::decoder_success, "libxdc decode: %d", ret);
 
-	//free(buf);
-
-	//printf("full %lu\n", size);
+		//free(buf);
+	}
 	stats.update_cov_cycles += rdtsc2() - cycles;
 }
 
