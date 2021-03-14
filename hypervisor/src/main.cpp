@@ -177,12 +177,9 @@ int main(int argc, char** argv) {
 	vm.set_file("input", file);
 
 	// Other memory-loaded files should be set here as well
-	/* read_and_set_file("/etc/ld.so.cache", vm);
-	read_and_set_file("/lib/x86_64-linux-gnu/libc.so.6", vm);
-	read_and_set_file("/lib/x86_64-linux-gnu/libstdc++.so.6", vm);
-	read_and_set_file("/lib/x86_64-linux-gnu/libgcc_s.so.1", vm);
-	read_and_set_file("/lib/x86_64-linux-gnu/libm.so.6", vm);
-	read_and_set_file("/lib/x86_64-linux-gnu/libcapstone.so.3", vm); */
+	for (const string& path : args.memory_files) {
+		read_and_set_file(path, vm);
+	}
 
 	//string crash(read_file("./crash"));
 	//vm.set_file("test", crash);

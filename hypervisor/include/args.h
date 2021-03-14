@@ -12,6 +12,7 @@ public:
 	std::string kernel_path;
 	std::string input_dir;
 	std::string output_dir;
+	std::vector<std::string> memory_files;
 	std::string binary_path;
 	std::vector<std::string> binary_argv;
 

@@ -46,6 +46,7 @@ bool Args::parse(int argc, char** argv) {
 			("k,kernel", "Kernel path", cxxopts::value<string>(kernel_path)->default_value("./kernel/kernel"), "path")
 			("i,input", "Input folder (initial corpus)", cxxopts::value<string>(input_dir)->default_value("./corpus"), "dir")
 			("o,output", "Output folder (crashes)", cxxopts::value<string>(output_dir)->default_value("./crashes"), "dir")
+			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
 			("h,help", "Print usage")
