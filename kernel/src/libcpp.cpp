@@ -12,7 +12,7 @@ void* kmalloc(size_t size) {
 	// Initial allocation
 	if (next_alloc == NULL) {
 		next_alloc = (uint8_t*)hc_get_kernel_brk();
-		printf("Kernel brk: %p\n", next_alloc);
+		dbgprintf("Kernel brk: %p\n", next_alloc);
 		Mem::Virt::alloc(next_alloc, INITIAL_ALLOCATION_SIZE, PDE64_NX | PDE64_RW);
 		remaining = INITIAL_ALLOCATION_SIZE;
 	}

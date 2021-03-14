@@ -32,5 +32,5 @@ void init_idt() {
 	};
 	idtr.load();
 
-	printf("IDT set\n");
+	dbgprintf("IDT set\n");
 }

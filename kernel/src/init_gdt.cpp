@@ -52,5 +52,5 @@ void init_gdt() {
 	};
 	gdt_ptr.load();
 
-	printf("GDT set\n");
+	dbgprintf("GDT set\n");
 }

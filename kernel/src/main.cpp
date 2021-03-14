@@ -112,9 +112,9 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	user_stack -= 8;
 	*(uint64_t*)user_stack = argc;
 
-	printf("ARGS:\n");
+	dbgprintf("ARGS:\n");
 	for (int i = 0; i < argc; i++)
-		printf("\t%d: %s\n", i, argv_addrs[i]);
+		dbgprintf("\t%d: %s\n", i, argv_addrs[i]);
 
 	return user_stack;
 }
@@ -178,11 +178,11 @@ extern "C" void kmain(int argc, char** argv) {
 	m_open_files[STDERR_FILENO] = FileStderr();
 	init_file_contents(info.num_files);
 
-	printf("Elf path: %s\n", m_elf_path.c_str());
-	printf("Brk: %p\n", m_brk);
-	printf("Files: %d\n", m_file_contents.size());
+	dbgprintf("Elf path: %s\n", m_elf_path.c_str());
+	dbgprintf("Brk: %p\n", m_brk);
+	dbgprintf("Files: %d\n", m_file_contents.size());
 	for (auto v : m_file_contents) {
-		printf("\t%s, length %lu\n", v.f.c_str(), v.s.iov_len);
+		dbgprintf("\t%s, length %lu\n", v.f.c_str(), v.s.iov_len);
 	}
 
 	void* user_stack = prepare_user_stack(argc, argv, info);

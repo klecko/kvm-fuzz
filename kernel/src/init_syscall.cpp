@@ -109,5 +109,5 @@ void init_syscall() {
 
 	save_kernel_stack();
 
-	printf("Syscall handlet set\n");
+	dbgprintf("Syscall handler set\n");
 }
