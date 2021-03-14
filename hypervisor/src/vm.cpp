@@ -13,6 +13,7 @@ using namespace std;
 
 int g_kvm_fd = -1;
 
+__attribute__((constructor))
 void init_kvm() {
 	g_kvm_fd = open("/dev/kvm", O_RDWR);
 	ERROR_ON(g_kvm_fd == -1, "open /dev/kvm");

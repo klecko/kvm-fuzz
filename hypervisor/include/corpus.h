@@ -41,7 +41,7 @@ public:
 	static const int MIN_MUTATIONS = 1;
 	static const int MAX_MUTATIONS = 5;
 
-	Corpus(int nthreads, const std::string& folder);
+	Corpus(int nthreads, const std::string& input, const std::string& output);
 
 	size_t size() const;
 	size_t memsize() const;
@@ -59,6 +59,9 @@ public:
 	void report_coverage(int id, uint8_t* cov);
 
 private:
+	// Output directory
+	std::string m_output_dir;
+
 	// Corpus and its lock
 	std::vector<std::string> m_corpus;
 	std::atomic_flag m_lock_corpus;

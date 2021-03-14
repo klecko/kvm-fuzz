@@ -17,16 +17,17 @@ string read_file(const string& filepath) {
 	return ss.str();
 }
 
-Corpus::Corpus(int nthreads, const string& folder)
-	: m_lock_corpus(false)
+Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
+	: m_output_dir(output_dir)
+	, m_lock_corpus(false)
 	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
 	, m_recorded_cov_bitmap(new uint8_t[COVERAGE_BITMAP_SIZE])
 	, m_recorded_cov(0)
 {
 	// Try to open the directory
-	DIR* dir = opendir(folder.c_str());
-	ERROR_ON(!dir, "opening directory %s", folder.c_str());
+	DIR* dir = opendir(input_dir.c_str());
+	ERROR_ON(!dir, "opening input directory %s", input_dir.c_str());
 
 	// Iterate the directory
 	struct dirent* ent;
@@ -34,7 +35,7 @@ Corpus::Corpus(int nthreads, const string& folder)
 	string filepath, input;
 	size_t max_sz = 0;
 	while ((ent = readdir(dir))){
-		filepath = folder + "/" + ent->d_name;
+		filepath = input_dir + "/" + ent->d_name;
 
 		// Check file type. If readdir fails to provide it, fallback
 		// to stat
@@ -61,9 +62,14 @@ Corpus::Corpus(int nthreads, const string& folder)
 	// This will be the maximum size of inputs produced by mutations
 	m_max_input_size = 10*max_sz;
 
-	ASSERT(m_corpus.size() != 0, "empty corpus: %s", folder.c_str());
+	ASSERT(m_corpus.size() != 0, "empty corpus: %s", input_dir.c_str());
 	cout << "Total files read: " << m_corpus.size() << endl;
 	cout << "Max mutated input size: " << m_max_input_size << endl;
+
+	// Check output directory
+	dir = opendir(m_output_dir.c_str());
+	ERROR_ON(!dir, "opening output directory %s", m_output_dir.c_str());
+	closedir(dir);
 
 	// Reset coverage bitmap
 	memset(m_recorded_cov_bitmap, 0, COVERAGE_BITMAP_SIZE);
@@ -119,7 +125,7 @@ void Corpus::report_crash(int id, const FaultInfo& fault) {
 		ostringstream filename;
 		filename << fault.type_str() << "_0x" << hex << fault.rip << "_0x"
 		         << fault.fault_addr;
-		ofstream ofs("./crashes/" + filename.str());
+		ofstream ofs(m_output_dir + "/" + filename.str());
 		ofs << m_mutated_inputs[id];
 		ERROR_ON(!ofs.good(), "Error saving crash file to disk");
 		ofs.close();

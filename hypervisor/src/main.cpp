@@ -4,6 +4,7 @@
 #include <thread>
 #include "vm.h"
 #include "corpus.h"
+#include "args.h"
 
 using namespace std;
 
@@ -100,8 +101,13 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			// TODO: DON'T RESET THIS MEMORY AREA, maybe add other memory slot
 			// for memory that we don't want to reset?
 			cycles = rdtsc1();
-			//runner.set_file("test", input, true);
-			runner.mmu().write_mem(runner.regs().rsi, input.c_str(), min(256UL, input.size()));
+			runner.set_file("input", input, true);
+
+			// If our target received the input in a buffer instead of using
+			// open & read, we may want to write it to the guest memory, instead
+			// of using memory-loaded files.
+			//runner.mmu().write_mem(runner.regs().rsi, input.c_str(),
+			//                       min(256UL, input.size()));
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
 			// Perform run
@@ -140,12 +146,6 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 	}
 }
 
-#if DEBUG == 1
-#define num_threads 1
-#else
-#define num_threads 8
-#endif
-
 void read_and_set_file(const string& filename, Vm& vm) {
 	static vector<string> file_contents;
 	string content = read_file(filename);
@@ -154,25 +154,29 @@ void read_and_set_file(const string& filename, Vm& vm) {
 }
 
 int main(int argc, char** argv) {
+	Args args;
+	if (!args.parse(argc, argv))
+		return 0;
+
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
-	cout << "Number of threads: " << num_threads << endl;
-	init_kvm();
+	cout << "Number of threads: " << args.jobs << endl;
 	Stats stats;
-	Corpus corpus(num_threads, "../corpus");
+	Corpus corpus(args.jobs, args.input_dir, args.output_dir);
 	Vm vm(
-		8 * 1024 * 1024,
-		"./kernel/kernel",
-		"../test_bins/capstone",
-		{"../test_bins/capstone"}
+		args.memory,
+		args.kernel_path,
+		args.binary_path,
+		args.binary_argv
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
 	// set before each run. We set its size to the maximum input size so kernel
 	// allocs a buffer of that size.
-	/* string file(corpus.max_input_size(), 'a');
-	vm.set_file("test", file); */
-	// Other real files should be set here as well. TODO this is ugly
+	string file(corpus.max_input_size(), 'a');
+	vm.set_file("input", file);
+
+	// Other memory-loaded files should be set here as well
 	/* read_and_set_file("/etc/ld.so.cache", vm);
 	read_and_set_file("/lib/x86_64-linux-gnu/libc.so.6", vm);
 	read_and_set_file("/lib/x86_64-linux-gnu/libstdc++.so.6", vm);
@@ -185,14 +189,11 @@ int main(int argc, char** argv) {
 	/* vm.run(stats);
 	return 0; */
 
-	vm.run_until(vm.resolve_symbol("cs_disasm"), stats);
-	//vm.run_until(0x404dd5, stats);
-	//vm.run_until(0x401c80, stats); // readelf
-	//vm.run_until(0x402520, stats); // objdump
+	vm.run_until(vm.resolve_symbol("main"), stats);
 
 	// Create threads
 	vector<thread> threads;
-	for (int i = 0; i < num_threads; i++) {
+	for (int i = 0; i < args.jobs; i++) {
 		threads.push_back(thread(worker, i, ref(vm), ref(corpus), ref(stats)));
 	}
 	threads.push_back(thread(print_stats, ref(stats), ref(corpus)));
