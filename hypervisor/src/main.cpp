@@ -188,10 +188,16 @@ int main(int argc, char** argv) {
 
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
-	// Create threads
+	// Create threads and bind each one to a core
+	cpu_set_t cpu;
 	vector<thread> threads;
 	for (int i = 0; i < args.jobs; i++) {
-		threads.push_back(thread(worker, i, ref(vm), ref(corpus), ref(stats)));
+		thread t = thread(worker, i, ref(vm), ref(corpus), ref(stats));
+		CPU_ZERO(&cpu);
+		CPU_SET(i, &cpu);
+		ERROR_ON(pthread_setaffinity_np(t.native_handle(), sizeof(cpu), &cpu) != 0,
+		         "Binding thread to core %d", i);
+		threads.push_back(move(t));
 	}
 	threads.push_back(thread(print_stats, ref(stats), ref(corpus)));
 
