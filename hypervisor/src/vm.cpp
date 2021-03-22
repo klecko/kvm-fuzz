@@ -22,18 +22,18 @@ void init_kvm() {
 	ASSERT(api_ver == KVM_API_VERSION, "kvm api version doesn't match: %d vs %d",
 	       KVM_API_VERSION, api_ver);
 
-#ifdef ENABLE_COVERAGE
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	int vmx_pt = ioctl(g_kvm_fd, KVM_VMX_PT_SUPPORTED);
 	ASSERT(vmx_pt != -1, "vmx_pt is not loaded");
 	ASSERT(vmx_pt != -2, "Intel PT is not supported on this CPU");
 #endif
 }
 
-Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
-       const vector<string>& argv)
+Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
+       const vector<string>& argv, const string& basic_blocks_path)
 	: m_vm_fd(create_vm())
-	, m_elf(filepath)
-	, m_kernel(kernelpath)
+	, m_elf(binary_path)
+	, m_kernel(kernel_path)
 	, m_interpreter(NULL)
 	, m_argv(argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
@@ -41,10 +41,13 @@ Vm::Vm(vsize_t mem_size, const string& kernelpath, const string& filepath,
 {
 	load_elfs();
 
-	// This has to be done after elfs have been loaded an relocated, so we know
+#ifdef ENABLE_COVERAGE_INTEL_PT
+	// This has to be done after elfs have been loaded and relocated, so we know
 	// the address range we want to get coverage from
-#ifdef ENABLE_COVERAGE
 	setup_coverage();
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	setup_coverage(basic_blocks_path);
 #endif
 
 	setup_kvm();
@@ -62,11 +65,11 @@ Vm::Vm(const Vm& other)
 	, m_argv(other.m_argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
-	, m_breakpoints_original_bytes(other.m_breakpoints_original_bytes)
+	, m_breakpoints(other.m_breakpoints)
 	, m_file_contents(other.m_file_contents)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
-#ifdef ENABLE_COVERAGE
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	setup_coverage();
 #endif
 
@@ -98,7 +101,7 @@ Vm::Vm(const Vm& other)
 int Vm::create_vm() {
 	m_vm_fd = ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0);
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
-	int max_size = ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
+	size_t max_size = ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
 	ASSERT(max_size, "kvm dirty log ring not available");
 
 	kvm_enable_cap cap = {
@@ -167,6 +170,7 @@ void Vm::setup_kvm() {
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
 }
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 void Vm::setup_coverage() {
 	// Get coverage range. Elf should have been loaded by now
 	auto limits = m_elf.section_limits(".text");
@@ -198,6 +202,25 @@ void Vm::setup_coverage() {
 	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
 	//libxdc_enable_tracing(decoder);
 }
+#endif
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+void Vm::setup_coverage(const string& path) {
+	ifstream bbs(path);
+	ERROR_ON(!bbs.good(), "opening basic blocks file %s", path.c_str());
+	size_t count = 0;
+	vaddr_t bb;
+	bbs >> hex >> bb;
+	while (bbs.good()) {
+		set_breakpoint(bb, Breakpoint::Type::Coverage);
+		bbs >> bb;
+		count++;
+	}
+	bbs.close();
+	ASSERT(count > 0, "no basic block read from %s", path.c_str());
+	printf("Read %lu basic blocks\n", count);
+}
+#endif
 
 void Vm::load_elfs() {
 	// First, the kernel
@@ -283,13 +306,25 @@ FaultInfo Vm::fault() const {
 	return m_fault;
 }
 
-uint8_t* Vm::coverage_bitmap() const {
+#ifdef ENABLE_COVERAGE_INTEL_PT
+uint8_t* Vm::coverage() const {
 	return m_vmx_pt_bitmap;
 }
 
 void Vm::reset_coverage() {
 	memset(m_vmx_pt_bitmap, 0, COVERAGE_BITMAP_SIZE);
 }
+#endif
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+const set<vaddr_t>& Vm::coverage() const {
+	return m_new_basic_block_hits;
+}
+
+void Vm::reset_coverage() {
+	m_new_basic_block_hits.clear();
+}
+#endif
 
 void Vm::reset(const Vm& other, Stats& stats) {
 	// Reset mmu, regs and sregs
@@ -300,9 +335,6 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
-
-	// Reset other VM state
-	m_breakpoints_original_bytes = other.m_breakpoints_original_bytes;
 }
 
 Vm::RunEndReason Vm::run(Stats& stats) {
@@ -342,15 +374,22 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				set_regs_dirty();
 				cout << endl;
 				break; */
+				stats.vm_exits_debug++;
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+				// Check if it's a coverage breakpoint
+				if (handle_cov_breakpoint())
+					break;
+#endif
 				m_running = false;
 				reason = RunEndReason::Debug;
-				stats.vm_exits_debug++;
 				break;
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
 				stats.vm_exits_cov++;
 				update_coverage(stats);
 				break;
+#endif
 
 			case KVM_EXIT_FAIL_ENTRY:
 				vm_err("KVM_EXIT_FAIL_ENTRY");
@@ -369,7 +408,7 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 		}
 	}
 
-#ifdef ENABLE_COVERAGE
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	// Before returning, update coverage
 	update_coverage(stats);
 #endif
@@ -378,9 +417,9 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 }
 
 void Vm::run_until(vaddr_t pc, Stats& stats) {
-	set_breakpoint(pc);
+	set_breakpoint(pc, Breakpoint::Type::RunEnd);
 	RunEndReason reason = run(stats);
-	remove_breakpoint(pc);
+	remove_breakpoint(pc, Breakpoint::Type::RunEnd);
 
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 		   m_regs->rip, pc);
@@ -438,6 +477,7 @@ void test_edge(void*, uint64_t arg1, uint64_t arg2) {
 	printf("edge callback: %lx %lx\n", arg1, arg2);
 }
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 void Vm::update_coverage(Stats& stats) {
 	cycle_t cycles = rdtsc2();
 	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
@@ -458,98 +498,91 @@ void Vm::update_coverage(Stats& stats) {
 	}
 	stats.update_cov_cycles += rdtsc2() - cycles;
 }
+#endif
 
-#ifdef HW_BPS
-void Vm::set_breakpoint(vaddr_t addr) {
-	kvm_debugregs debug;
-	memset(&debug, 0, sizeof(debug));
-	ioctl_chk(vcpu.fd, KVM_GET_DEBUGREGS, &debug);
-
-	// Check if breakpoint is already set
-	bool bp_activated;
-	int j = -1;
-	for (int i = 0; i < 4; i++) {
-		bp_activated = (debug.dr7 & (1 << (i*2))) != 0;
-		if (bp_activated && debug.db[i] == addr)
-			return;
-		else if (!bp_activated)
-			j = i;
-	}
-
-	// Set breakpoint
-	ASSERT(j != -1, "No breakpoint slot left, trying to set bp 0x%lx\n", addr);
-	dbgprintf("Setting bp 0x%lx to slot %d\n", addr, j);
-	debug.dr7 |= 1 << (j*2);
-	debug.db[j] = addr;
-	ioctl_chk(vcpu.fd, KVM_SET_DEBUGREGS, &debug);
-
-	// I have no idea why I have to do this despite having already used
-	// KVM_SET_GUEST_DEBUG. It looks like setting registers with
-	// KVM_SET_DEBUGREGS saves registers (they can be retrieved with
-	// KVM_GET_DEBUGREGS) but they actually don't work, whereas with
-	// KVM_SET_GUEST_DEBUG they work, but they can not be retrieved.
-	kvm_guest_debug debug2;
-	memset(&debug2, 0, sizeof(debug2));
-	debug2.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP;
-	for (int i = 0; i < 4; i++)
-		debug2.arch.debugreg[i] = debug.db[i];
-	debug2.arch.debugreg[7] = debug.dr7;
-	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug2);
-}
-
-void Vm::remove_breakpoint(vaddr_t addr) {
-	kvm_debugregs debug;
-	memset(&debug, 0, sizeof(debug));
-	ioctl_chk(vcpu.fd, KVM_GET_DEBUGREGS, &debug);
-
-	// Check if breakpoint is already set
-	bool bp_activated;
-	int j = -1;
-	for (int i = 0; i < 4; i++) {
-		bp_activated = (debug.dr7 & (1 << (i*2))) != 0;
-		if (bp_activated && debug.db[i] == addr) {
-			j = i;
-			break;
-		}
-	}
-
-	// Remove breakpoint
-	ASSERT(j != -1, "Trying to remove breakpoint not set: 0x%lx\n", addr);
-	dbgprintf("Removing bp 0x%lx from slot %d\n", addr, j);
-	debug.dr7 &= ~(1 << (j*2));
-	ioctl_chk(vcpu.fd, KVM_SET_DEBUGREGS, &debug);
-
-	// I have no idea why I have to do this despite having already used
-	// KVM_SET_GUEST_DEBUG. It looks like setting registers with
-	// KVM_SET_DEBUGREGS saves registers (they can be retrieved with
-	// KVM_GET_DEBUGREGS) but they actually don't work, whereas with
-	// KVM_SET_GUEST_DEBUG they work, but they can not be retrieved.
-	kvm_guest_debug debug2;
-	memset(&debug2, 0, sizeof(debug2));
-	debug2.control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_USE_HW_BP;
-	for (int i = 0; i < 4; i++)
-		debug2.arch.debugreg[i] = debug.db[i];
-	debug2.arch.debugreg[7] = debug.dr7;
-	ioctl_chk(vcpu.fd, KVM_SET_GUEST_DEBUG, &debug2);
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+bool Vm::handle_cov_breakpoint() {
+	vaddr_t addr = m_regs->rip;
+	ASSERT(m_breakpoints.count(addr), "not existing breakpoint: 0x%lx", addr);
+	// Handle it only if the only remaining type is Coverage
+	if (m_breakpoints[addr].type != Breakpoint::Type::Coverage)
+		return false;
+	remove_breakpoint(addr, Breakpoint::Coverage);
+	m_new_basic_block_hits.insert(addr);
+	return true;
 }
 #endif
 
-#define SW_BPS
-#ifdef SW_BPS
-void Vm::set_breakpoint(vaddr_t addr) {
+uint8_t Vm::set_breakpoint_to_memory(vaddr_t addr) {
+	// This doesn't dirty memory
 	uint8_t* p = m_mmu.get(addr);
-	ASSERT(*p != 0xCC, "Trying to set breakpoint twice: 0x%lx", addr);
-	m_breakpoints_original_bytes[addr] = *p;
+	uint8_t val = *p;
+	ASSERT(val != 0xCC, "setting breakpoint twice at 0x%lx", addr);
 	*p = 0xCC;
+	return val;
 }
 
-void Vm::remove_breakpoint(vaddr_t addr) {
+void Vm::remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte) {
+	// This doesn't dirty memory
 	uint8_t* p = m_mmu.get(addr);
-	ASSERT(*p == 0xCC, "Trying to remove not existing breakpoint: 0x%lx", addr);
-	*p = m_breakpoints_original_bytes[addr];
-	m_breakpoints_original_bytes.erase(addr);
+	ASSERT(*p == 0xCC, "not set breakpoint at 0x%lx", addr);
+	*p = original_byte;
 }
-#endif
+
+void Vm::set_breakpoint(vaddr_t addr, Breakpoint::Type type) {
+	if (!m_breakpoints.count(addr)) {
+		// Create breakpoint
+		m_breakpoints[addr] = {
+			.type = type,
+			.original_byte = set_breakpoint_to_memory(addr),
+		};
+	} else {
+		// Add type to breakpoint
+		Breakpoint& bp = m_breakpoints[addr];
+		ASSERT((bp.type & type) == 0, "set breakpoint twice at 0x%lx, type %d\n",
+		       addr, type);
+		bp.type |= type;
+	}
+}
+
+void Vm::remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
+	bool removed = try_remove_breakpoint(addr, type);
+	ASSERT(removed, "not existing breakpoint at 0x%lx, type %d", addr, type);
+}
+
+bool Vm::try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
+	if (!m_breakpoints.count(addr))
+		return false;
+	Breakpoint& bp = m_breakpoints[addr];
+	if (!(bp.type & type))
+		return false;
+
+	// Special case for coverage: just remove it from memory if it's the only
+	// type left. We never remove coverage breakpoints from m_breakpoints.
+	// This is because the original VM we forked from has the breakpoints set
+	// in its memory. Removing the breakpoint from our memory doesn't dirty
+	// memory, so it isn't resetted, but guest could write to that memory and
+	// dirty it. In that case the breakpoint will appear again in memory when
+	// it's resetted, so we have to keep it in m_breakpoints to handle it.
+	if (type == Breakpoint::Type::Coverage) {
+		if (bp.type == type)
+			remove_breakpoint_from_memory(addr, bp.original_byte);
+		return true;
+	}
+	// if (type == Breakpoint::Type::Coverage && bp.type == type) {
+	// 	remove_breakpoint_from_memory(addr, bp.original_byte);
+	// 	return true;
+	// }
+
+	bp.type &= ~type;
+
+	if (bp.type == 0) {
+		// Actually remove breakpoint from memory
+		remove_breakpoint_from_memory(addr, bp.original_byte);
+		m_breakpoints.erase(addr);
+	}
+	return true;
+}
 
 void Vm::set_file(const string& filename, const string& content, bool check) {
 	bool existed = m_file_contents.count(filename);

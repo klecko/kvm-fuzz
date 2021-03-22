@@ -69,7 +69,7 @@ public:
 	T read(vaddr_t addr);
 
 	template <class T>
-	void write(vaddr_t addr, const T& value);
+	void write(vaddr_t addr, const T& value, bool check_perms = true);
 
 	template<class T>
 	T readp(paddr_t addr);
@@ -136,8 +136,8 @@ T Mmu::read(vaddr_t addr) {
 }
 
 template<class T>
-void Mmu::write(vaddr_t addr, const T& value) {
-	write_mem(addr, &value, sizeof(T));
+void Mmu::write(vaddr_t addr, const T& value, bool check_perms) {
+	write_mem(addr, &value, sizeof(T), check_perms);
 }
 
 template<class T>

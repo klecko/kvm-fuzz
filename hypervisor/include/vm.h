@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <unordered_map>
+#include <set>
 #include <sys/uio.h>
 #include <libxdc.h>
 #include "stats.h"
@@ -29,8 +30,18 @@ public:
 		Unknown = -1,
 	};
 
-	Vm(vsize_t mem_size, const std::string& kernelpath,
-	   const std::string& filepath, const std::vector<std::string>& argv);
+	struct Breakpoint {
+		enum Type {
+			RunEnd = 1 << 0,
+			Coverage = 1 << 1,
+		};
+		uint8_t type;
+		uint8_t original_byte;
+	};
+
+	Vm(vsize_t mem_size, const std::string& kernel_path,
+	   const std::string& binary_path, const std::vector<std::string>& argv,
+	   const std::string& basic_blocks_path);
 
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
@@ -40,7 +51,13 @@ public:
 	Mmu& mmu();
 	psize_t memsize() const;
 	FaultInfo fault() const;
-	uint8_t* coverage_bitmap() const;
+
+#ifdef ENABLE_COVERAGE_INTEL_PT
+	uint8_t* coverage() const;
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	const std::set<vaddr_t>& coverage() const;
+#endif
 
 	void reset_coverage();
 
@@ -55,8 +72,9 @@ public:
 	void set_single_step(bool enabled);
 	RunEndReason single_step(Stats& stats);
 
-	void set_breakpoint(vaddr_t addr);
-	void remove_breakpoint(vaddr_t addr);
+	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
 
 	// Associate `filename` with `content` to emulate file operations in the
 	// guest. String `content` shouldn't be modified and it could be shared
@@ -80,10 +98,16 @@ private:
 	kvm_regs*  m_regs;
 	kvm_sregs* m_sregs;
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	int m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
 	uint8_t*   m_vmx_pt_bitmap;
 	libxdc_t*  m_vmx_pt_decoder;
+#endif
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	std::set<vaddr_t> m_new_basic_block_hits;
+#endif
 
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
@@ -91,7 +115,7 @@ private:
 	std::vector<std::string> m_argv;
 	Mmu  m_mmu;
 	bool m_running;
-	std::unordered_map<vaddr_t, uint8_t> m_breakpoints_original_bytes;
+	std::unordered_map<vaddr_t, Breakpoint> m_breakpoints;
 
 	// Files contents indexed by filename. Kernel will synchronize with this
 	// on startup
@@ -102,12 +126,20 @@ private:
 	int create_vm();
 	void setup_kvm();
 	void load_elfs();
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	void setup_coverage();
+	void update_coverage(Stats& stats);
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	void setup_coverage(const std::string& path);
+	bool handle_cov_breakpoint();
+#endif
 	void setup_kernel_execution();
 	void set_regs_dirty();
 	void set_sregs_dirty();
 	void* fetch_page(uint64_t page, bool* success);
-	void update_coverage(Stats& stats);
+	uint8_t set_breakpoint_to_memory(vaddr_t addr);
+	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);

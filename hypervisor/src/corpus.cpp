@@ -22,8 +22,13 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	, m_lock_corpus(false)
 	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	, m_recorded_cov_bitmap(new uint8_t[COVERAGE_BITMAP_SIZE])
 	, m_recorded_cov(0)
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	, m_lock_basic_blocks_hits(false)
+#endif
 {
 	// Try to open the directory
 	DIR* dir = opendir(input_dir.c_str());
@@ -71,8 +76,10 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	ERROR_ON(!dir, "opening output directory %s", m_output_dir.c_str());
 	closedir(dir);
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	// Reset coverage bitmap
 	memset(m_recorded_cov_bitmap, 0, COVERAGE_BITMAP_SIZE);
+#endif
 }
 
 size_t Corpus::size() const {
@@ -95,7 +102,15 @@ size_t Corpus::unique_crashes() const {
 }
 
 size_t Corpus::coverage() const {
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	return m_recorded_cov;
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	return m_basic_blocks_hit.size();
+#endif
+#ifndef ENABLE_COVERAGE
+	return 0;
+#endif
 }
 
 const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
@@ -146,6 +161,7 @@ bool lock_bts(int i, uint8_t* p) {
 	return test;
 }
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 void Corpus::report_coverage(int id, uint8_t* cov) {
 	size_t new_cov = 0;
 	size_t rec_cov_v, cov_v, i, j, j_q, j_r;
@@ -175,6 +191,30 @@ void Corpus::report_coverage(int id, uint8_t* cov) {
 		add_input(m_mutated_inputs[id]);
 	}
 }
+#endif
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+void Corpus::report_coverage(int id, const std::set<vaddr_t>& new_blocks) {
+	// For each block, attempt to insert it and check if it's new
+	// This could also be done as a bitmap if we want more performance, but
+	// it isn't worth it for now
+	bool inserted, new_cov = false;
+	for (vaddr_t block : new_blocks) {
+		while (m_lock_basic_blocks_hits.test_and_set());
+		inserted = m_basic_blocks_hit.insert(block).second;
+		m_lock_basic_blocks_hits.clear();
+		new_cov |= inserted;
+		// if (inserted) {
+		// 	printf("new cov: 0x%lx\n", block);
+		// }
+	}
+
+	// If there was new coverage, add input to corpus
+	if (new_cov) {
+		add_input(m_mutated_inputs[id]);
+	}
+}
+#endif
 
 void Corpus::add_input(const string& new_input){
 	while (m_lock_corpus.test_and_set());

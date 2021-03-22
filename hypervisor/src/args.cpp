@@ -47,6 +47,7 @@ bool Args::parse(int argc, char** argv) {
 			("i,input", "Input folder (initial corpus)", cxxopts::value<string>(input_dir)->default_value("./corpus"), "dir")
 			("o,output", "Output folder (crashes)", cxxopts::value<string>(output_dir)->default_value("./crashes"), "dir")
 			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
+			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage", cxxopts::value<string>(basic_blocks_path), "path")
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
 			("h,help", "Print usage")
@@ -70,6 +71,11 @@ bool Args::parse(int argc, char** argv) {
 		// Parse special arguments
 		memory = parse_memory(options["memory"].as<string>());
 		binary_argv.insert(binary_argv.begin(), binary_path);
+		if (basic_blocks_path.empty()) {
+			size_t pos = binary_path.rfind("/") + 1;
+			string binary_name = binary_path.substr(pos == string::npos ? 0 : pos);
+			basic_blocks_path = "./basic_blocks_" + binary_name + ".txt";
+		}
 
 	} catch (cxxopts::OptionException& e) {
 		cout << "error: " << e.what() << endl;

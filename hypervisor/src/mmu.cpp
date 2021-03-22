@@ -79,6 +79,19 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, const Mmu& other)
 	};
 	ioctl_chk(m_vm_fd, KVM_CLEAR_DIRTY_LOG, &clear_dirty);
 	memset(m_dirty_bitmap, 0, m_dirty_bits/8);
+
+	// Reset extra dirty pages
+	m_dirty_extra.clear();
+
+	// Check dirty bitmap is actually clear
+	// kvm_dirty_log dirty = {
+	// 	.slot = 0,
+	// 	.dirty_bitmap = m_dirty_bitmap
+	// };
+	// ioctl_chk(m_vm_fd, KVM_GET_DIRTY_LOG, &dirty);
+	// for (size_t i = 0; i < m_dirty_bits/8; i++) {
+	// 	ASSERT(m_dirty_bitmap[i] == 0, "dirty bitmap not resetted %lu", i);
+	// }
 #endif
 }
 

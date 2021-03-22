@@ -127,7 +127,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 #ifdef ENABLE_COVERAGE
 			// Report coverage
 			cycles = rdtsc1();
-			corpus.report_coverage(id, runner.coverage_bitmap());
+			corpus.report_coverage(id, runner.coverage());
 			runner.reset_coverage();
 			local_stats.report_cov_cycles += rdtsc1() - cycles;
 #endif
@@ -167,7 +167,8 @@ int main(int argc, char** argv) {
 		args.memory,
 		args.kernel_path,
 		args.binary_path,
-		args.binary_argv
+		args.binary_argv,
+		args.basic_blocks_path
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
@@ -189,6 +190,7 @@ int main(int argc, char** argv) {
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
 	// Create threads and bind each one to a core
+	printf("Creating threads...\n");
 	cpu_set_t cpu;
 	vector<thread> threads;
 	for (int i = 0; i < args.jobs; i++) {

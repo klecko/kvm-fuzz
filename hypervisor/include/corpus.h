@@ -1,4 +1,5 @@
 #include <vector>
+#include <set>
 #include <unordered_set>
 #include <string>
 #include <atomic>
@@ -38,8 +39,13 @@ class Rng {
 
 class Corpus {
 public:
+#ifdef ENABLE_MUTATIONS
 	static const int MIN_MUTATIONS = 1;
-	static const int MAX_MUTATIONS = 5;
+	static const int MAX_MUTATIONS = 10;
+#else
+	static const int MIN_MUTATIONS = 0;
+	static const int MAX_MUTATIONS = 0;
+#endif
 
 	Corpus(int nthreads, const std::string& input, const std::string& output);
 
@@ -56,7 +62,12 @@ public:
 	// Report a new crash
 	void report_crash(int id, const FaultInfo& fault);
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	void report_coverage(int id, uint8_t* cov);
+#endif
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	void report_coverage(int id, const std::set<vaddr_t>& new_blocks);
+#endif
 
 private:
 	// Output directory
@@ -73,9 +84,16 @@ private:
 	// Vector with one mutated input for each thread. No need to lock
 	std::vector<std::string> m_mutated_inputs;
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 	// Bitmap of recorded coverage
 	uint8_t* m_recorded_cov_bitmap;
 	std::atomic<size_t> m_recorded_cov;
+#endif
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	std::atomic_flag m_lock_basic_blocks_hits;
+	std::unordered_set<vaddr_t> m_basic_blocks_hit;
+#endif
 
 	// Max input size, used in expand mutation
 	size_t m_max_input_size;
