@@ -72,6 +72,7 @@ static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 	File&    file = m_open_files[fd];
 
 	// Write each iovec to file
+	hc_print("WRITEV\n");
 	for (int i = 0; i < iovcnt; i++) {
 		// FIXME
 		hc_print((const char*)iov[i].iov_base, iov[i].iov_len);
@@ -362,9 +363,9 @@ static uint64_t do_sys_sysinfo(struct sysinfo* info) {
 	printf("total: %d\n", sum);
 } */
 uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                        uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t rip)
+                        uint64_t arg3, uint64_t arg4, uint64_t arg5, Regs* regs)
 {
-	dbgprintf("--> syscall at %p: %s\n", rip, syscall_str[nr]);
+	dbgprintf("--> syscall at %p: %s\n", regs->rip, syscall_str[nr]);
 	uint64_t ret = 0;
 	switch (nr) {
 		case SYS_openat:

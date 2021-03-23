@@ -11,10 +11,10 @@ static void* g_user_stack;
 // from there without dirtying any reg
 static uint64_t _handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
                                 uint64_t arg3, uint64_t arg4, uint64_t arg5,
-                                uint64_t rip)
+                                Regs* regs)
 {
 	register int nr asm("eax");
-	return handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5, rip);
+	return handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5, regs);
 }
 
 // Warning: -fpie is needed for these to use relative addressing so it doesn't
@@ -46,40 +46,48 @@ static void syscall_entry() {
 	restore_kernel_stack();
 
 	asm volatile(
-	// Save non-callee-saved registers. This includes rcx (return address)
-	// and r11 (rflags)
+		// Push registers of struct Regs to the stack in reverse order.
+		"push rcx;" // guest rip
+		"push r11;"
+		"push r10;"
+		"push r9;"
+		"push r8;"
+		"push rbp;"
+		"push %[user_stack];"
 		"push rdi;"
 		"push rsi;"
 		"push rdx;"
 		"push rcx;"
-		"push r8;"
-		"push r9;"
-		"push r10;"
-		"push r11;"
 
-	// Push return address as 7th argument for the handler
-		"push rcx;"
+	// Push stack pointer as 7th argument for the handler. This points to the
+	// registers we just pushed, which the handler can read and modify.
+		"push rsp;"
 
 	// The forth argument is set in r10. We need to move it to rcx to conform to
-	// C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9.
+	// C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9, stack.
 		"mov rcx, r10;"
 
 	// Handle syscall. Return value will be held in rax
 		"call %[handler];"
 
 	// Restore registers
-		"pop rcx;"
-		"pop r11;"
-		"pop r10;"
-		"pop r9;"
-		"pop r8;"
+		"pop rsp;"
+
 		"pop rcx;"
 		"pop rdx;"
 		"pop rsi;"
 		"pop rdi;"
-	:
-	: [handler] "i"(_handle_syscall) // Inmediate, so it doesn't dirty regs
-	:
+		"pop rbp;" // scratch rsp value
+		"pop rbp;"
+		"pop r8;"
+		"pop r9;"
+		"pop r10;"
+		"pop r11;"
+		"pop rcx;" // guest rip
+		:
+		: [handler] "i"(_handle_syscall), // Inmediate, so it doesn't dirty regs
+		  [user_stack] "m"(g_user_stack)
+		:
 	);
 
 	//save_kernel_stack();
