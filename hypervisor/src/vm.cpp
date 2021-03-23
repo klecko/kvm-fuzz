@@ -642,7 +642,7 @@ void Vm::vm_err(const string& msg) {
 
 	// Dump current input file to mem
 	ofstream os("crash");
-	file_t& buf = m_file_contents["test"];
+	file_t& buf = m_file_contents["input"];
 	os.write((char*)buf.data, buf.length);
 	assert(os.good());
 	cout << "Dumped crash file of size " << buf.length << endl;

@@ -10,19 +10,21 @@ using namespace std;
 
 void print_stats(const Stats& stats, const Corpus& corpus) {
 	const chrono::milliseconds REFRESH_TIME {1000};
-	chrono::duration<double> elapsed, elapsed_total;
-	chrono::steady_clock::time_point start = chrono::steady_clock::now();
-	uint64_t cycles_elapsed, cases_elapsed, cases, cov, corpus_n, crashes,
-	         unique_crashes;
+	chrono::duration<double> elapsed, elapsed_total, no_new_cov_time;
+	chrono::steady_clock::time_point start = chrono::steady_clock::now(),
+		new_cov_last_time = start;
+	uint64_t cycles_elapsed, cases_elapsed, cases, cov, cov_old = 0, corpus_n,
+	         crashes, unique_crashes;
 	double fcps, run_time, reset_time, hypercall_time, corpus_mem,
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
-		   reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
-		   vm_exits_debug, vm_exits_cov;
+	       reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
+	       vm_exits_debug, vm_exits_cov;
 	while (true) {
 		Stats stats_old = stats;
 		this_thread::sleep_for(REFRESH_TIME);
-		elapsed         = chrono::steady_clock::now() - start - elapsed_total;
-		elapsed_total   = chrono::steady_clock::now() - start;
+		auto now        = chrono::steady_clock::now();
+		elapsed         = now - start - elapsed_total;
+		elapsed_total   = now - start;
 		cases           = stats.cases;
 		cases_elapsed   = stats.cases - stats_old.cases;
 		cycles_elapsed  = stats.total_cycles - stats_old.total_cycles;
@@ -47,12 +49,16 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		mut2_time       = (double)(stats.mut2_cycles - stats_old.mut2_cycles) / cycles_elapsed;
 		update_cov_time = (double)(stats.update_cov_cycles - stats_old.update_cov_cycles) / cycles_elapsed;
 		report_cov_time = (double)(stats.report_cov_cycles - stats_old.report_cov_cycles) / cycles_elapsed;
+		if (cov != cov_old)
+			new_cov_last_time = now;
+		cov_old         = cov;
+		no_new_cov_time = now - new_cov_last_time;
 
 		// Free stats (no rdtsc)
 		printf("[%.3f] cases: %lu, fcps: %.3f, cov: %lu, corpus: %lu/%.3fKB, "
-		       "unique crashes: %lu (total: %lu)\n",
+		       "unique crashes: %lu (total: %lu), no new cov for: %.3f\n",
 		       elapsed_total.count(), cases, fcps, cov, corpus_n, corpus_mem,
-		       unique_crashes, crashes);
+		       unique_crashes, crashes, no_new_cov_time.count());
 		printf("\tvm exits: %.3f (hc: %.3f, cov: %.3f, debug: %.3f), "
 		       "reset pages: %.3f\n",
 		       vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug,

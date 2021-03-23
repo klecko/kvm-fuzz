@@ -116,6 +116,17 @@ void Mmu::disable_allocations() {
 	m_can_alloc = false;
 }
 
+__attribute__((always_inline)) inline
+void custom_memcpy(void* to, void* from, size_t len) {
+	asm volatile(
+		"rep movsb"
+		:
+		: "D" (to),
+		  "S" (from),
+		  "c" (len)
+	);
+}
+
 size_t Mmu::reset(const Mmu& other) {
 	size_t count = 0;
 
