@@ -66,6 +66,10 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
 	return fd;
 }
 
+static uint64_t do_sys_open(const char* pathname, int flags, mode_t mode) {
+	return do_sys_openat(AT_FDCWD, pathname, flags, mode);
+}
+
 static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 	ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
 	uint64_t ret  = 0;
@@ -319,17 +323,31 @@ static uint64_t do_sys_prlimit(pid_t pid, int resource,
                                struct rlimit* old_limit)
 {
 	ASSERT(pid == 0, "TODO pid %d", pid);
-	ASSERT(new_limit == NULL, "TODO set limit");
-	struct rlimit limit;
-	switch (resource) {
-		case RLIMIT_NOFILE:
-			limit.rlim_cur = 1024;
-			limit.rlim_max = 1048576;
-			break;
-		default:
-			TODO
+	if (old_limit) {
+		struct rlimit limit;
+		switch (resource) {
+			case RLIMIT_NOFILE:
+				limit.rlim_cur = 1024;
+				limit.rlim_max = 1024*1024;
+				break;
+			case RLIMIT_STACK:
+				limit.rlim_cur = 8*1024*1024;
+				limit.rlim_max = RLIM64_INFINITY;
+				break;
+			default:
+				ASSERT(false, "TODO get limit %d", resource);
+		}
+		memcpy(old_limit, &limit, sizeof(limit));
 	}
-	memcpy(old_limit, &limit, sizeof(limit));
+
+	if (new_limit) {
+		switch (resource) {
+			case RLIMIT_CORE:
+				break;
+			default:
+				ASSERT(false, "TODO set limit %d", resource);
+		}
+	}
 	return 0;
 }
 
@@ -370,6 +388,9 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 	switch (nr) {
 		case SYS_openat:
 			ret = do_sys_openat(arg0, (const char*)arg1, arg2, arg3);
+			break;
+		case SYS_open:
+			ret = do_sys_open((const char*)arg0, arg1, arg2);
 			break;
 		case SYS_read:
 			ret = do_sys_read(arg0, (void*)arg1, arg2);
@@ -453,6 +474,27 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 		case SYS_sysinfo:
 			ret = do_sys_sysinfo((struct sysinfo*)arg0);
 			break;
+		case SYS_set_tid_address:
+			ret = 0;
+			printf_once("TODO set_tid_address\n");
+			break;
+		case SYS_set_robust_list:
+			ret = 0;
+			printf_once("TODO set_robust_list\n");
+			break;
+		case SYS_rt_sigaction:
+			ret = 0;
+			printf_once("TODO rt_sigaction\n");
+			break;
+		case SYS_rt_sigprocmask:
+			ret = 0;
+			printf_once("TODO rt_sigprocmask\n");
+			break;
+		case SYS_futex:
+			ret = 0;
+			printf_once("TODO futex\n");
+			break;
+
 		default:
 			die("Unimplemented syscall: %s (%lld)\n", syscall_str[nr], nr);
 	}

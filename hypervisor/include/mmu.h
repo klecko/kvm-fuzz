@@ -14,6 +14,7 @@ public:
 	static const vaddr_t KERNEL_STACK_START_ADDR = 0xFFFFFFFFFFFFF000;
 	static const vsize_t STACK_SIZE              = 0x10000;
 	static const vaddr_t PHYSMAP_ADDR            = 0xFFFFFF8000000000;
+	static const vaddr_t INTERPRETER_ADDR        = 0x400000000000;
 
 	// Normal constructor
 	Mmu(int vm_fd, int vcpu_fd, size_t mem_size);

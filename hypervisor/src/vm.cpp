@@ -241,7 +241,7 @@ void Vm::load_elfs() {
 	if (!interpreter_path.empty()) {
 		m_interpreter = new ElfParser(interpreter_path);
 		ASSERT(m_interpreter->type() == ET_DYN, "interpreter not ET_DYN?");
-		m_interpreter->set_base(0x400000000000);
+		m_interpreter->set_base(Mmu::INTERPRETER_ADDR);
 		dbgprintf("Loading interpreter %s at 0x%lx\n",
 		          m_interpreter->path().c_str(), m_interpreter->load_addr());
 		m_mmu.load_elf(m_interpreter->segments(), false);

@@ -8,21 +8,10 @@
 void* kmalloc(size_t size);
 void  kfree(void* p);
 
-inline void* operator new(size_t size) {
-	return kmalloc(size);
-}
-
-inline void* operator new[](size_t size) {
-	return kmalloc(size);
-}
-
-inline void operator delete(void* p) {
-	return kfree(p);
-}
-
-inline void operator delete[](void* p) {
-	return kfree(p);
-}
+void* operator new(size_t size);
+void* operator new[](size_t size);
+void operator delete(void* p);
+void operator delete[](void* p);
 
 inline void memcpy(void* dest, const void* src, size_t n) {
 	for (size_t i = 0; i < n; i++)

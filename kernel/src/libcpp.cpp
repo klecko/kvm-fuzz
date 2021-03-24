@@ -4,6 +4,22 @@
 #include "mem.h"
 #include <sys/mman.h>
 
+void* operator new(size_t size) {
+	return kmalloc(size);
+}
+
+void* operator new[](size_t size) {
+	return kmalloc(size);
+}
+
+void operator delete(void* p) {
+	return kfree(p);
+}
+
+void operator delete[](void* p) {
+	return kfree(p);
+}
+
 void* kmalloc(size_t size) {
 	static const size_t INITIAL_ALLOCATION_SIZE = 0x2000;
 	static uint8_t* next_alloc = NULL;

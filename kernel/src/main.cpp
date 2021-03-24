@@ -4,6 +4,7 @@
 #include "init.h"
 #include "gdt.h"
 #include "mem.h"
+#include "asm.h"
 #include "vector"
 
 // Global kernel state
@@ -119,37 +120,7 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	return user_stack;
 }
 
-void jump_to_user(void* entry, void* stack) {
-	printf("Jumping to user at %p!\n", entry);
-	asm volatile (
-		// Set user stack, RIP and RFLAGS
-		"mov rsp, %[rsp];"
-		"mov rcx, %[entry];"
-		"mov r11, 0x2;"
 
-		// Clear every other register
-		"xor rax, rax;"
-		"xor rbx, rbx;"
-		"xor rdx, rdx;"
-		"xor rdi, rdi;"
-		"xor rsi, rsi;"
-		"xor rbp, rbp;"
-		"xor r8, r8;"
-		"xor r9, r9;"
-		"xor r10, r10;"
-		"xor r12, r12;"
-		"xor r13, r13;"
-		"xor r14, r14;"
-		"xor r15, r15;"
-
-		// Jump to user
-		"sysretq;"
-		:
-		: [rsp]   "a" (stack),
-		  [entry] "b" (entry)
-		:
-	);
-}
 
 extern "C" void kmain(int argc, char** argv) {
 	// Init kernel stuff
@@ -186,5 +157,6 @@ extern "C" void kmain(int argc, char** argv) {
 	}
 
 	void* user_stack = prepare_user_stack(argc, argv, info);
+	printf("Jumping to user at %p!\n", info.user_entry);
 	jump_to_user(info.user_entry, user_stack);
 }
