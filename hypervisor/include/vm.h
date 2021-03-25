@@ -86,7 +86,6 @@ public:
 	              bool check = false);
 
 	vaddr_t resolve_symbol(const std::string& symbol_name);
-
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
@@ -140,6 +139,8 @@ private:
 	void* fetch_page(uint64_t page, bool* success);
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
+	void print_instruction_pointer(int i, vaddr_t instruction_pointer);
+	void print_stacktrace(vaddr_t stack_pointer, vaddr_t instruction_pointer);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
@@ -151,6 +152,7 @@ private:
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
 	void do_hc_set_file_buf(size_t n, vaddr_t buf_addr);
+	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip);
 	void do_hc_fault(vaddr_t fault_info_addr);
 	void do_hc_end_run();
 

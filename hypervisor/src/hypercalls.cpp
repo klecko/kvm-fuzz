@@ -16,6 +16,7 @@ enum Hypercall : size_t {
 	GetFileName,
 	SetFileBuf,
 	Fault,
+	PrintStacktrace,
 	EndRun,
 };
 
@@ -104,6 +105,10 @@ void Vm::do_hc_fault(vaddr_t fault_addr) {
 	m_fault = m_mmu.read<FaultInfo>(fault_addr);
 }
 
+void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip) {
+	print_stacktrace(rsp, rip);
+}
+
 void Vm::handle_hypercall(RunEndReason& reason) {
 	uint64_t ret = 0;
 	switch (m_regs->rax) {
@@ -134,6 +139,9 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			do_hc_fault(m_regs->rdi);
 			m_running = false;
 			reason = RunEndReason::Crash;
+			break;
+		case Hypercall::PrintStacktrace:
+			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi);
 			break;
 		case Hypercall::EndRun:
 			m_running = false;

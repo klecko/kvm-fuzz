@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <elf.h>
+#include <libdwarf.h>
 #include "common.h"
 
 #define BITS 64
@@ -112,6 +113,9 @@ class ElfParser {
 		std::vector<symbol_t> symbols() const;
 		//std::vector<relocation_t> relocations() const;
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
+		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
+		std::string addr_to_symbol_name(vaddr_t addr) const;
+		vsize_t current_frame_address_offset(vaddr_t instruction_pointer);
 
 	private:
 		uint8_t* m_data;
@@ -127,5 +131,13 @@ class ElfParser {
 		std::vector<segment_t> m_segments;
 		std::vector<symbol_t> m_symbols;
 		//std::vector<relocation_t> m_relocations;
+
+		// libdwarf stuff
+		dwarf_elf_handle m_dwarf_elf;
+		Dwarf_Debug m_dwarf;
+		Dwarf_Cie* m_dwarf_cie_data;
+		Dwarf_Fde* m_dwarf_fde_data;
+		Dwarf_Signed m_dwarf_cie_count;
+		Dwarf_Signed m_dwarf_fde_count;
 };
 #endif

@@ -12,6 +12,7 @@ enum Hypercall : size_t {
 	GetFileName,
 	SetFileBuf,
 	Fault,
+	PrintStacktrace,
 	EndRun,
 };
 
@@ -98,6 +99,11 @@ void hc_set_file_buf(size_t n, void* buf) {
 __attribute__((naked))
 void hc_fault(FaultInfo* fault) {
 	hypercall(Hypercall::Fault);
+}
+
+__attribute__((naked))
+void hc_print_stacktrace(uint64_t rsp, uint64_t rip) {
+	hypercall(Hypercall::PrintStacktrace);
 }
 
 __attribute__((naked))

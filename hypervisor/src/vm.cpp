@@ -610,6 +610,36 @@ vaddr_t Vm::resolve_symbol(const string& symbol_name) {
 	ASSERT(false, "not found symbol: %s", symbol_name.c_str());
 }
 
+void Vm::print_instruction_pointer(int i, vaddr_t instruction_pointer) {
+	// TODO: print also source file and line
+	printf("#%d 0x%016lx", i, instruction_pointer);
+	string symbol = m_elf.addr_to_symbol_name(instruction_pointer);
+	if (symbol != "unknown")
+		printf(" at %s", symbol.c_str());
+	printf("\n");
+}
+
+void Vm::print_stacktrace(vaddr_t stack_pointer, vaddr_t instruction_pointer) {
+	// Get limits
+	auto limits = m_elf.section_limits(".text");
+
+	// Loop over stack frames until we're out of limits
+	int i = 0;
+	print_instruction_pointer(i, instruction_pointer);
+	while (instruction_pointer >= limits.first &&
+	       instruction_pointer < limits.second)
+	{
+		// Calculate Current Frame Address, and read previous instruction
+		// pointer from there
+		stack_pointer += m_elf.current_frame_address_offset(instruction_pointer);
+		instruction_pointer = m_mmu.read<vaddr_t>(stack_pointer - 8);
+
+		// Print it
+		i++;
+		print_instruction_pointer(i, instruction_pointer);
+	}
+}
+
 void Vm::dump_regs() {
 	printf("rip: 0x%016llX\n", m_regs->rip);
 	printf("rax: 0x%016llX  rbx: 0x%016llX  rcx: 0x%016llX  rdx: 0x%016llX\n", m_regs->rax, m_regs->rbx, m_regs->rcx, m_regs->rdx);

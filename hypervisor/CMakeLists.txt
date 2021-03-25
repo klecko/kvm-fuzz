@@ -8,5 +8,5 @@ set(SOURCE_FILES src/main.cpp src/mmu.cpp src/vm.cpp src/elf_parser.cpp
                  src/corpus.cpp src/args.cpp
                  src/page_walker.cpp src/hypercalls.cpp)
 add_executable(kvm-fuzz ${SOURCE_FILES})
-target_link_libraries(kvm-fuzz xdc)
+target_link_libraries(kvm-fuzz xdc dwarf elf)
 include_directories(include)

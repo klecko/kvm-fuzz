@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <limits>
+#include <libelf.h>
 #include "elf_parser.h"
 
 using namespace std;
@@ -117,6 +118,20 @@ ElfParser::ElfParser(const string& elf_path)
 		}
 	}
 
+	// libdwarf stuff.
+	// TODO: This is leaky, and unsafe when this object is copied
+	// Get libdwarf handler from memory-loaded elf
+	Dwarf_Error err;
+	int ret;
+	m_dwarf_elf = elf_memory((char*)m_data, st.st_size);
+	ASSERT(m_dwarf_elf, "error reading elf from memory");
+	ret = dwarf_elf_init(m_dwarf_elf, DW_DLC_READ, NULL, NULL, &m_dwarf, &err);
+	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+
+	// Get data
+	ret = dwarf_get_fde_list_eh(m_dwarf, &m_dwarf_cie_data, &m_dwarf_cie_count,
+		&m_dwarf_fde_data, &m_dwarf_fde_count, &err);
+	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
 }
 
 const uint8_t* ElfParser::data() const {
@@ -187,12 +202,49 @@ vector<symbol_t> ElfParser::symbols() const {
 }
 
 pair<vaddr_t, vaddr_t> ElfParser::section_limits(const string& name) const {
-	for (const section_t& section : sections()) {
+	for (const section_t& section : sections())
 		if (section.name == name)
-			return {section.addr, section.addr + section.size};
-	}
+			return { section.addr, section.addr + section.size };
 	ASSERT(false, "not found section: %s", name.c_str());
 }
+
+pair<vaddr_t, vaddr_t> ElfParser::symbol_limits(const string& name) const {
+	for (const symbol_t& symbol : symbols())
+		if (symbol.name == name)
+			return { symbol.value, symbol.value + symbol.size };
+	ASSERT(false, "not found symbol: %s", name.c_str());
+}
+
+string ElfParser::addr_to_symbol_name(vaddr_t addr) const {
+	for (const symbol_t& symbol : symbols()) {
+		if (addr >= symbol.value && addr < symbol.value + symbol.size) {
+			return symbol.name + " + " + to_string(addr - symbol.value);
+		}
+	}
+	return "unknown";
+}
+
+vsize_t ElfParser::current_frame_address_offset(vaddr_t instruction_pointer) {
+	// Get Frame Description Entry for instruction pointer
+	Dwarf_Error err;
+	Dwarf_Fde fde;
+	int ret = dwarf_get_fde_at_pc(m_dwarf_fde_data, instruction_pointer, &fde,
+		NULL, NULL, &err);
+	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+
+	// Get info of Current Frame Address
+	Dwarf_Small value_type = 0;
+	Dwarf_Signed offset_relevant = 0, reg = 0, offset = 0;
+	ret = dwarf_get_fde_info_for_cfa_reg3(fde, instruction_pointer,
+		&value_type, &offset_relevant, &reg, &offset, NULL, NULL, &err);
+	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+	ASSERT(value_type == DW_EXPR_OFFSET, "CFA location is not offset");
+	ASSERT(offset_relevant != 0, "CFA offset is not relevant");
+	ASSERT(reg == 7, "CFA location is not based on stack pointer");
+
+	return offset;
+}
+
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;
 } */
