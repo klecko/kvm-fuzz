@@ -48,6 +48,7 @@ bool Args::parse(int argc, char** argv) {
 			("o,output", "Output folder (crashes)", cxxopts::value<string>(output_dir)->default_value("./crashes"), "dir")
 			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
 			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage", cxxopts::value<string>(basic_blocks_path), "path")
+			("s,single-input", "Path to single input file. A single run will be performed with this input.", cxxopts::value<string>(single_input_path), "path")
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
 			("h,help", "Print usage")

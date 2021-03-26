@@ -188,11 +188,17 @@ int main(int argc, char** argv) {
 		read_and_set_file(path, vm);
 	}
 
-	//string crash(read_file("./crash"));
-	//vm.set_file("test", crash);
-	/* vm.run(stats);
-	return 0; */
+	if (!args.single_input_path.empty()) {
+		// Just perform a single run and exit
+		printf("Performing single run with input file '%s'\n",
+		       args.single_input_path.c_str());
+		string single_input(read_file(args.single_input_path));
+		vm.set_file("input", single_input);
+		vm.run(stats);
+		return 0;
+	}
 
+	// Run until main before forking
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
 	// Create threads and bind each one to a core

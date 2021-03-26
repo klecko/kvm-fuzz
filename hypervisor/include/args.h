@@ -16,6 +16,7 @@ public:
 	std::string binary_path;
 	std::vector<std::string> binary_argv;
 	std::string basic_blocks_path;
+	std::string single_input_path;
 
 	bool parse(int argc, char** argv);
 
