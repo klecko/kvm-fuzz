@@ -105,8 +105,17 @@ void Vm::do_hc_fault(vaddr_t fault_addr) {
 	m_fault = m_mmu.read<FaultInfo>(fault_addr);
 }
 
-void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip) {
-	print_stacktrace(rsp, rip);
+void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp) {
+	// For now we set just rsp, rip and rbp, which seem to be the only
+	// ones needed in most situations, and initialize the others to 0.
+	// If print_stacktrace fails, we may need to request more registers
+	// from guest.
+	kvm_regs regs = {
+		.rsp = rsp,
+		.rbp = rbp,
+		.rip = rip,
+	};
+	print_stacktrace(regs);
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -141,7 +150,7 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			reason = RunEndReason::Crash;
 			break;
 		case Hypercall::PrintStacktrace:
-			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi);
+			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
 		case Hypercall::EndRun:
 			m_running = false;

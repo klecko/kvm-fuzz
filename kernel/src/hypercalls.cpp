@@ -102,7 +102,7 @@ void hc_fault(FaultInfo* fault) {
 }
 
 __attribute__((naked))
-void hc_print_stacktrace(uint64_t rsp, uint64_t rip) {
+void hc_print_stacktrace(uint64_t rsp, uint64_t rip, uint64_t rbp) {
 	hypercall(Hypercall::PrintStacktrace);
 }
 

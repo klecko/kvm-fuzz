@@ -224,7 +224,9 @@ string ElfParser::addr_to_symbol_name(vaddr_t addr) const {
 	return "unknown";
 }
 
-vsize_t ElfParser::current_frame_address_offset(vaddr_t instruction_pointer) {
+void ElfParser::get_current_frame_regs_info(vaddr_t instruction_pointer,
+                                            Dwarf_Regtable3* regtable)
+{
 	// Get Frame Description Entry for instruction pointer
 	Dwarf_Error err;
 	Dwarf_Fde fde;
@@ -232,17 +234,11 @@ vsize_t ElfParser::current_frame_address_offset(vaddr_t instruction_pointer) {
 		NULL, NULL, &err);
 	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
 
-	// Get info of Current Frame Address
-	Dwarf_Small value_type = 0;
-	Dwarf_Signed offset_relevant = 0, reg = 0, offset = 0;
-	ret = dwarf_get_fde_info_for_cfa_reg3(fde, instruction_pointer,
-		&value_type, &offset_relevant, &reg, &offset, NULL, NULL, &err);
+	// Get regs information
+	Dwarf_Addr row_pc;
+	ret = dwarf_get_fde_info_for_all_regs3(fde, instruction_pointer, regtable,
+		&row_pc, &err);
 	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
-	ASSERT(value_type == DW_EXPR_OFFSET, "CFA location is not offset");
-	ASSERT(offset_relevant != 0, "CFA offset is not relevant");
-	ASSERT(reg == 7, "CFA location is not based on stack pointer");
-
-	return offset;
 }
 
 /* vector<relocation_t> ElfParser::relocations() const {

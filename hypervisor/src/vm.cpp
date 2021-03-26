@@ -619,24 +619,103 @@ void Vm::print_instruction_pointer(int i, vaddr_t instruction_pointer) {
 	printf("\n");
 }
 
-void Vm::print_stacktrace(vaddr_t stack_pointer, vaddr_t instruction_pointer) {
+void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
+	regs[DwarfReg::Rax] = kregs.rax;
+	regs[DwarfReg::Rdx] = kregs.rdx;
+	regs[DwarfReg::Rcx] = kregs.rdx;
+	regs[DwarfReg::Rbx] = kregs.rbx;
+	regs[DwarfReg::Rsi] = kregs.rsi;
+	regs[DwarfReg::Rdi] = kregs.rdi;
+	regs[DwarfReg::Rbp] = kregs.rbp;
+	regs[DwarfReg::Rsp] = kregs.rsp;
+	regs[DwarfReg::R8]  = kregs.r8;
+	regs[DwarfReg::R9]  = kregs.r9;
+	regs[DwarfReg::R10] = kregs.r10;
+	regs[DwarfReg::R11] = kregs.r11;
+	regs[DwarfReg::R12] = kregs.r12;
+	regs[DwarfReg::R13] = kregs.r13;
+	regs[DwarfReg::R14] = kregs.r14;
+	regs[DwarfReg::R15] = kregs.r15;
+	regs[DwarfReg::ReturnAddress] = kregs.rip;
+}
+
+void Vm::print_stacktrace(const kvm_regs& kregs) {
+	vsize_t regs[DwarfReg::MAX];
+	kvm_to_dwarf_regs(kregs, regs);
+
+	// Allocate register table
+	Dwarf_Regtable3 regtable;
+	regtable.rt3_reg_table_size = DW_REG_TABLE_SIZE;
+	regtable.rt3_rules = (Dwarf_Regtable_Entry3_s*)alloca(
+		sizeof(Dwarf_Regtable_Entry3_s)*DW_REG_TABLE_SIZE
+	);
+
 	// Get limits
 	auto limits = m_elf.section_limits(".text");
 
 	// Loop over stack frames until we're out of limits
 	int i = 0;
-	print_instruction_pointer(i, instruction_pointer);
-	while (instruction_pointer >= limits.first &&
-	       instruction_pointer < limits.second)
+	print_instruction_pointer(i, regs[DwarfReg::ReturnAddress]);
+	while (regs[DwarfReg::ReturnAddress] >= limits.first &&
+	       regs[DwarfReg::ReturnAddress] < limits.second)
 	{
-		// Calculate Current Frame Address, and read previous instruction
-		// pointer from there
-		stack_pointer += m_elf.current_frame_address_offset(instruction_pointer);
-		instruction_pointer = m_mmu.read<vaddr_t>(stack_pointer - 8);
+		// Get register information. Some functions like malloc_printerr end
+		// with a call (noreturn), so the return address is out of bounds of
+		// the function. We substract one from the return address to avoid this.
+		m_elf.get_current_frame_regs_info(regs[DwarfReg::ReturnAddress]-1,
+		                                  &regtable);
 
-		// Print it
+		// If return address value is undefined, we've finished
+		auto ra_value = regtable.rt3_rules[DwarfReg::ReturnAddress].dw_regnum;
+		if (ra_value == DW_FRAME_UNDEFINED_VAL)
+			break;
+
+		// First update CFA register (RSP), which is always the value of a
+		// register (usually the old RSP, but not always; this is why we have
+		// to restore every register and not just RSP) plus an offset
+		ASSERT(regtable.rt3_cfa_rule.dw_regnum < DwarfReg::MAX, "oob reg: %d",
+		       regtable.rt3_cfa_rule.dw_regnum);
+		ASSERT(regtable.rt3_cfa_rule.dw_offset_relevant != 0,
+		       "woops, CFA offset not relevant");
+		DwarfReg regnum = (DwarfReg)regtable.rt3_cfa_rule.dw_regnum;
+		regs[DwarfReg::Rsp] =
+			regs[regnum] + regtable.rt3_cfa_rule.dw_offset_or_block_len;
+
+		// Update every other register
+		for (int i = 0; i < regtable.rt3_reg_table_size; i++) {
+			Dwarf_Regtable_Entry3_s& rule = regtable.rt3_rules[i];
+			if (rule.dw_regnum == DW_FRAME_SAME_VAL ||
+			    rule.dw_regnum == DW_FRAME_UNDEFINED_VAL)
+				continue;
+			ASSERT(i < DwarfReg::MAX, "oob reg %d", i);
+
+			// Get register value
+			vaddr_t value, addr;
+			if (rule.dw_value_type == DW_EXPR_OFFSET) {
+				if (rule.dw_offset_relevant) {
+					// Value is stored at the address CFA + N
+					addr = regs[DwarfReg::Rsp] + rule.dw_offset_or_block_len;
+					value = m_mmu.read<vsize_t>(addr);
+				} else {
+					// Value is the value of the register dw_regnum
+					ASSERT(rule.dw_regnum < DwarfReg::MAX, "oob reg %d",
+					       rule.dw_regnum);
+					value = regs[rule.dw_regnum];
+					TODO
+				}
+			} else if (rule.dw_value_type == DW_EXPR_VAL_OFFSET) {
+				// Value is CFA + N
+				value = regs[DwarfReg::Rsp] + rule.dw_offset_or_block_len;
+				TODO
+			} else TODO
+
+			// Update register value
+			regs[i] = value;
+		}
+
+		// Print instruction pointer
 		i++;
-		print_instruction_pointer(i, instruction_pointer);
+		print_instruction_pointer(i, regs[DwarfReg::ReturnAddress]);
 	}
 }
 

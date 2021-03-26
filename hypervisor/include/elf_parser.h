@@ -94,6 +94,17 @@ struct relocation_t {
 
 };
 
+// https://software.intel.com/sites/default/files/article/402129/mpx-linux64-abi.pdf
+// figure 3.38: DWARF Register Numer Mapping
+enum DwarfReg {
+	Rax, Rdx, Rcx, Rbx,
+	Rsi, Rdi, Rbp, Rsp,
+	R8, R9, R10, R11,
+	R12, R13, R14, R15,
+	ReturnAddress,
+	MAX
+};
+
 class ElfParser {
 	public:
 		ElfParser(const std::string& elf_path);
@@ -115,7 +126,8 @@ class ElfParser {
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
 		std::string addr_to_symbol_name(vaddr_t addr) const;
-		vsize_t current_frame_address_offset(vaddr_t instruction_pointer);
+		void get_current_frame_regs_info(vaddr_t instruction_pointer,
+		                                 Dwarf_Regtable3* regtable);
 
 	private:
 		uint8_t* m_data;

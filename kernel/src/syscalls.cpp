@@ -423,18 +423,13 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			//print_syscalls(n);
 			break;
 		case SYS_getuid:
-			ret = 0;
-			break;
 		case SYS_getgid:
-			ret = 0;
-			break;
 		case SYS_geteuid:
-			ret = 0;
-			break;
 		case SYS_getegid:
 			ret = 0;
 			break;
 		case SYS_getpid:
+		case SYS_gettid:
 			ret = 1234;
 			break;
 		case SYS_arch_prctl:
@@ -496,6 +491,7 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			break;
 
 		default:
+			hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
 			die("Unimplemented syscall: %s (%lld)\n", syscall_str[nr], nr);
 	}
 
