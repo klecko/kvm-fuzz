@@ -265,6 +265,12 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	dbgprintf("mmap(%p, %p, %d, %d, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
 	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
+
+	// if (flags & MAP_SHARED) {
+	// 	flags &= ~MAP_SHARED;
+	// 	printf_once("REMOVING MAP SHARED\n");
+	// }
+
 	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
 	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
 
@@ -370,23 +376,26 @@ static uint64_t do_sys_sysinfo(struct sysinfo* info) {
 	return 0;
 }
 
-/* void print_syscalls(int n[500]) {
+size_t syscall_counts[500];
+void print_syscalls() {
 	int sum = 0;
 	for (int i = 0; i < 500; i++) {
-		if (n[i]) {
-			printf("%s: %d\n", syscall_str[i], n[i]);
-			sum += n[i];
+		if (syscall_counts[i]) {
+			printf("%s: %d\n", syscall_str[i], syscall_counts[i]);
+			sum += syscall_counts[i];
 		}
 	}
 	printf("total: %d\n", sum);
-} */
+}
 uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
                         uint64_t arg3, uint64_t arg4, uint64_t arg5, Regs* regs)
 {
 	dbgprintf("--> syscall at %p: %s\n", regs->rip, syscall_str[nr]);
+	syscall_counts[nr]++;
 	uint64_t ret = 0;
 	switch (nr) {
 		case SYS_openat:
+			//hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
 			ret = do_sys_openat(arg0, (const char*)arg1, arg2, arg3);
 			break;
 		case SYS_open:
@@ -403,6 +412,14 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			break;
 		case SYS_writev:
 			ret = do_sys_writev(arg0, (const iovec*)arg1, arg2);
+			{
+				hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
+				// FaultInfo fault = {
+				// 	.type = FaultInfo::Type::OutOfBoundsRead,
+				// 	.rip = 1234,
+				// };
+				// hc_fault(&fault);
+			}
 			break;
 		case SYS_access:
 			ret = do_sys_access((const char*)arg0, arg1);
@@ -419,8 +436,8 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 		case SYS_exit:
 		case SYS_exit_group:
 			//dbgprintf("end run --------------------------------\n\n");
+			//print_syscalls();
 			hc_end_run();
-			//print_syscalls(n);
 			break;
 		case SYS_getuid:
 		case SYS_getgid:

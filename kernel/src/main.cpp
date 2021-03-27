@@ -41,6 +41,10 @@ const char* environ[] = {
 	"USERNAME=klecko",
 	"TERM=xterm-256color",
 	"PATH=/home/klecko/.cargo/bin:/home/klecko/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/klecko/.local/bin/:/opt/x86_64-elf/bin/:/home/klecko/zig/",
+	// If these are set, file /usr/lib/locale/locale-archive has to be loaded
+	// in the hypervisor
+	//"LC_NAME=es_ES.UTF-8",
+	//"LANG=es_ES.UTF-8",
 	"_=/usr/bin/env",
 };
 const int environ_n = sizeof(environ)/sizeof(*environ);
@@ -94,6 +98,10 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 		{AT_ENTRY,  (uint64_t)info.elf_entry},
 		{AT_RANDOM, (uint64_t)random_bytes},
 		{AT_EXECFN, (uint64_t)argv_addrs[0]},
+		{AT_UID,	0},
+		{AT_EUID,	0},
+		{AT_GID,	0},
+		{AT_EGID,	0},
 		{AT_NULL,   0}
 	};
 	user_stack -= sizeof(auxv);

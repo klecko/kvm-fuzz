@@ -54,6 +54,9 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		cov_old         = cov;
 		no_new_cov_time = now - new_cov_last_time;
 
+		// Clear screen
+		//printf("\x1B[2J\x1B[H");
+
 		// Free stats (no rdtsc)
 		printf("[%.3f] cases: %lu, fcps: %.3f, cov: %lu, corpus: %lu/%.3fKB, "
 		       "unique crashes: %lu (total: %lu), no new cov for: %.3f\n",
@@ -159,7 +162,10 @@ void read_and_set_file(const string& filename, Vm& vm) {
 	file_contents.push_back(move(content));
 }
 
+extern "C" void hello_from_zig();
 int main(int argc, char** argv) {
+	hello_from_zig();
+
 	Args args;
 	if (!args.parse(argc, argv))
 		return 0;
@@ -187,6 +193,16 @@ int main(int argc, char** argv) {
 	for (const string& path : args.memory_files) {
 		read_and_set_file(path, vm);
 	}
+	//read_and_set_file("/usr/lib/locale/locale-archive", vm);
+	//read_and_set_file("/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache", vm);
+
+	// vm.set_breakpoint(vm.resolve_symbol("__free"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_malloc"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_memalign"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_realloc"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_calloc"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_valloc"), Vm::Breakpoint::Hook);
+	// vm.set_breakpoint(vm.resolve_symbol("__libc_pvalloc"), Vm::Breakpoint::Hook);
 
 	if (!args.single_input_path.empty()) {
 		// Just perform a single run and exit
@@ -195,11 +211,13 @@ int main(int argc, char** argv) {
 		string single_input(read_file(args.single_input_path));
 		vm.set_file("input", single_input);
 		vm.run(stats);
+		printf("Run ended\n");
 		return 0;
 	}
 
 	// Run until main before forking
 	vm.run_until(vm.resolve_symbol("main"), stats);
+	//vm.run_until(0x402319, stats); // readelf-static at fopen
 
 	// Create threads and bind each one to a core
 	printf("Creating threads...\n");

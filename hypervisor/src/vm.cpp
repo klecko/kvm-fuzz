@@ -67,6 +67,7 @@ Vm::Vm(const Vm& other)
 	, m_running(false)
 	, m_breakpoints(other.m_breakpoints)
 	, m_file_contents(other.m_file_contents)
+	, m_allocations(other.m_allocations)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -335,6 +336,8 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
+
+	m_allocations = other.m_allocations;
 }
 
 Vm::RunEndReason Vm::run(Stats& stats) {
@@ -375,13 +378,12 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				cout << endl;
 				break; */
 				stats.vm_exits_debug++;
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-				// Check if it's a coverage breakpoint
-				if (handle_cov_breakpoint())
-					break;
-#endif
-				m_running = false;
-				reason = RunEndReason::Debug;
+				if (m_breakpoints.count(m_regs->rip))
+					handle_breakpoint(reason);
+				else {
+					reason = RunEndReason::Debug;
+					m_running = false;
+				}
 				break;
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -414,6 +416,82 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 #endif
 
 	return reason;
+}
+
+void Vm::handle_breakpoint(RunEndReason& reason) {
+	vaddr_t addr = m_regs->rip;
+	ASSERT(m_breakpoints.count(addr), "not existing breakpoint: 0x%lx", addr);
+
+	Breakpoint& bp = m_breakpoints[addr];
+
+	// If it's of type RunEnd, stop running and stop handling the breakpoint
+	if (bp.type & Breakpoint::RunEnd) {
+		reason = RunEndReason::Debug;
+		m_running = false;
+		return;
+	}
+
+	// If it's a hook handle it, then remove breakpoint, single step and set
+	// breakpoint again
+	if (m_breakpoints[addr].type & Breakpoint::Type::Hook) {
+		handle_hook();
+		remove_breakpoint(addr, Breakpoint::Hook);
+		Stats dummy;
+		RunEndReason reason = single_step(dummy);
+		ASSERT(reason == RunEndReason::Debug, "run end reason: %d", reason);
+		set_breakpoint(addr, Breakpoint::Hook);
+
+		// single_step sets m_running to false. Set it to true again
+		m_running = true;
+	}
+
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
+	// If it's a coverage breakpoint, add address to basic block hits and
+	// remove it
+	if (m_breakpoints[addr].type & Breakpoint::Type::Coverage) {
+		remove_breakpoint(addr, Breakpoint::Coverage);
+		m_new_basic_block_hits.insert(addr);
+	}
+#endif
+
+}
+
+// This is just for debugging
+void Vm::handle_hook() {
+	thread_local int n_malloc = 0;
+	thread_local int n_free = 0;
+	vaddr_t addr = m_regs->rip;
+	if (addr == 0x4ba130) { //resolve_symbol("__free")) {
+		n_free++;
+		//print_stacktrace(*m_regs, 1);
+		// if (m_regs->rdi != 0) {
+		// 	printf("free: 0x%lx\n", m_regs->rdi);
+		// 	auto it = m_allocations.begin();
+		// 	for (; it != m_allocations.end() && *it != m_regs->rdi; ++it);
+		// 	if (it != m_allocations.end())
+		// 		m_allocations.erase(it);
+		// 	else {
+		// 		printf("woo 0x%lx\n", m_regs->rdi);
+		// 		print_stacktrace(*m_regs);
+		// 	}
+		// }
+	} else { //if (addr == resolve_symbol("__libc_malloc")) {
+		n_malloc++;
+		//print_stacktrace(*m_regs, 1);
+		// vaddr_t ret_addr = m_mmu.read<vaddr_t>(m_regs->rsp);
+		// Stats dummy;
+		// remove_breakpoint(addr, Breakpoint::Hook);
+		// run_until(ret_addr, dummy);
+		// set_breakpoint(addr, Breakpoint::Hook);
+		// if (m_regs->rax != 0)
+		// 	m_allocations.push_back(m_regs->rax);
+		// string sym = m_elf.addr_to_symbol_name(addr);
+		// printf("%s: 0x%lx\n", sym.c_str(), m_regs->rax);
+		//print_stacktrace(*m_regs);
+	} /* else {
+		printf("what 0x%lx\n", addr);
+	} */
+	//printf("0x%lx %d %d\n", m_allocations.size(), n_malloc, n_free);
 }
 
 void Vm::run_until(vaddr_t pc, Stats& stats) {
@@ -500,19 +578,6 @@ void Vm::update_coverage(Stats& stats) {
 }
 #endif
 
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-bool Vm::handle_cov_breakpoint() {
-	vaddr_t addr = m_regs->rip;
-	ASSERT(m_breakpoints.count(addr), "not existing breakpoint: 0x%lx", addr);
-	// Handle it only if the only remaining type is Coverage
-	if (m_breakpoints[addr].type != Breakpoint::Type::Coverage)
-		return false;
-	remove_breakpoint(addr, Breakpoint::Coverage);
-	m_new_basic_block_hits.insert(addr);
-	return true;
-}
-#endif
-
 uint8_t Vm::set_breakpoint_to_memory(vaddr_t addr) {
 	// This doesn't dirty memory
 	uint8_t* p = m_mmu.get(addr);
@@ -537,8 +602,13 @@ void Vm::set_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 			.original_byte = set_breakpoint_to_memory(addr),
 		};
 	} else {
-		// Add type to breakpoint
+		// If breakpoint type exists but its type is only Coverage, maybe the
+		// breakpoint is not in memory. Write it just in case.
 		Breakpoint& bp = m_breakpoints[addr];
+		if (bp.type == Breakpoint::Coverage)
+			*m_mmu.get(addr) = 0xCC;
+
+		// Add type to breakpoint
 		ASSERT((bp.type & type) == 0, "set breakpoint twice at 0x%lx, type %d\n",
 		       addr, type);
 		bp.type |= type;
@@ -639,7 +709,7 @@ void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
 	regs[DwarfReg::ReturnAddress] = kregs.rip;
 }
 
-void Vm::print_stacktrace(const kvm_regs& kregs) {
+void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames) {
 	vsize_t regs[DwarfReg::MAX];
 	kvm_to_dwarf_regs(kregs, regs);
 
@@ -654,10 +724,11 @@ void Vm::print_stacktrace(const kvm_regs& kregs) {
 	auto limits = m_elf.section_limits(".text");
 
 	// Loop over stack frames until we're out of limits
-	int i = 0;
+	size_t i = 0;
 	print_instruction_pointer(i, regs[DwarfReg::ReturnAddress]);
 	while (regs[DwarfReg::ReturnAddress] >= limits.first &&
-	       regs[DwarfReg::ReturnAddress] < limits.second)
+	       regs[DwarfReg::ReturnAddress] < limits.second &&
+		   i < num_frames)
 	{
 		// Get register information. Some functions like malloc_printerr end
 		// with a call (noreturn), so the return address is out of bounds of

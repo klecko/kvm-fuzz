@@ -34,6 +34,7 @@ public:
 		enum Type {
 			RunEnd = 1 << 0,
 			Coverage = 1 << 1,
+			Hook = 1 << 2,
 		};
 		uint8_t type;
 		uint8_t original_byte;
@@ -122,6 +123,9 @@ private:
 
 	FaultInfo m_fault;
 
+	// This is just for debugging
+	std::vector<vaddr_t> m_allocations;
+
 	int create_vm();
 	void setup_kvm();
 	void load_elfs();
@@ -131,7 +135,6 @@ private:
 #endif
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
 	void setup_coverage(const std::string& path);
-	bool handle_cov_breakpoint();
 #endif
 	void setup_kernel_execution();
 	void set_regs_dirty();
@@ -139,8 +142,10 @@ private:
 	void* fetch_page(uint64_t page, bool* success);
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
+	void handle_breakpoint(RunEndReason& reason);
+	void handle_hook();
 	void print_instruction_pointer(int i, vaddr_t instruction_pointer);
-	void print_stacktrace(const kvm_regs& regs);
+	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
