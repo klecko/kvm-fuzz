@@ -6,6 +6,9 @@
 #include <libelf.h>
 #include "elf_parser.h"
 
+#define PAGE_SIZE 0x1000
+#define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+
 using namespace std;
 
 ElfParser::ElfParser(const string& elf_path)
@@ -64,9 +67,9 @@ ElfParser::ElfParser(const string& elf_path)
 		// Update brk beyond any loadable segment, and load_addr as the address
 		// of the first segment in memory
 		if (segment.type == PT_LOAD) {
+			vaddr_t next_page = PAGE_CEIL(segment.vaddr + segment.memsize);
+			m_initial_brk = max(m_initial_brk, next_page);
 			m_load_addr = min(m_load_addr, segment.vaddr);
-			m_initial_brk = max(m_initial_brk,
-			                    (segment.vaddr + segment.memsize + 0xFFF) & ~0xFFF);
 		}
 		if (segment.type == PT_INTERP)
 			m_interpreter = string((char*)segment.data);

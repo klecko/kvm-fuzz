@@ -29,6 +29,7 @@
 
 #define PAGE_SIZE PTL1_SIZE
 #define PAGE_OFFSET(addr) ((addr) & (~PTL1_MASK))
+#define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & PTL1_MASK) //+ 0xFFF & ~0xFFF
 
 namespace Mem {
 	namespace Phys {

@@ -171,15 +171,15 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 	if (addr < m_min_brk)
 		return m_brk;
 
-	uintptr_t next_page = (m_brk + PAGE_SIZE - 1) & PTL1_MASK; // + 0xFFF & ~0xFFF
+	uintptr_t next_page = PAGE_CEIL(m_brk);
 	uintptr_t cur_page  = m_brk & PTL1_MASK;
 	if (addr > next_page) {
 		// Allocate space
-		size_t sz = (addr - next_page + PAGE_SIZE - 1) & PTL1_MASK;
+		size_t sz = PAGE_CEIL(addr - next_page);
 		Mem::Virt::alloc((void*)next_page, sz, PDE64_USER | PDE64_RW);
 	} else if (addr <= cur_page) {
 		// Free space
-		uintptr_t addr_next_page = (addr + PAGE_SIZE - 1) & PTL1_MASK;
+		uintptr_t addr_next_page = PAGE_CEIL(addr);
 		Mem::Virt::free((void*)addr_next_page, next_page - addr_next_page);
 	}
 
@@ -280,7 +280,7 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 		page_flags |= PDE64_RW; // read only file: map as writable first
 
 	// Round length to upper page boundary
-	size_t length_upper = (length + PAGE_SIZE - 1) & PTL1_MASK;
+	size_t length_upper = PAGE_CEIL(length);
 
 	// Allocate memory
 	void* ret;
@@ -313,7 +313,7 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 
 static uint64_t do_sys_munmap(void* addr, size_t length) {
 	// Round length to upper page boundary
-	length = (length + PAGE_SIZE - 1) & PTL1_MASK;
+	length = PAGE_CEIL(length);
 	Mem::Virt::free(addr, length);
 	return 0;
 }

@@ -35,7 +35,7 @@ void* kmalloc(size_t size) {
 
 	// Request more size if needed
 	if (size > remaining) {
-		size_t to_alloc = (size*2 + 0xFFF) & ~0xFFF;
+		size_t to_alloc = PAGE_CEIL(size*2);
 		Mem::Virt::alloc(next_alloc + remaining, to_alloc, PDE64_NX | PDE64_RW);
 		remaining += to_alloc;
 	}
