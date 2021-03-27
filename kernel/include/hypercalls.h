@@ -1,8 +1,8 @@
 #ifndef _HYPERCALLS_H
 #define _HYPERCALLS_H
 
-#include <string>
 #include <linux/limits.h>
+#include "string"
 #include "common.h"
 
 // PTE bits, needed for argument `page_flags` in `hc_mmap`

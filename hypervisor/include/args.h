@@ -4,9 +4,7 @@
 #include <string>
 #include <vector>
 
-
-class Args {
-public:
+struct Args {
 	int jobs;
 	size_t memory;
 	std::string kernel_path;
@@ -19,9 +17,6 @@ public:
 	std::string single_input_path;
 
 	bool parse(int argc, char** argv);
-
-private:
-
 };
 
 #endif

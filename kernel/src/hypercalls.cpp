@@ -1,4 +1,3 @@
-#include <stdarg.h>
 #include "hypercalls.h"
 
 // Keep this the same as in the hypervisor!

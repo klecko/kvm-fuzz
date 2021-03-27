@@ -1,12 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/mman.h>
-#include <string.h>
-#include <sys/syscall.h>
-#include <unistd.h>
+#include <cstring>
 #include "vm.h"
 
 using namespace std;

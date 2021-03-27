@@ -1,6 +1,4 @@
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <thread>
 #include "vm.h"
 #include "corpus.h"

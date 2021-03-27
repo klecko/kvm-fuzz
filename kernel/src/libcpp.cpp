@@ -2,7 +2,6 @@
 #include "libcpp.h"
 #include "hypercalls.h"
 #include "mem.h"
-#include <sys/mman.h>
 
 void* operator new(size_t size) {
 	return kmalloc(size);

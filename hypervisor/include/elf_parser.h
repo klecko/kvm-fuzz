@@ -1,7 +1,6 @@
 #ifndef _ELF_PARSER_H
 #define _ELF_PARSER_H
 
-#include <iostream>
 #include <string>
 #include <vector>
 #include <elf.h>

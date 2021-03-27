@@ -2,7 +2,6 @@
 #include <elf.h>
 #include "kernel.h"
 #include "init.h"
-#include "gdt.h"
 #include "mem.h"
 #include "asm.h"
 #include "vector"

@@ -1,10 +1,7 @@
 #include <iostream>
-#include <pthread.h>
 #include <fstream>
 #include <sys/mman.h>
-#include <linux/kvm.h>
-#include <string.h>
-#include <stdexcept>
+#include <cstring>
 #include "mmu.h"
 #include "page_walker.h"
 #include "kvm_aux.h"

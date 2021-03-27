@@ -1,11 +1,8 @@
 #ifndef _VM_H
 #define _VM_H
 
-#include <iostream>
 #include <vector>
 #include <unordered_map>
-#include <set>
-#include <sys/uio.h>
 #include <libxdc.h>
 #include "stats.h"
 #include "mmu.h"

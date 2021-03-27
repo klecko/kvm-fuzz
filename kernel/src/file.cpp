@@ -2,7 +2,7 @@
 #include "file.h"
 #include "libcpp.h"
 
-void stat_regular(void* statbuf, size_t filesize) {
+void stat_regular(struct stat* statbuf, size_t filesize) {
 	static unsigned long ino = 11349843;
 	struct stat st;
 	st.st_dev          = 2052;
@@ -24,7 +24,7 @@ void stat_regular(void* statbuf, size_t filesize) {
 	memcpy(statbuf, &st, sizeof(st));
 }
 
-void stat_stdout(void* statbuf) {
+void stat_stdout(struct stat* statbuf) {
 	struct stat st;
 	st.st_dev          = 22;
 	st.st_ino          = 6;
@@ -124,7 +124,7 @@ size_t File::move_cursor(size_t increment) {
 	return ret;
 }
 
-void File::stat(void* statbuf) const {
+void File::stat(struct stat* statbuf) const {
 	ASSERT(m_fops.do_stat, "not implemented stat");
 	(this->*m_fops.do_stat)(statbuf);
 }
@@ -140,11 +140,11 @@ size_t File::write(const void* buf, size_t len) {
 }
 
 // All fstat syscalls fall back to stat
-void File::do_stat_regular(void* statbuf) const {
+void File::do_stat_regular(struct stat* statbuf) const {
 	stat_regular(statbuf, m_size);
 }
 
-void File::do_stat_stdout(void* statbuf) const {
+void File::do_stat_stdout(struct stat* statbuf) const {
 	stat_stdout(statbuf);
 }
 

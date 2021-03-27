@@ -5,12 +5,12 @@
 #include "common.h"
 
 // Used by stat. Fstat should use the corresponding method in File
-void stat_regular(void* statbuf, size_t filesize);
-void stat_stdout(void* statbuf);
+void stat_regular(struct stat* statbuf, size_t filesize);
+void stat_stdout(struct stat* statbuf);
 
 class File;
 struct file_ops {
-	void (File::*do_stat)(void* statbuf) const;
+	void (File::*do_stat)(struct stat* statbuf) const;
 	size_t (File::*do_read)(void* buf, size_t len);
 	size_t (File::*do_write)(const void* buf, size_t len);
 };
@@ -30,7 +30,7 @@ public:
 	void set_offset(size_t offset);
 
 	// File operations
-	void stat(void* statbuf) const;
+	void stat(struct stat* statbuf) const;
 	size_t read(void* buf, size_t len);
 	size_t write(const void* buf, size_t len);
 
@@ -62,8 +62,8 @@ private:
 	size_t move_cursor(size_t increment);
 
 	// Actual implementations of file operations
-	void   do_stat_regular(void* statbuf) const;
-	void   do_stat_stdout(void* statbuf) const;
+	void   do_stat_regular(struct stat* statbuf) const;
+	void   do_stat_stdout(struct stat* statbuf) const;
 	size_t do_read_regular(void* buf, size_t len);
 	size_t do_write_stdout(const void* buf, size_t len);
 };

@@ -5,19 +5,13 @@
 #include "syscall_str.h"
 #include "asm.h"
 #include "mem.h"
+#include "string"
 
-#include <string>
-#include <unistd.h>
-#include <limits.h>
+// Linux
 #include <asm/prctl.h>
-#include <sys/syscall.h>
-#include <sys/prctl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/fcntl.h>
 #include <sys/utsname.h>
 #include <sys/mman.h>
-#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
 #include <asm-generic/errno-base.h>
