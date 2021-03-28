@@ -833,6 +833,7 @@ void Vm::vm_err(const string& msg) {
 	os.write((char*)buf.data, buf.length);
 	assert(os.good());
 	cout << "Dumped crash file of size " << buf.length << endl;
+	os.close();
 
 	die("%s\n", msg.c_str());
 }
