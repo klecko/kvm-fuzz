@@ -378,12 +378,16 @@ void Corpus::add_sub(string& input, Rng& rng){
 	else
 		int_size = 1;                  // size 1
 
+	// Align offset to int size. This prevents undefined behaviour when
+	// accessing unaligned memory
+	offset &= ~(int_size - 1);
+
 	// Helper macros
 	#define __builtin_bswap8(n) n
 	#define bswap(sz, n) __builtin_bswap##sz(n)
-	#define mut(sz) do { \
+	#define mut(sz, range) do { \
 		/* Get the number we'll add, which can be negative */                  \
-		int32_t delta = rng.rnd(1, range*2) - range;                           \
+		int32_t delta = rng.rnd(1, (range)*2) - (range);                       \
 		                                                                       \
 		/* Read bytes, interpret them as an integer with random endianness, */ \
 		/* add delta and store back those bytes */                             \
@@ -397,20 +401,16 @@ void Corpus::add_sub(string& input, Rng& rng){
 		*(uint##sz##_t*)(input.c_str()+offset) = n;                            \
 	} while (0)
 
-	// Get maximum number to add or substract depending on int size and mutate
-	size_t range;
+	// Perform mutation specifying maximum number to add or substract depending
+	// on int size
 	if (int_size == 1){
-		range = 16;
-		mut(8);
+		mut(8, 16);
 	} else if (int_size == 2){
-		range = 4096;
-		mut(16);
+		mut(16, 4096);
 	} else if (int_size == 4){
-		range = 1024 * 1024;
-		mut(32);
+		mut(32, 1024 * 1024);
 	} else {
-		range = 256 * 1024 * 1024;
-		mut(64);
+		mut(64, 256 * 1024 * 1024);
 	}
 
 	#undef mut
