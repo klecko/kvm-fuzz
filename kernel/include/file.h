@@ -5,7 +5,7 @@
 #include "common.h"
 
 // Used by stat. Fstat should use the corresponding method in File
-void stat_regular(struct stat* statbuf, size_t filesize);
+void stat_regular(struct stat* statbuf, size_t filesize, unsigned long inode);
 void stat_stdout(struct stat* statbuf);
 
 class File;

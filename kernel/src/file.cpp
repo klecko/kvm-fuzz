@@ -2,11 +2,10 @@
 #include "file.h"
 #include "libcpp.h"
 
-void stat_regular(struct stat* statbuf, size_t filesize) {
-	static unsigned long ino = 11349843;
+void stat_regular(struct stat* statbuf, size_t filesize, unsigned long inode) {
 	struct stat st;
 	st.st_dev          = 2052;
-	st.st_ino          = ino++;
+	st.st_ino          = inode;
 	st.st_mode         = 0100664;
 	st.st_nlink        = 1;
 	st.st_uid          = 0;
@@ -141,7 +140,7 @@ size_t File::write(const void* buf, size_t len) {
 
 // All fstat syscalls fall back to stat
 void File::do_stat_regular(struct stat* statbuf) const {
-	stat_regular(statbuf, m_size);
+	stat_regular(statbuf, m_size, (unsigned long)m_buf);
 }
 
 void File::do_stat_stdout(struct stat* statbuf) const {

@@ -42,11 +42,7 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
                               mode_t mode)
 {
 	string pathname_s(pathname);
-	ASSERT(m_file_contents.count(pathname_s), "unknown file '%s'", pathname);
 	ASSERT(dirfd == AT_FDCWD, "%s dirfd %d", pathname, dirfd);
-	ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
-	       "%s with write permisions", pathname);
-
 	dbgprintf("opening %s\n", pathname);
 
 	// Find unused fd
@@ -55,8 +51,15 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
 		fd++;
 
 	// Create file
-	struct iovec buf = m_file_contents[pathname_s];
-	m_open_files[fd] = File(flags, (const char*)buf.iov_base, buf.iov_len);
+	if (pathname_s == "-") {
+		m_open_files[fd] = FileStdout();
+	} else {
+		ASSERT(m_file_contents.count(pathname_s), "unknown file '%s'", pathname);
+		ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
+			"%s with write permisions", pathname);
+		struct iovec buf = m_file_contents[pathname_s];
+		m_open_files[fd] = File(flags, (const char*)buf.iov_base, buf.iov_len);
+	}
 	return fd;
 }
 
@@ -114,7 +117,8 @@ static uint64_t do_sys_write(int fd, const void* buf, size_t count) {
 static uint64_t do_sys_stat(const char* pathname, struct stat* statbuf) {
 	string pathname_s(pathname);
 	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
-	stat_regular(statbuf, m_file_contents[pathname_s].iov_len);
+	const iovec& iov = m_file_contents[pathname_s];
+	stat_regular(statbuf, iov.iov_len, (unsigned long)iov.iov_base);
 	return 0;
 }
 
