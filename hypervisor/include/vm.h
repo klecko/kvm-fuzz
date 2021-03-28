@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <unordered_map>
+#include <set>
 #include <libxdc.h>
 #include "stats.h"
 #include "mmu.h"

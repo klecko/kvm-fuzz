@@ -204,6 +204,15 @@ void Vm::setup_coverage() {
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
 void Vm::setup_coverage(const string& path) {
 	ifstream bbs(path);
+	if (!bbs.good()) {
+		// Command injection woopsie doopsie
+		printf("Basic blocks file '%s' doesn't exist. It will be created using "
+		       "angr. This can take some minutes.\n", path.c_str());
+		string cmd = "../scripts/generate_basic_blocks.py " + m_elf.path() +
+		             " " + path;
+		ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
+		bbs.open(path);
+	}
 	ERROR_ON(!bbs.good(), "opening basic blocks file %s", path.c_str());
 	size_t count = 0;
 	vaddr_t bb;
@@ -495,9 +504,11 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 	RunEndReason reason = run(stats);
 	remove_breakpoint(pc, Breakpoint::Type::RunEnd);
 
+	if (reason == RunEndReason::Crash)
+		cout << fault() << endl;
+	ASSERT(reason == RunEndReason::Debug, "run until end reason: %d", reason);
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 		   m_regs->rip, pc);
-	ASSERT(reason == RunEndReason::Debug, "run until end reason: %d", reason);
 }
 
 void Vm::set_single_step(bool enabled) {
@@ -517,6 +528,7 @@ Vm::RunEndReason Vm::single_step(Stats& stats) {
 	return reason;
 }
 
+#ifdef ENABLE_COVERAGE_INTEL_PT
 void* Vm::fetch_page(uint64_t page, bool* success) {
 	thread_local unordered_map<uint64_t, void*> cache;
 	thread_local uint64_t last_page = 0;
@@ -551,7 +563,6 @@ void test_edge(void*, uint64_t arg1, uint64_t arg2) {
 	printf("edge callback: %lx %lx\n", arg1, arg2);
 }
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
 void Vm::update_coverage(Stats& stats) {
 	cycle_t cycles = rdtsc2();
 	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);

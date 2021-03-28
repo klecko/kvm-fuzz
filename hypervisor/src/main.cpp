@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <thread>
 #include "vm.h"
 #include "corpus.h"
@@ -17,6 +18,7 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
 	       reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
 	       vm_exits_debug, vm_exits_cov;
+	ofstream os("stats.txt");
 	while (true) {
 		Stats stats_old = stats;
 		this_thread::sleep_for(REFRESH_TIME);
@@ -77,6 +79,9 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 			       kvm_time, hypercall_time, update_cov_time, mut1_time,
 			       mut2_time);
 		}
+
+		// Print stats to file
+		os << elapsed_total.count() << " " << fcps << " " << cov << endl;
 	}
 }
 
@@ -113,8 +118,11 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			// If our target received the input in a buffer instead of using
 			// open & read, we may want to write it to the guest memory, instead
 			// of using memory-loaded files.
-			//runner.mmu().write_mem(runner.regs().rsi, input.c_str(),
-			//                       min(256UL, input.size()));
+			// Assuming rdi is buffer pointer, rsi is input length and rdx is
+			// buffer length:
+			// size_t input_size = min((size_t)runner.regs().rdx, input.size());
+			// runner.mmu().write_mem(runner.regs().rdi, input.c_str(), input_size);
+			// runner.regs().rsi = input_size;
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
 			// Perform run

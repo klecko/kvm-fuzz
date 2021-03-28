@@ -1,4 +1,5 @@
 #include <vector>
+#include <set>
 #include <unordered_set>
 #include <string>
 #include <atomic>
@@ -40,7 +41,7 @@ class Corpus {
 public:
 #ifdef ENABLE_MUTATIONS
 	static const int MIN_MUTATIONS = 1;
-	static const int MAX_MUTATIONS = 10;
+	static const int MAX_MUTATIONS = 20;
 #else
 	static const int MIN_MUTATIONS = 0;
 	static const int MAX_MUTATIONS = 0;
