@@ -1,3 +1,4 @@
+#!/usr/bin/env gnuplot
 set title "Test kvm-fuzz"
 set xlabel "Time (seconds)"
 set grid
