@@ -1,3 +1,6 @@
+#ifndef _PAGE_WALKER_H
+#define _PAGE_WALKER_H
+
 #include "common.h"
 #include "mem.h"
 
@@ -5,7 +8,11 @@ class PageWalker {
 public:
 	PageWalker(void* start, size_t len);
 
-	void alloc_frame(uint64_t flags);
+	size_t offset() const;
+
+	bool is_allocated() const;
+
+	bool alloc_frame(uint64_t flags, bool assert_not_oom = true);
 
 	void free_frame();
 
@@ -26,8 +33,8 @@ private:
 	uint64_t   m_ptl2_i;
 	uint64_t   m_ptl1_i;
 
-	uintptr_t addr();
-	uintptr_t* pte();
+	uintptr_t addr() const;
+	uintptr_t& pte() const;
 
 	void update_ptl3();
 	void update_ptl2();
@@ -37,3 +44,5 @@ private:
 	void next_ptl2_entry();
 	void next_ptl1_entry();
 };
+
+#endif

@@ -165,16 +165,25 @@ static uint64_t do_sys_close(int fd) {
 }
 
 static uint64_t do_sys_brk(uintptr_t addr) {
-	dbgprintf("trying to set brk to %p\n", addr);
+	dbgprintf("trying to set brk to %p, current is %p\n", addr, m_brk);
 	if (addr < m_min_brk)
 		return m_brk;
 
 	uintptr_t next_page = PAGE_CEIL(m_brk);
 	uintptr_t cur_page  = m_brk & PTL1_MASK;
 	if (addr > next_page) {
-		// Allocate space
+		// We have to allocate space. First check if range is valid
 		size_t sz = PAGE_CEIL(addr - next_page);
-		Mem::Virt::alloc((void*)next_page, sz, PDE64_USER | PDE64_RW);
+		uint64_t flags = PDE64_USER | PDE64_RW;
+		if (Mem::Virt::is_range_allocated((void*)next_page, sz)) {
+			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
+			return m_brk;
+		}
+
+		if (!Mem::Virt::alloc((void*)next_page, sz, flags, false)) {
+			//printf_once("WARNING: brk OOM allocating %lu\n", sz);
+			return m_brk;
+		}
 	} else if (addr <= cur_page) {
 		// Free space
 		uintptr_t addr_next_page = PAGE_CEIL(addr);
@@ -260,14 +269,14 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
                             int fd, size_t offset)
 {
 	// We'll remove this checks little by little :)
-	dbgprintf("mmap(%p, %p, %d, %d, %d, %p)\n", addr, length, prot,
+	dbgprintf("mmap(%p, %ld, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
 	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
 
-	// if (flags & MAP_SHARED) {
-	// 	flags &= ~MAP_SHARED;
-	// 	printf_once("REMOVING MAP SHARED\n");
-	// }
+	if (flags & MAP_SHARED) {
+		flags &= ~MAP_SHARED;
+		//printf_once("REMOVING MAP SHARED\n");
+	}
 
 	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
 	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
@@ -280,14 +289,19 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	// Round length to upper page boundary
 	size_t length_upper = PAGE_CEIL(length);
 
-	// Allocate memory
+	// Allocate memory, handling OOM ourselves
 	void* ret;
 	if (flags & MAP_FIXED) {
 		ASSERT(addr, "MAP_FIXED with no addr");
 		ret = addr;
-		Mem::Virt::alloc(addr, length_upper, page_flags);
+		if (!Mem::Virt::alloc(addr, length_upper, page_flags, false))
+			ret = NULL;
 	} else {
-		ret = Mem::Virt::alloc(length_upper, page_flags);
+		ret = Mem::Virt::alloc(length_upper, page_flags, false);
+	}
+	if (ret == NULL) {
+		//printf_once("WARNING: sys_mmap OOM allocating %lu bytes\n", length);
+		return -ENOMEM;
 	}
 
 	// If a file descriptor was specified, copy its content to memory
@@ -310,6 +324,8 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 }
 
 static uint64_t do_sys_munmap(void* addr, size_t length) {
+	if (!addr)
+		return -EINVAL;
 	// Round length to upper page boundary
 	length = PAGE_CEIL(length);
 	Mem::Virt::free(addr, length);

@@ -15,30 +15,52 @@ PageWalker::PageWalker(void* start, size_t len)
 {
 	ASSERT((m_start & PTL1_MASK) == m_start, "not aligned start: %p", m_start);
 	ASSERT((m_len & PTL1_MASK) == m_len, "not aligned len: %p", m_len);
+	ASSERT(m_len > 0, "woops");
 	update_ptl3();
 	update_ptl2();
 	update_ptl1();
 }
 
-void PageWalker::alloc_frame(uint64_t flags) {
-	//ASSERT(!*pte(), "address already mapped: %p to %p", addr(), *pte());
-	if (*pte()) {
+size_t PageWalker::offset() const {
+	return m_offset;
+}
+
+bool PageWalker::is_allocated() const {
+	return pte() != 0;
+}
+
+bool PageWalker::alloc_frame(uint64_t flags, bool assert_not_oom) {
+	// Try to allocate and check if we're OOM
+	uintptr_t frame = Mem::Phys::alloc_frame(assert_not_oom);
+	if (!frame)
+		return false;
+
+	// Free old mapping if address was already mapped
+	if (is_allocated()) {
 		printf_once("mapping %p twice, discarding old mapping\n", addr());
 		free_frame();
 	}
-	*pte() = Mem::Phys::alloc_frame() | flags;
+
+	// Map
+	pte() = frame | flags;
+	flush_tbl_entry(addr());
+	return true;
 	//dbgprintf("mapping: %p to phys %p\n", addr(), *pte() & PTL1_MASK);
 }
 
 void PageWalker::free_frame() {
-	ASSERT(*pte(), "address not mapped: %p", addr());
-	Mem::Phys::free_frame(*pte() & PTL1_MASK);
-	*pte() = 0;
+	uintptr_t page_addr = addr();
+	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
+	Mem::Phys::free_frame(pte() & PTL1_MASK);
+	pte() = 0;
+	flush_tbl_entry(page_addr);
 }
 
 void PageWalker::set_flags(uint64_t flags) {
-	ASSERT(*pte(), "address not mapped: %p", addr());
-	*pte() = (*pte() & PTL1_MASK) | flags;
+	uintptr_t page_addr = addr();
+	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
+	pte() = (pte() & PTL1_MASK) | flags;
+	flush_tbl_entry(page_addr);
 }
 
 bool PageWalker::next() {
@@ -56,12 +78,12 @@ bool PageWalker::next() {
 	return ret;
 }
 
-uintptr_t PageWalker::addr() {
+uintptr_t PageWalker::addr() const {
 	return m_start + m_offset;
 }
 
-uintptr_t* PageWalker::pte() {
-	return &m_ptl1[m_ptl1_i];
+uintptr_t& PageWalker::pte() const {
+	return m_ptl1[m_ptl1_i];
 }
 
 const int PAGE_TABLE_ENTRIES_FLAGS = PDE64_PRESENT | PDE64_RW | PDE64_USER;

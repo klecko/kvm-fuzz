@@ -57,6 +57,23 @@ inline uint64_t rdcr3() {
 	return val;
 }
 
+inline void flush_tbl() {
+	asm volatile(
+		"mov rax, cr3;"
+		"mov cr3, rax;"
+		: : : "memory", "rax"
+	);
+}
+
+inline void flush_tbl_entry(uintptr_t page) {
+	asm volatile(
+		"invlpg [%0]"
+		:
+		: "r" (page)
+		: "memory"
+	);
+}
+
 inline void jump_to_user(void* entry, void* stack) {
 	asm volatile (
 		// Set user stack, RIP and RFLAGS

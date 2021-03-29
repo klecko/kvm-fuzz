@@ -1,3 +1,6 @@
+#ifndef _MEM_H
+#define _MEM_H
+
 // Page table stuff
 #define PTL4_SHIFT 39
 #define PTL4_BITS   9
@@ -33,16 +36,20 @@
 
 namespace Mem {
 	namespace Phys {
-		uintptr_t alloc_frame();
+		uintptr_t alloc_frame(bool assert_not_oom = true);
 		void free_frame(uintptr_t frame);
 		void* virt(uintptr_t phys);
 	}
 
 	namespace Virt {
-		void* alloc(size_t len, uint64_t flags);
-		void  alloc(void* addr, size_t len, uint64_t flags);
+		void* alloc(size_t len, uint64_t flags, bool assert_not_oom = true);
+		bool  alloc(void* addr, size_t len, uint64_t flags,
+		            bool assert_not_oom = true);
 		void* alloc_user_stack();
+		bool is_range_allocated(void* addr, size_t len);
 		void free(void* addr, size_t len);
 		void set_flags(void* addr, size_t len, uint64_t flags);
 	}
 }
+
+#endif
