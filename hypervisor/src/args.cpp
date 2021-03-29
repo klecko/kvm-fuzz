@@ -82,9 +82,10 @@ bool Args::parse(int argc, char** argv) {
 		// Set positional arguments
 		cmd.parse_positional({"binary", "args"});
 
-		// Set custom usage help
+		// Set custom usage help and with
 		cmd.custom_help("[ options ]")
-		   .positional_help("-- /path/to/fuzzed_binary [ args ]");
+		   .positional_help("-- /path/to/fuzzed_binary [ args ]")
+		   .set_width(80);
 
 		auto options = cmd.parse(argc, argv);
 
