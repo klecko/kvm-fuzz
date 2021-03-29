@@ -59,7 +59,12 @@ static void handle_breakpoint(InterruptFrame* frame) {
 static void handle_general_protection_fault(InterruptFrame* frame,
                                             uint64_t error_code)
 {
-	die("GPF at %p, segment: 0x%lx\n", frame->rip, error_code);
+	FaultInfo fault = {
+		.type = FaultInfo::Type::GeneralProtectionFault,
+		.rip = frame->rip,
+		.kernel = false, // ?
+	};
+	hc_fault(&fault);
 }
 
 static void handle_div_by_zero(InterruptFrame* frame) {

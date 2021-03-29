@@ -15,11 +15,14 @@ uintptr_t g_next_frame_alloc;
 size_t    g_memory_length;
 stack<uintptr_t> g_free_frames;
 
-uintptr_t alloc_frame(bool assert_not_oom) {
+void init_memory() {
 	// Get ownership of the physical memory
-	if (g_next_frame_alloc == 0) {
-		hc_get_mem_info((void**)&g_next_frame_alloc, &g_memory_length);
-	}
+	ASSERT(g_next_frame_alloc == 0, "double init_memory ?");
+	hc_get_mem_info((void**)&g_next_frame_alloc, &g_memory_length);
+}
+
+uintptr_t alloc_frame() {
+	ASSERT(g_next_frame_alloc != 0, "memory has not been initialized");
 
 	// Check if there's a free frame we can return
 	if (!g_free_frames.empty()) {
@@ -28,13 +31,8 @@ uintptr_t alloc_frame(bool assert_not_oom) {
 		return ret;
 	}
 
-	// Check if we are OOM
-	if (g_next_frame_alloc > g_memory_length - PAGE_SIZE) {
-		ASSERT(!assert_not_oom, "OOM");
-		return 0;
-	}
-
-	// Return a new frame
+	// Check if we are OOM and return a new frame
+	ASSERT(g_next_frame_alloc <= g_memory_length - PAGE_SIZE, "OOM");
 	uintptr_t ret = g_next_frame_alloc;
 	g_next_frame_alloc += PAGE_SIZE;
 	return ret;
@@ -51,6 +49,13 @@ void* virt(uintptr_t phys) {
 	return (void*)(phys + PHYSMAP_ADDR);
 }
 
+size_t amount_free_memory() {
+	ASSERT(g_next_frame_alloc != 0, "memory has not been initialized");
+	size_t free_memory = g_memory_length - g_next_frame_alloc;
+	size_t reused_memory = g_free_frames.size() * PAGE_SIZE;
+	return free_memory + reused_memory;
+}
+
 } // namespace Phys
 
 
@@ -61,33 +66,24 @@ static const uintptr_t USER_STACK_ADDR          = 0x800000000000;
 static const size_t    USER_STACK_SIZE          = 0x10000;
 uintptr_t g_next_user_alloc = USER_MAPPINGS_START_ADDR;
 
-void* alloc(size_t len, uint64_t flags, bool assert_not_oom) {
+void* alloc(size_t len, uint64_t flags) {
 	// Kernel should use kmalloc for now
 	ASSERT(flags & PDE64_USER, "kernel memory allocation?");
 	g_next_user_alloc -= len;
-	bool success = alloc((void*)g_next_user_alloc, len, flags, assert_not_oom);
-	return (success ? (void*)g_next_user_alloc : NULL);
+	alloc((void*)g_next_user_alloc, len, flags);
+	return (void*)g_next_user_alloc;
 }
 
-bool alloc(void* addr, size_t len, uint64_t flags, bool assert_not_oom) {
+void alloc(void* addr, size_t len, uint64_t flags) {
+	// Check if there's enough memory so we panic here instead of in
+	// alloc_frame in case of OOM
+	ASSERT(enough_free_memory(len), "OOM %p %lu %p", addr, len, flags);
 	if (!(flags & PDE64_PROTNONE))
 		flags |= PDE64_PRESENT;
-
-	bool success;
 	PageWalker pages(addr, len);
 	do {
-		success = pages.alloc_frame(flags, assert_not_oom);
-	} while (success && pages.next());
-
-	size_t length_allocated = pages.offset();
-	if (!success && length_allocated > 0) {
-		// Free every page mapped
-		PageWalker pages_mapped(addr, length_allocated);
-		do {
-			pages_mapped.free_frame();
-		} while (pages_mapped.next());
-	}
-	return success;
+		pages.alloc_frame(flags);
+	} while (pages.next());
 }
 
 void* alloc_user_stack() {
@@ -104,6 +100,7 @@ bool is_range_free(void* addr, size_t len) {
 	} while (pages.next());
 	return true;
 }
+
 void free(void* addr, size_t len) {
 	PageWalker pages(addr, len);
 	do {
@@ -118,6 +115,14 @@ void set_flags(void* addr, size_t len, uint64_t flags) {
 	do {
 		pages.set_flags(flags);
 	} while (pages.next());
+}
+
+bool enough_free_memory(size_t length) {
+	// We don't want to use all of our memory: let's have some margin for us.
+	// Also, when allocating memory we also need to allocate frames for page
+	// directory entries.
+	// FIXME: This doesn't guarantee having enough memory in all cases
+	return Mem::Phys::amount_free_memory() > length*1.25;
 }
 
 } // namespace Virt

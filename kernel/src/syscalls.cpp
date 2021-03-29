@@ -89,12 +89,12 @@ static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 		ret += iov[i].iov_len; //file.write(iov[i].iov_base, iov[i].iov_len);
 	}
 
-	hc_print_stacktrace(m_user_regs->rsp, m_user_regs->rip, m_user_regs->rbp);
-	// FaultInfo fault = {
-	// 	.type = FaultInfo::Type::AssertionFailed,
-	// 	.rip = m_user_regs->rip,
-	// };
-	// hc_fault(&fault)
+	//hc_print_stacktrace(m_user_regs->rsp, m_user_regs->rip, m_user_regs->rbp);
+	FaultInfo fault = {
+		.type = FaultInfo::Type::AssertionFailed,
+		.rip = m_user_regs->rip,
+	};
+	hc_fault(&fault);
 	return ret;
 }
 
@@ -190,15 +190,35 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 		// We have to allocate space. First check if range is valid
 		size_t sz = PAGE_CEIL(addr - next_page);
 		uint64_t flags = PDE64_USER | PDE64_RW;
+
+		if (!Mem::Virt::enough_free_memory(sz)) {
+			return m_brk;
+		}
+
 		if (!Mem::Virt::is_range_free((void*)next_page, sz)) {
 			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
 			return m_brk;
 		}
 
-		if (!Mem::Virt::alloc((void*)next_page, sz, flags, false)) {
-			//printf_once("WARNING: brk OOM allocating %lu\n", sz);
-			return m_brk;
-		}
+		Mem::Virt::alloc((void*)next_page, sz, flags);
+
+		// while (!Mem::Virt::is_range_free((void*)next_page, sz)) {
+		// 	//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
+		// 	// Range was too big. Reduce it until we can map something
+		// 	sz = PAGE_CEIL(sz/2);
+		// 	if (sz == PAGE_SIZE)
+		// 		return m_brk;
+		// 	addr = next_page + sz;
+		// }
+
+		// while (!Mem::Virt::alloc((void*)next_page, sz, flags, false)) {
+		// 	//printf_once("WARNING: brk OOM allocating %lu\n", sz);
+		// 	sz = PAGE_CEIL(sz/2);
+		// 	if (sz == PAGE_SIZE)
+		// 		return m_brk;
+		// 	addr = next_page + sz;
+		// }
+
 	} else if (addr <= cur_page) {
 		// Free space
 		uintptr_t addr_next_page = PAGE_CEIL(addr);
@@ -301,22 +321,19 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	if (!(prot & PROT_WRITE) && fd != -1)
 		page_flags |= PDE64_RW; // read only file: map as writable first
 
-	// Round length to upper page boundary
+	// Round length to upper page boundary and check if we have enough memory
 	size_t length_upper = PAGE_CEIL(length);
+	if (!Mem::Virt::enough_free_memory(length_upper))
+		return -ENOMEM;
 
-	// Allocate memory, handling OOM ourselves
+	// Allocate memory
 	void* ret;
 	if (flags & MAP_FIXED) {
 		ASSERT(addr, "MAP_FIXED with no addr");
 		ret = addr;
-		if (!Mem::Virt::alloc(addr, length_upper, page_flags, false))
-			ret = NULL;
+		Mem::Virt::alloc(addr, length_upper, page_flags);
 	} else {
-		ret = Mem::Virt::alloc(length_upper, page_flags, false);
-	}
-	if (ret == NULL) {
-		//printf_once("WARNING: sys_mmap OOM allocating %lu bytes\n", length);
-		return -ENOMEM;
+		ret = Mem::Virt::alloc(length_upper, page_flags);
 	}
 
 	// If a file descriptor was specified, copy its content to memory

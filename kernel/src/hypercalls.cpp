@@ -9,7 +9,7 @@ enum Hypercall : size_t {
 	GetInfo,
 	GetFileLen,
 	GetFileName,
-	SetFileBuf,
+	SetFilePointers,
 	Fault,
 	PrintStacktrace,
 	EndRun,
@@ -91,8 +91,8 @@ void hc_get_file_name(size_t n, char* buf) {
 }
 
 __attribute__((naked))
-void hc_set_file_buf(size_t n, void* buf) {
-	hypercall(Hypercall::SetFileBuf);
+void hc_set_file_pointers(size_t n, void* buf, size_t* length_ptr) {
+	hypercall(Hypercall::SetFilePointers);
 }
 
 __attribute__((naked))

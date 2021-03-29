@@ -57,7 +57,7 @@ inline uint64_t rdcr3() {
 	return val;
 }
 
-inline void flush_tbl() {
+inline void flush_tlb() {
 	asm volatile(
 		"mov rax, cr3;"
 		"mov cr3, rax;"
@@ -65,7 +65,7 @@ inline void flush_tbl() {
 	);
 }
 
-inline void flush_tbl_entry(uintptr_t page) {
+inline void flush_tlb_entry(uintptr_t page) {
 	asm volatile(
 		"invlpg [%0]"
 		:

@@ -12,7 +12,6 @@ PageWalker::PageWalker(void* start, size_t len)
 	, m_ptl3_i(PTL3_INDEX(m_start))
 	, m_ptl2_i(PTL2_INDEX(m_start))
 	, m_ptl1_i(PTL1_INDEX(m_start))
-	, m_oom(false)
 {
 	ASSERT((m_start & PTL1_MASK) == m_start, "not aligned start: %p", m_start);
 	ASSERT((m_len & PTL1_MASK) == m_len, "not aligned len: %p", m_len);
@@ -30,16 +29,7 @@ bool PageWalker::is_allocated() const {
 	return pte() != 0;
 }
 
-bool PageWalker::alloc_frame(uint64_t flags, bool assert_not_oom) {
-	// Check if we are in a OOM state
-	if (m_oom)
-		return false;
-
-	// Try to allocate and check if we're OOM
-	uintptr_t frame = Mem::Phys::alloc_frame(assert_not_oom);
-	if (!frame)
-		return false;
-
+void PageWalker::alloc_frame(uint64_t flags) {
 	// Free old mapping if address was already mapped
 	if (is_allocated()) {
 		printf_once("mapping %p twice, discarding old mapping\n", addr());
@@ -47,27 +37,24 @@ bool PageWalker::alloc_frame(uint64_t flags, bool assert_not_oom) {
 	}
 
 	// Map
-	pte() = frame | flags;
-	flush_tbl_entry(addr());
-	return true;
+	pte() = Mem::Phys::alloc_frame() | flags;
+	flush_tlb_entry(addr());
 	//dbgprintf("mapping: %p to phys %p\n", addr(), *pte() & PTL1_MASK);
 }
 
 void PageWalker::free_frame() {
-	ASSERT(!m_oom, "free while oom");
 	uintptr_t page_addr = addr();
 	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
 	Mem::Phys::free_frame(pte() & PTL1_MASK);
 	pte() = 0;
-	flush_tbl_entry(page_addr);
+	flush_tlb_entry(page_addr);
 }
 
 void PageWalker::set_flags(uint64_t flags) {
-	ASSERT(!m_oom, "set flags while oom");
 	uintptr_t page_addr = addr();
 	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
 	pte() = (pte() & PTL1_MASK) | flags;
-	flush_tbl_entry(page_addr);
+	flush_tlb_entry(page_addr);
 }
 
 bool PageWalker::next() {
@@ -96,36 +83,21 @@ uintptr_t& PageWalker::pte() const {
 const int PAGE_TABLE_ENTRIES_FLAGS = PDE64_PRESENT | PDE64_RW | PDE64_USER;
 void PageWalker::update_ptl3() {
 	if (!m_ptl4[m_ptl4_i]) {
-		uintptr_t frame = Mem::Phys::alloc_frame(false);
-		if (!frame) {
-			m_oom = true;
-			return;
-		}
-		m_ptl4[m_ptl4_i] = frame | PAGE_TABLE_ENTRIES_FLAGS;
+		m_ptl4[m_ptl4_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
 	m_ptl3 = (uintptr_t*)Mem::Phys::virt((m_ptl4[m_ptl4_i] & PTL1_MASK));
 }
 
 void PageWalker::update_ptl2() {
 	if (!m_ptl3[m_ptl3_i]) {
-		uintptr_t frame = Mem::Phys::alloc_frame(false);
-		if (!frame) {
-			m_oom = true;
-			return;
-		}
-		m_ptl3[m_ptl3_i] = frame | PAGE_TABLE_ENTRIES_FLAGS;
+		m_ptl3[m_ptl3_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
 	m_ptl2 = (uintptr_t*)Mem::Phys::virt((m_ptl3[m_ptl3_i] & PTL1_MASK));
 }
 
 void PageWalker::update_ptl1() {
 	if (!m_ptl2[m_ptl2_i]) {
-		uintptr_t frame = Mem::Phys::alloc_frame(false);
-		if (!frame) {
-			m_oom = true;
-			return;
-		}
-		m_ptl2[m_ptl2_i] = frame | PAGE_TABLE_ENTRIES_FLAGS;
+		m_ptl2[m_ptl2_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
 	m_ptl1 = (uintptr_t*)Mem::Phys::virt((m_ptl2[m_ptl2_i] & PTL1_MASK));
 }

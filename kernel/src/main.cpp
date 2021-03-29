@@ -7,8 +7,10 @@
 #include "vector"
 
 void init_file_contents(size_t n) {
-	// For each file, get its filename and its length, allocate a buffer
-	// and submit it to the hypervisor, which will write the file content to it
+	// For each file, get its filename and its length and allocate a buffer
+	// for the file content. Submit the address of the buffer and the address of
+	// the length to the hypervisor, which will write file contents into the
+	// buffer and real file length into the length.
 	void* buf;
 	size_t size;
 	char filename[PATH_MAX];
@@ -16,11 +18,10 @@ void init_file_contents(size_t n) {
 		hc_get_file_name(i, filename);
 		size = hc_get_file_len(i);
 		buf = kmalloc(size);
-		hc_set_file_buf(i, buf);
-		m_file_contents[string(filename)] = {
-			.iov_base = buf,
-			.iov_len  = size,
-		};
+		struct iovec& iov = m_file_contents[string(filename)];
+		iov.iov_base = buf;
+		iov.iov_len  = size;
+		hc_set_file_pointers(i, iov.iov_base, &iov.iov_len);
 	}
 }
 
@@ -124,6 +125,7 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 
 extern "C" void kmain(int argc, char** argv) {
 	// Init kernel stuff
+	Mem::Phys::init_memory();
 	init_tss();
 	init_gdt();
 	init_idt();

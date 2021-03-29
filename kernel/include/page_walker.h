@@ -12,7 +12,7 @@ public:
 
 	bool is_allocated() const;
 
-	bool alloc_frame(uint64_t flags, bool assert_not_oom = true);
+	void alloc_frame(uint64_t flags);
 
 	void free_frame();
 
@@ -32,7 +32,6 @@ private:
 	uint64_t   m_ptl3_i;
 	uint64_t   m_ptl2_i;
 	uint64_t   m_ptl1_i;
-	bool m_oom;
 
 	uintptr_t addr() const;
 	uintptr_t& pte() const;

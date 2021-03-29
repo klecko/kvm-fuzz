@@ -36,19 +36,21 @@
 
 namespace Mem {
 	namespace Phys {
-		uintptr_t alloc_frame(bool assert_not_oom = true);
+		void init_memory();
+		uintptr_t alloc_frame();
 		void free_frame(uintptr_t frame);
 		void* virt(uintptr_t phys);
+		size_t amount_free_memory();
 	}
 
 	namespace Virt {
-		void* alloc(size_t len, uint64_t flags, bool assert_not_oom = true);
-		bool  alloc(void* addr, size_t len, uint64_t flags,
-		            bool assert_not_oom = true);
+		void* alloc(size_t len, uint64_t flags);
+		void  alloc(void* addr, size_t len, uint64_t flags);
 		void* alloc_user_stack();
 		bool is_range_free(void* addr, size_t len);
 		void free(void* addr, size_t len);
 		void set_flags(void* addr, size_t len, uint64_t flags);
+		bool enough_free_memory(size_t length);
 	}
 }
 
