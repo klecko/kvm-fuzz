@@ -14,7 +14,7 @@ enum Hypercall : size_t {
 	GetInfo,
 	GetFileLen,
 	GetFileName,
-	SetFileBuf,
+	SetFilePointers,
 	Fault,
 	PrintStacktrace,
 	EndRun,
@@ -83,6 +83,8 @@ vsize_t Vm::do_hc_get_file_len(size_t n) {
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
+	dbgprintf("kernel got file length for file %s: %lu\n", it->first.c_str(),
+	          it->second.length);
 	return it->second.length;
 }
 
@@ -93,13 +95,20 @@ void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
 	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size() + 1);
 }
 
-void Vm::do_hc_set_file_buf(size_t n, vaddr_t buf_addr) {
+void Vm::do_hc_set_file_pointers(size_t n, vaddr_t data_addr,
+                                 vaddr_t length_addr) {
+	// Save pointers and write the data and the length to them. This will be
+	// repeated each time `set_file` is called
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
 	auto it = m_file_contents.begin();
 	advance(it, n);
-	it->second.guest_buf = buf_addr;
-	m_mmu.write_mem(buf_addr, it->second.data, it->second.length + 1);
-	dbgprintf("kernel set buf addr for file %s: 0x%lx\n", it->first.c_str(), buf_addr);
+	file_t& file_info = it->second;
+	file_info.guest_data_addr = data_addr;
+	file_info.guest_length_addr = length_addr;
+	m_mmu.write_mem(data_addr, file_info.data, file_info.length);
+	m_mmu.write<size_t>(length_addr, file_info.length);
+	dbgprintf("kernel set pointers for file %s: 0x%lx 0x%lx\n",
+	          it->first.c_str(), data_addr, length_addr);
 }
 
 void Vm::do_hc_fault(vaddr_t fault_addr) {
@@ -142,8 +151,8 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::GetFileName:
 			do_hc_get_file_name(m_regs->rdi, m_regs->rsi);
 			break;
-		case Hypercall::SetFileBuf:
-			do_hc_set_file_buf(m_regs->rdi, m_regs->rsi);
+		case Hypercall::SetFilePointers:
+			do_hc_set_file_pointers(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
 		case Hypercall::Fault:
 			do_hc_fault(m_regs->rdi);

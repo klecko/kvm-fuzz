@@ -667,16 +667,20 @@ void Vm::set_file(const string& filename, const string& content, bool check) {
 	file.data    = (const void*)content.c_str();
 	file.length  = content.size();
 	if (existed) {
-		// File already existed. If kernel submitted a buffer for it, write
-		// content into its memory.
-		ASSERT(!check || file.guest_buf, "kernel didn't submit buf for file %s",
-				filename.c_str());
-		if (file.guest_buf)
-			m_mmu.write_mem(file.guest_buf, file.data, file.length);
+		// File already existed. If kernel submitted its pointers, write
+		// file data and length into kernel memory. Note this should be done
+		// before guest opens the file.
+		ASSERT(!check || file.guest_data_addr, "kernel didn't submit ptr for "
+		       "file %s", filename.c_str());
+		if (file.guest_data_addr) {
+			m_mmu.write_mem(file.guest_data_addr, file.data, file.length);
+			m_mmu.write<vaddr_t>(file.guest_length_addr, file.length);
+		}
 	} else {
-		// File didn't exist. Set guest buffer address to 0, and wait for guest
-		// kernel to do hc_set_file_buf.
-		file.guest_buf = 0;
+		// File didn't exist. Set pointers to 0, and wait for guest
+		// kernel to do hc_set_file_pointers.
+		file.guest_data_addr = 0;
+		file.guest_length_addr = 0;
 	};
 }
 

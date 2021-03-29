@@ -17,6 +17,7 @@ struct FaultInfo {
 		OutOfBoundsExec,
 		AssertionFailed,
 		DivByZero,
+		GeneralProtectionFault,
 	};
 
 	Type type;
@@ -49,6 +50,8 @@ struct FaultInfo {
 				return "AssertionFailed";
 			case Type::DivByZero:
 				return "DivByZero";
+			case Type::GeneralProtectionFault:
+				return "GeneralProtectionFault";
 			default:
 				return "Unimplemented?";
 		}

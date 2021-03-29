@@ -16,7 +16,8 @@ void init_kvm();
 struct file_t {
 	const void* data;
 	size_t length;
-	vaddr_t guest_buf;
+	vaddr_t guest_data_addr;
+	vaddr_t guest_length_addr;
 };
 
 class Vm {
@@ -154,7 +155,7 @@ private:
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
-	void do_hc_set_file_buf(size_t n, vaddr_t buf_addr);
+	void do_hc_set_file_pointers(size_t n, vaddr_t buf_addr, vaddr_t length_addr);
 	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp);
 	void do_hc_fault(vaddr_t fault_info_addr);
 	void do_hc_end_run();
