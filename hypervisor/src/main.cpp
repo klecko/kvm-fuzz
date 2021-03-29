@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <thread>
+#include <cstring>
 #include "vm.h"
 #include "corpus.h"
 #include "args.h"
@@ -168,10 +169,7 @@ void read_and_set_file(const string& filename, Vm& vm) {
 	file_contents.push_back(move(content));
 }
 
-extern "C" void hello_from_zig();
 int main(int argc, char** argv) {
-	hello_from_zig();
-
 	Args args;
 	if (!args.parse(argc, argv))
 		return 0;
@@ -216,8 +214,8 @@ int main(int argc, char** argv) {
 		       args.single_input_path.c_str());
 		string single_input(read_file(args.single_input_path));
 		vm.set_file("input", single_input);
-		vm.run(stats);
-		printf("Run ended\n");
+		Vm::RunEndReason reason = vm.run(stats);
+		printf("Run ended with reason %d\n", reason);
 		return 0;
 	}
 
@@ -232,9 +230,9 @@ int main(int argc, char** argv) {
 	for (int i = 0; i < args.jobs; i++) {
 		thread t = thread(worker, i, ref(vm), ref(corpus), ref(stats));
 		CPU_ZERO(&cpu);
-		CPU_SET(i, &cpu);
-		ERROR_ON(pthread_setaffinity_np(t.native_handle(), sizeof(cpu), &cpu) != 0,
-		         "Binding thread to core %d", i);
+		CPU_SET(i % thread::hardware_concurrency(), &cpu);
+		int ret = pthread_setaffinity_np(t.native_handle(), sizeof(cpu), &cpu);
+		ASSERT(ret == 0, "Binding thread to core %d: %s", i, strerror(ret));
 		threads.push_back(move(t));
 	}
 	threads.push_back(thread(print_stats, ref(stats), ref(corpus)));
