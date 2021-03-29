@@ -67,6 +67,9 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	// This will be the maximum size of inputs produced by mutations
 	m_max_input_size = 10*max_sz;
 
+	// Set max_input_size to an absolute value
+	//m_max_input_size = 200*1024;
+
 	ASSERT(m_corpus.size() != 0, "empty corpus: %s", input_dir.c_str());
 	cout << "Total files read: " << m_corpus.size() << endl;
 	cout << "Max mutated input size: " << m_max_input_size << endl;
@@ -137,10 +140,7 @@ void Corpus::report_crash(int id, const FaultInfo& fault) {
 	// If it was new, print fault information and dump input file to disk
 	if (inserted) {
 		cout << fault << endl;
-		ostringstream filename;
-		filename << fault.type_str() << "_0x" << hex << fault.rip << "_0x"
-		         << fault.fault_addr;
-		ofstream ofs(m_output_dir + "/" + filename.str());
+		ofstream ofs(m_output_dir + "/" + fault.filename());
 		ofs << m_mutated_inputs[id];
 		ERROR_ON(!ofs.good(), "Error saving crash file to disk");
 		ofs.close();

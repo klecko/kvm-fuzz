@@ -23,12 +23,17 @@ static void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool user    = error_code & (1 << 2);
 	bool execute = error_code & (1 << 4);
 	uint64_t fault_addr = rdcr2();
-	ASSERT(user, "woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",
-	       frame->rip, fault_addr, present, write, execute);
+	if (!user) {
+		printf("woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",
+		       frame->rip, fault_addr, present, write, execute);
+	}
+	// ASSERT(user, "woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",
+	//        frame->rip, fault_addr, present, write, execute);
 
 	FaultInfo fault = {
 		.rip        = frame->rip,
 		.fault_addr = fault_addr,
+		.kernel     = !user,
 	};
 	if (present)
 		if (execute)
@@ -55,6 +60,16 @@ static void handle_general_protection_fault(InterruptFrame* frame,
                                             uint64_t error_code)
 {
 	die("GPF at %p, segment: 0x%lx\n", frame->rip, error_code);
+}
+
+static void handle_div_by_zero(InterruptFrame* frame) {
+	FaultInfo fault = {
+		.type = FaultInfo::Type::DivByZero,
+		.rip = frame->rip,
+		.fault_addr = 0,
+		.kernel = false, // ?
+	};
+	hc_fault(&fault);
 }
 
 __attribute__((naked))
@@ -90,5 +105,15 @@ void _handle_general_protection_fault() {
 		:
 		: "i" (handle_general_protection_fault)
 	);
+}
 
+__attribute__((naked))
+void _handle_div_by_zero() {
+	asm volatile(
+		"mov rdi, rsp;"
+		"call %0;"
+		"hlt;"
+		:
+		: "i" (handle_div_by_zero)
+	);
 }

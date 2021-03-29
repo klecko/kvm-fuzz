@@ -215,6 +215,8 @@ int main(int argc, char** argv) {
 		string single_input(read_file(args.single_input_path));
 		vm.set_file("input", single_input);
 		Vm::RunEndReason reason = vm.run(stats);
+		if (reason == Vm::RunEndReason::Crash)
+			cout << vm.fault() << endl;
 		printf("Run ended with reason %d\n", reason);
 		return 0;
 	}

@@ -46,7 +46,7 @@ namespace Mem {
 		bool  alloc(void* addr, size_t len, uint64_t flags,
 		            bool assert_not_oom = true);
 		void* alloc_user_stack();
-		bool is_range_allocated(void* addr, size_t len);
+		bool is_range_free(void* addr, size_t len);
 		void free(void* addr, size_t len);
 		void set_flags(void* addr, size_t len, uint64_t flags);
 	}

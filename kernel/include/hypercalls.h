@@ -21,6 +21,7 @@ struct phinfo_t {
     uint16_t e_phnum;      /* Program header table entry count */
 };
 
+// Keep this the same as in the hypervisor
 struct VmInfo {
 	char elf_path[PATH_MAX];
 	uintptr_t brk;
@@ -34,6 +35,7 @@ struct VmInfo {
 	struct phinfo_t phinfo;
 };
 
+// Keep this the same as in the hypervisor
 struct FaultInfo {
 	enum Type {
 		Read,
@@ -42,11 +44,14 @@ struct FaultInfo {
 		OutOfBoundsRead,
 		OutOfBoundsWrite,
 		OutOfBoundsExec,
+		AssertionFailed,
+		DivByZero,
 	};
 
 	Type type;
 	uint64_t rip;
 	uint64_t fault_addr;
+	bool kernel;
 };
 
 void hc_test(size_t arg);

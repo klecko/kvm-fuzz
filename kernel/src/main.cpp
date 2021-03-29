@@ -1,17 +1,10 @@
 #include <unistd.h>
 #include <elf.h>
-#include "kernel.h"
+#include "user.h"
 #include "init.h"
 #include "mem.h"
 #include "asm.h"
 #include "vector"
-
-// Global kernel state
-string m_elf_path;
-uintptr_t m_brk;
-uintptr_t m_min_brk;
-unordered_map<int, File> m_open_files;
-unordered_map<string, struct iovec> m_file_contents;
 
 void init_file_contents(size_t n) {
 	// For each file, get its filename and its length, allocate a buffer

@@ -7,6 +7,7 @@
 #define N_IDT_ENTRIES 256
 
 enum ExceptionNumber {
+	DivByZero = 0,
 	Breakpoint = 3,
 	GeneralProtectionFault = 13,
 	PageFault  = 14,

@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "syscalls.h"
 #include "common.h"
-#include "kernel.h"
+#include "user.h"
 #include "syscall_str.h"
 #include "asm.h"
 #include "mem.h"
@@ -15,8 +15,17 @@
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
 #include <asm-generic/errno-base.h>
+#include <signal.h>
 
 using namespace std;
+
+// Global user state
+string m_elf_path;
+uintptr_t m_brk;
+uintptr_t m_min_brk;
+unordered_map<int, File> m_open_files;
+unordered_map<string, struct iovec> m_file_contents;
+Regs* m_user_regs;
 
 const char* syscall_str[500];
 
@@ -70,7 +79,7 @@ static uint64_t do_sys_open(const char* pathname, int flags, mode_t mode) {
 static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 	ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
 	uint64_t ret  = 0;
-	File&    file = m_open_files[fd];
+	//File&    file = m_open_files[fd];
 
 	// Write each iovec to file
 	hc_print("WRITEV\n");
@@ -80,6 +89,12 @@ static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
 		ret += iov[i].iov_len; //file.write(iov[i].iov_base, iov[i].iov_len);
 	}
 
+	hc_print_stacktrace(m_user_regs->rsp, m_user_regs->rip, m_user_regs->rbp);
+	// FaultInfo fault = {
+	// 	.type = FaultInfo::Type::AssertionFailed,
+	// 	.rip = m_user_regs->rip,
+	// };
+	// hc_fault(&fault)
 	return ret;
 }
 
@@ -175,7 +190,7 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 		// We have to allocate space. First check if range is valid
 		size_t sz = PAGE_CEIL(addr - next_page);
 		uint64_t flags = PDE64_USER | PDE64_RW;
-		if (Mem::Virt::is_range_allocated((void*)next_page, sz)) {
+		if (!Mem::Virt::is_range_free((void*)next_page, sz)) {
 			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
 			return m_brk;
 		}
@@ -390,6 +405,18 @@ static uint64_t do_sys_sysinfo(struct sysinfo* info) {
 	return 0;
 }
 
+static uint64_t do_sys_tgkill(int tgid, int tid, int sig) {
+	if (sig == SIGABRT && tgid == 1234 && tid == 1234) {
+		FaultInfo fault = {
+			.type = FaultInfo::AssertionFailed,
+			.rip = m_user_regs->rip
+		};
+		hc_fault(&fault);
+	}
+	TODO
+	return 0;
+}
+
 size_t syscall_counts[500];
 void print_syscalls() {
 	int sum = 0;
@@ -405,6 +432,7 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
                         uint64_t arg3, uint64_t arg4, uint64_t arg5, Regs* regs)
 {
 	dbgprintf("--> syscall at %p: %s\n", regs->rip, syscall_str[nr]);
+	m_user_regs = regs;
 	syscall_counts[nr]++;
 	uint64_t ret = 0;
 	switch (nr) {
@@ -426,14 +454,6 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			break;
 		case SYS_writev:
 			ret = do_sys_writev(arg0, (const iovec*)arg1, arg2);
-			{
-				hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
-				// FaultInfo fault = {
-				// 	.type = FaultInfo::Type::OutOfBoundsRead,
-				// 	.rip = 1234,
-				// };
-				// hc_fault(&fault);
-			}
 			break;
 		case SYS_access:
 			ret = do_sys_access((const char*)arg0, arg1);
@@ -499,6 +519,9 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			break;
 		case SYS_sysinfo:
 			ret = do_sys_sysinfo((struct sysinfo*)arg0);
+			break;
+		case SYS_tgkill:
+			ret = do_sys_tgkill(arg0, arg1, arg2);
 			break;
 		case SYS_set_tid_address:
 			ret = 0;

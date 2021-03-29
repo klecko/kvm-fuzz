@@ -32,6 +32,7 @@ private:
 	uint64_t   m_ptl3_i;
 	uint64_t   m_ptl2_i;
 	uint64_t   m_ptl1_i;
+	bool m_oom;
 
 	uintptr_t addr() const;
 	uintptr_t& pte() const;

@@ -39,6 +39,7 @@ vaddr_t Vm::do_hc_get_kernel_brk() {
 	return m_kernel.initial_brk();
 }
 
+// Keep this the same as in the kernel
 struct VmInfo {
 	char elf_path[PATH_MAX];
 	vaddr_t brk;

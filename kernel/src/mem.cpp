@@ -77,12 +77,12 @@ bool alloc(void* addr, size_t len, uint64_t flags, bool assert_not_oom) {
 	PageWalker pages(addr, len);
 	do {
 		success = pages.alloc_frame(flags, assert_not_oom);
-	} while (pages.next() && success);
+	} while (success && pages.next());
 
-	size_t offset = pages.offset();
-	if (!success && offset > 0) {
+	size_t length_allocated = pages.offset();
+	if (!success && length_allocated > 0) {
 		// Free every page mapped
-		PageWalker pages_mapped(addr, offset - PAGE_SIZE);
+		PageWalker pages_mapped(addr, length_allocated);
 		do {
 			pages_mapped.free_frame();
 		} while (pages_mapped.next());
@@ -96,10 +96,10 @@ void* alloc_user_stack() {
 	return (void*)(USER_STACK_ADDR);
 }
 
-bool is_range_allocated(void* addr, size_t len) {
+bool is_range_free(void* addr, size_t len) {
 	PageWalker pages(addr, len);
 	do {
-		if (!pages.is_allocated())
+		if (pages.is_allocated())
 			return false;
 	} while (pages.next());
 	return true;
