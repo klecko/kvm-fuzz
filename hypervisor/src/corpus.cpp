@@ -1,6 +1,5 @@
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "corpus.h"
@@ -11,10 +10,10 @@ using namespace std;
 string read_file(const string& filepath) {
 	ifstream ifs(filepath);
 	ASSERT(ifs.good(), "Error opening file %s", filepath.c_str());
-	ostringstream ss;
-	ss << ifs.rdbuf();
+	string content((istreambuf_iterator<char>(ifs)),
+	               (istreambuf_iterator<char>()));
 	ASSERT(ifs.good(), "Error reading file %s", filepath.c_str());
-	return ss.str();
+	return content;
 }
 
 Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
