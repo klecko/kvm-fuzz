@@ -187,16 +187,19 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 	uintptr_t next_page = PAGE_CEIL(m_brk);
 	uintptr_t cur_page  = m_brk & PTL1_MASK;
 	if (addr > next_page) {
-		// We have to allocate space. First check if range is valid
+		// We have to allocate space. First check if range is valid, and then
+		// check if we have enough free memory. Don't do it the other way round,
+		// as walking the page table in is_range_free allocates page table
+		// directories.
 		size_t sz = PAGE_CEIL(addr - next_page);
 		uint64_t flags = PDE64_USER | PDE64_RW;
 
-		if (!Mem::Virt::enough_free_memory(sz)) {
+		if (!Mem::Virt::is_range_free((void*)next_page, sz)) {
+			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
 			return m_brk;
 		}
 
-		if (!Mem::Virt::is_range_free((void*)next_page, sz)) {
-			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
+		if (!Mem::Virt::enough_free_memory(sz)) {
 			return m_brk;
 		}
 
