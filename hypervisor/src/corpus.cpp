@@ -10,7 +10,8 @@
 using namespace std;
 
 Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
-	: m_output_dir_corpus(output_dir + "/corpus")
+	: m_input_dir(input_dir)
+	, m_output_dir_corpus(output_dir + "/corpus")
 	, m_output_dir_crashes(output_dir + "/crashes")
 	, m_output_dir_min_corpus(output_dir + "/minimized_corpus")
 	, m_output_dir_min_crashes(output_dir + "/minimized_crashes")
@@ -165,17 +166,22 @@ void Corpus::write_min_crash_file(size_t i) {
 	           m_corpus[i]);
 }
 
-void Corpus::set_mode_normal() {
+void Corpus::set_mode_normal(const set<vaddr_t>& total_coverage) {
 	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
 	m_mode = Mode::Normal;
+	m_basic_blocks_hit.insert(total_coverage.begin(), total_coverage.end());
 	cout << "Set corpus mode: Normal. Output directories will be "
 	     << m_output_dir_corpus << " and " << m_output_dir_crashes << endl;
 
-	// Create output folders and write seed input files to disk
+	// Create output folders. Write seed input files to disk only if corpus
+	// directory is not the same as input directory, as we would just overwrite
+	// current files with same content.
 	create_folder(m_output_dir_corpus);
 	create_folder(m_output_dir_crashes);
-	for (size_t i = 0; i < m_corpus.size(); i++) {
-		write_corpus_file(i);
+	if (m_output_dir_corpus != m_input_dir) {
+		for (size_t i = 0; i < m_corpus.size(); i++) {
+			write_corpus_file(i);
+		}
 	}
 }
 

@@ -226,6 +226,7 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
+	printf("Performing first runs...\n");
 	if (args.minimize_corpus) {
 		// Ask for breakpoints to dirty memory, so they are resetted after
 		// each run, as we want to get the full coverage and not just new
@@ -268,7 +269,14 @@ int main(int argc, char** argv) {
 		corpus.set_mode_crashes_min(faults);
 
 	} else {
-		corpus.set_mode_normal();
+		// Perform run with each seed input and submit total coverage to corpus
+		Vm runner(vm);
+		for (size_t i = 0; i < corpus.size(); i++) {
+			runner.set_file("input", corpus.element(i), true);
+			runner.run(stats);
+			runner.reset(vm, stats);
+		}
+		corpus.set_mode_normal(runner.coverage());
 	}
 
 

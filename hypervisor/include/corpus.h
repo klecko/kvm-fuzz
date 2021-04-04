@@ -51,9 +51,10 @@ public:
 	std::string seed_filename(size_t i) const;
 	const std::string& element(size_t i) const;
 
-	// Set mode. This must be called before doing anything else. Minimization
+	// Set mode. This must be called before doing anything else. Normal mode
+	// requires the total coverage of the seed corpus, while minimization
 	// modes require the coverage or fault associated to each seed input.
-	void set_mode_normal();
+	void set_mode_normal(const std::set<vaddr_t>& total_coverage);
 	void set_mode_corpus_min(const std::vector<std::set<vaddr_t>>& coverages);
 	void set_mode_crashes_min(const std::vector<FaultInfo>& faults);
 
@@ -79,7 +80,8 @@ private:
 		Unknown
 	};
 
-	// Output directories
+	// Directories
+	std::string m_input_dir;
 	std::string m_output_dir_corpus;
 	std::string m_output_dir_crashes;
 	std::string m_output_dir_min_corpus;

@@ -10,7 +10,6 @@
 #include <fstream>
 #include <sstream>
 #include "args.h"
-#include "common.h"
 #include "cxxopts.hpp"
 #include "utils.h"
 
@@ -84,6 +83,9 @@ bool Args::parse(int argc, char** argv) {
 		if (basic_blocks_path.empty()) {
 			string md5 = md5_file(binary_path);
 			basic_blocks_path = "./basic_blocks_" + md5 + ".txt";
+		}
+		if (input_dir == "-") {
+			input_dir = output_dir + "/corpus";
 		}
 
 	} catch (cxxopts::OptionException& e) {
