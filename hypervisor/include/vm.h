@@ -75,6 +75,7 @@ public:
 	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	void set_breakpoints_dirty(bool dirty);
 
 	// Associate `filename` with `content` to emulate file operations in the
 	// guest. String `content` shouldn't be modified and it could be shared
@@ -89,6 +90,7 @@ public:
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
+	void dump(const std::string& filename);
 
 private:
 	int m_vm_fd;
@@ -114,7 +116,12 @@ private:
 	std::vector<std::string> m_argv;
 	Mmu  m_mmu;
 	bool m_running;
+
+	// Breakpoints indexed by the address they are placed at
 	std::unordered_map<vaddr_t, Breakpoint> m_breakpoints;
+
+	// Whether setting or removing a breakpoint should dirty memory
+	bool m_breakpoints_dirty;
 
 	// Files contents indexed by filename. Kernel will synchronize with this
 	// on startup

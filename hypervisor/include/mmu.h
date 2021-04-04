@@ -87,7 +87,7 @@ public:
 	// Load elf into memory
 	void load_elf(const std::vector<segment_t>& segments, bool kernel);
 
-	void dump_memory(psize_t len) const;
+	void dump_memory(psize_t len, const std::string& filename) const;
 
 private:
 	// Auxiliary class to walk the page table

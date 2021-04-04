@@ -18,6 +18,7 @@ struct FaultInfo {
 		AssertionFailed,
 		DivByZero,
 		GeneralProtectionFault,
+		StackSegmentFault,
 	};
 
 	Type type;
@@ -52,6 +53,8 @@ struct FaultInfo {
 				return "DivByZero";
 			case Type::GeneralProtectionFault:
 				return "GeneralProtectionFault";
+			case Type::StackSegmentFault:
+				return "StackSegmentFault";
 			default:
 				return "Unimplemented?";
 		}

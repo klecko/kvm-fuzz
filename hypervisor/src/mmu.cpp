@@ -324,9 +324,9 @@ void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
 	}
 }
 
-void Mmu::dump_memory(psize_t len) const {
+void Mmu::dump_memory(psize_t len, const string& filename) const {
 	ASSERT(len <= m_length, "Dump OOB: %ld/%ld", len, m_length);
-	ofstream out("dump");
+	ofstream out(filename);
 	out.write((char*)m_memory, len);
 	out.close();
 	cout << "Dumped " << len << " bytes of memory" << endl;

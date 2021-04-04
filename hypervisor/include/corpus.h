@@ -7,8 +7,6 @@
 #include "common.h"
 #include "fault.h"
 
-std::string read_file(const std::string& filepath);
-
 // Used for mutating inputs. We don't use glibc rand() because it uses locks
 // in order to be thread safe. Instead, we implement a simpler algorithm, and
 // each thread will have its own rng.
@@ -39,24 +37,28 @@ class Rng {
 
 class Corpus {
 public:
-#ifdef ENABLE_MUTATIONS
 	static const int MIN_MUTATIONS = 1;
 	static const int MAX_MUTATIONS = 20;
-#else
-	static const int MIN_MUTATIONS = 0;
-	static const int MAX_MUTATIONS = 0;
-#endif
 
 	Corpus(int nthreads, const std::string& input, const std::string& output);
 
+	// Trivial getters
 	size_t size() const;
 	size_t memsize() const;
 	size_t max_input_size() const;
 	size_t unique_crashes() const;
 	size_t coverage() const;
+	std::string seed_filename(size_t i) const;
+	const std::string& element(size_t i) const;
+
+	// Set mode. This must be called before doing anything else. Minimization
+	// modes require the coverage or fault associated to each seed input.
+	void set_mode_normal();
+	void set_mode_corpus_min(const std::vector<std::set<vaddr_t>>& coverages);
+	void set_mode_crashes_min(const std::vector<FaultInfo>& faults);
 
 	// Get a new mutated input, which will be a constant reference to
-	// `mutated_inputs[id]
+	// `mutated_inputs[id]`
 	const std::string& get_new_input(int id, Rng& rng, Stats& stats);
 
 	// Report a new crash
@@ -70,8 +72,18 @@ public:
 #endif
 
 private:
-	// Output directory
-	std::string m_output_dir;
+	enum Mode {
+		Normal,
+		CorpusMinimization,
+		CrashesMinimization,
+		Unknown
+	};
+
+	// Output directories
+	std::string m_output_dir_corpus;
+	std::string m_output_dir_crashes;
+	std::string m_output_dir_min_corpus;
+	std::string m_output_dir_min_crashes;
 
 	// Corpus and its lock
 	std::vector<std::string> m_corpus;
@@ -98,34 +110,77 @@ private:
 	// Max input size, used in expand mutation
 	size_t m_max_input_size;
 
-	// Add input to corpus
+	// Filenames of initial corpus elements (seeds)
+	std::vector<std::string> m_seeds_filenames;
+
+	// Position i holds index in `m_corpus` of the input that
+	// `m_mutated_inputs[i]` was mutated from
+	std::vector<size_t> m_mutated_inputs_indexes;
+
+	// Current mode
+	Mode m_mode;
+
+	// Coverage of each of the seeds, when in mode CorpusMinimization
+	std::vector<std::set<vaddr_t>> m_coverages;
+
+	// Fault of each of the seeds, when in mode FaultMinimization
+	std::vector<FaultInfo> m_faults;
+
+
+	// Add input to corpus and write it to corpus dir
 	void add_input(const std::string& new_input);
 
 	// Mutate input in `mutated_inputs[id]`
 	void mutate_input(int id, Rng& rng);
 
+	// Check if last mutation reduced the file size while keeping the fault/cov
+	// the same. In that case, replace associated input in the corpus with
+	// the reduced one, and write it to its corresponding dir.
+	void handle_crash_crashes_minimization(int id, const FaultInfo& fault);
+	void handle_cov_corpus_minimization(int id, const std::set<vaddr_t>& cov);
+
+	// Apply afl-cmin algorithm to reduce number of elements in the corpus
+	void minimize();
+
+	// Define the filename of corpus elements, minimized corpus elements and
+	// minimized crashes saved to disk. Crash filenames are the description
+	// given by FaultInfo.
+	std::string corpus_filename(size_t i);
+	std::string min_corpus_filename(size_t i);
+	std::string min_crash_filename(size_t i);
+
+	// Write `m_corpus[i]` to corresponding output directory. Crash files option
+	// is overloaded so we can get it from `m_mutated_inputs[id]` in case we
+	// decide not to add crash files to corpus.
+	void write_corpus_file(size_t i);
+	void write_crash_file(int id, const FaultInfo& fault);
+	void write_crash_file(size_t i, const FaultInfo& fault);
+	void write_min_corpus_file(size_t i);
+	void write_min_crash_file(size_t i);
+
 	// Mutation strategies
 	typedef void (Corpus::*mutation_strat_t)(std::string& input, Rng& rng);
 	static const std::vector<mutation_strat_t> mut_strats;
-	void shrink(std::string& input, Rng& rng);
-	void expand(std::string& input, Rng& rng);
-	void bit(std::string& input, Rng& rng);
-	void dec_byte(std::string& input, Rng& rng);
-	void inc_byte(std::string& input, Rng& rng);
-	void neg_byte(std::string& input, Rng& rng);
-	void add_sub(std::string& input, Rng& rng);
-	void set(std::string& input, Rng& rng);
-	void swap(std::string& input, Rng& rng);
-	void copy(std::string& input, Rng& rng);
-	void inter_splice(std::string& input, Rng& rng);
-	void insert_rand(std::string& input, Rng& rng);
-	void overwrite_rand(std::string& input, Rng& rng);
-	void byte_repeat_overwrite(std::string& input, Rng& rng);
-	void byte_repeat_insert(std::string& input, Rng& rng);
-	void magic_overwrite(std::string& input, Rng& rng);
-	void magic_insert(std::string& input, Rng& rng);
-	void random_overwrite(std::string& input, Rng& rng);
-	void random_insert(std::string& input, Rng& rng);
-	void splice_overwrite(std::string& input, Rng& rng);
-	void splice_insert(std::string& input, Rng& rng);
+	static const std::vector<mutation_strat_t> mut_strats_reduce;
+	void mut_shrink(std::string& input, Rng& rng);
+	void mut_expand(std::string& input, Rng& rng);
+	void mut_bit(std::string& input, Rng& rng);
+	void mut_dec_byte(std::string& input, Rng& rng);
+	void mut_inc_byte(std::string& input, Rng& rng);
+	void mut_neg_byte(std::string& input, Rng& rng);
+	void mut_add_sub(std::string& input, Rng& rng);
+	void mut_set(std::string& input, Rng& rng);
+	void mut_swap(std::string& input, Rng& rng);
+	void mut_copy(std::string& input, Rng& rng);
+	void mut_inter_splice(std::string& input, Rng& rng);
+	void mut_insert_rand(std::string& input, Rng& rng);
+	void mut_overwrite_rand(std::string& input, Rng& rng);
+	void mut_byte_repeat_overwrite(std::string& input, Rng& rng);
+	void mut_byte_repeat_insert(std::string& input, Rng& rng);
+	void mut_magic_overwrite(std::string& input, Rng& rng);
+	void mut_magic_insert(std::string& input, Rng& rng);
+	void mut_random_overwrite(std::string& input, Rng& rng);
+	void mut_random_insert(std::string& input, Rng& rng);
+	void mut_splice_overwrite(std::string& input, Rng& rng);
+	void mut_splice_insert(std::string& input, Rng& rng);
 };

@@ -5,6 +5,7 @@
 #include "vm.h"
 #include "corpus.h"
 #include "args.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -208,6 +209,9 @@ int main(int argc, char** argv) {
 	// vm.set_breakpoint(vm.resolve_symbol("__libc_valloc"), Vm::Breakpoint::Hook);
 	// vm.set_breakpoint(vm.resolve_symbol("__libc_pvalloc"), Vm::Breakpoint::Hook);
 
+	// Run until main before forking or running single input
+	vm.run_until(vm.resolve_symbol("main"), stats);
+
 	if (!args.single_input_path.empty()) {
 		// Just perform a single run and exit
 		printf("Performing single run with input file '%s'\n",
@@ -218,12 +222,55 @@ int main(int argc, char** argv) {
 		if (reason == Vm::RunEndReason::Crash)
 			cout << vm.fault() << endl;
 		printf("Run ended with reason %d\n", reason);
+		// vm.dump("libtiff-data");
 		return 0;
 	}
 
-	// Run until main before forking
-	vm.run_until(vm.resolve_symbol("main"), stats);
-	//vm.run_until(0x402319, stats); // readelf-static at fopen
+	if (args.minimize_corpus) {
+		// Ask for breakpoints to dirty memory, so they are resetted after
+		// each run, as we want to get the full coverage and not just new
+		// basic block hits.
+		vm.set_breakpoints_dirty(true);
+
+		// Get coverage of every input and submit it to corpus
+		vector<set<vaddr_t>> coverages;
+		Vm runner(vm);
+		Vm::RunEndReason reason;
+		for (size_t i = 0; i < corpus.size(); i++) {
+			runner.set_file("input", corpus.element(i), true);
+			reason = runner.run(stats);
+			if (reason == Vm::RunEndReason::Crash) {
+				printf("Input file '%s' crashed in corpus minimization mode\n",
+				       corpus.seed_filename(i).c_str());
+			} else if (reason != Vm::RunEndReason::Exit) {
+				die("unexpected RunEndReason for input '%s': %d\n",
+				    corpus.seed_filename(i).c_str(), reason);
+			}
+			coverages.push_back(runner.coverage());
+			runner.reset_coverage();
+			runner.reset(vm, stats);
+		}
+		corpus.set_mode_corpus_min(coverages);
+
+	} else if (args.minimize_crashes) {
+		// Make sure every input actually crashes, and submit faults to corpus
+		vector<FaultInfo> faults;
+		Vm runner(vm);
+		Vm::RunEndReason reason;
+		for (size_t i = 0; i < corpus.size(); i++) {
+			runner.set_file("input", corpus.element(i), true);
+			reason = runner.run(stats);
+			ASSERT(reason == Vm::RunEndReason::Crash, "input '%s' didn't crash",
+			       corpus.seed_filename(i).c_str());
+			faults.push_back(runner.fault());
+			runner.reset(vm, stats);
+		}
+		corpus.set_mode_crashes_min(faults);
+
+	} else {
+		corpus.set_mode_normal();
+	}
+
 
 	// Create threads and bind each one to a core
 	printf("Creating threads...\n");

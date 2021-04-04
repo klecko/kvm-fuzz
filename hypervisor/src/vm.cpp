@@ -34,6 +34,7 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_argv(argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
+	, m_breakpoints_dirty(false)
 {
 	load_elfs();
 
@@ -62,6 +63,7 @@ Vm::Vm(const Vm& other)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints(other.m_breakpoints)
+	, m_breakpoints_dirty(other.m_breakpoints_dirty)
 	, m_file_contents(other.m_file_contents)
 	, m_allocations(other.m_allocations)
 {
@@ -579,6 +581,16 @@ void Vm::update_coverage(Stats& stats) {
 		decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
 		ASSERT(ret == decoder_result_t::decoder_success, "libxdc decode: %d", ret);
 
+		// ofstream ofs("libtiff-trace");
+		// assert(ofs.good());
+		// ofs.write((char*)m_vmx_pt, size);
+		// assert(ofs.good());
+		// ofs.close();
+		// printf("IPT data dumped. Bitmap hash: 0x%lx\n",
+		//        libxdc_bitmap_get_hash(m_vmx_pt_decoder));
+		// auto limits = m_elf.section_limits(".text");
+		// printf("Limits: 0x%lx, 0x%lx\n", limits.first, limits.second);
+
 		//free(buf);
 	}
 	stats.update_cov_cycles += rdtsc2() - cycles;
@@ -586,19 +598,30 @@ void Vm::update_coverage(Stats& stats) {
 #endif
 
 uint8_t Vm::set_breakpoint_to_memory(vaddr_t addr) {
-	// This doesn't dirty memory
-	uint8_t* p = m_mmu.get(addr);
-	uint8_t val = *p;
+	uint8_t val;
+	if (m_breakpoints_dirty) {
+		val = m_mmu.read<uint8_t>(addr);
+		m_mmu.write<uint8_t>(addr, 0xCC, false);
+	} else {
+		uint8_t* p = m_mmu.get(addr);
+		val = *p;
+		*p = 0xCC;
+	}
 	ASSERT(val != 0xCC, "setting breakpoint twice at 0x%lx", addr);
-	*p = 0xCC;
 	return val;
 }
 
 void Vm::remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte) {
-	// This doesn't dirty memory
-	uint8_t* p = m_mmu.get(addr);
-	ASSERT(*p == 0xCC, "not set breakpoint at 0x%lx", addr);
-	*p = original_byte;
+	uint8_t val;
+	if (m_breakpoints_dirty) {
+		val = m_mmu.read<uint8_t>(addr);
+		m_mmu.write<uint8_t>(addr, original_byte, false);
+	} else {
+		uint8_t* p = m_mmu.get(addr);
+		val = *p;
+		*p = original_byte;
+	}
+	ASSERT(val == 0xCC, "not set breakpoint at 0x%lx", addr);
 }
 
 void Vm::set_breakpoint(vaddr_t addr, Breakpoint::Type type) {
@@ -659,6 +682,10 @@ bool Vm::try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 		m_breakpoints.erase(addr);
 	}
 	return true;
+}
+
+void Vm::set_breakpoints_dirty(bool dirty) {
+	m_breakpoints_dirty = dirty;
 }
 
 void Vm::set_file(const string& filename, const string& content, bool check) {
@@ -823,7 +850,7 @@ void Vm::dump_memory() const {
 }
 
 void Vm::dump_memory(psize_t len) const {
-	m_mmu.dump_memory(len);
+	m_mmu.dump_memory(len, "dump");
 }
 
 void Vm::vm_err(const string& msg) {
@@ -840,4 +867,27 @@ void Vm::vm_err(const string& msg) {
 	os.close();
 
 	die("%s\n", msg.c_str());
+}
+
+void Vm::dump(const string& filename) {
+	m_mmu.dump_memory(m_mmu.size(), filename + ".dump");
+
+	unordered_map<paddr_t, vaddr_t> memory_map;
+	auto limits = m_elf.section_limits(".text");
+	paddr_t paddr;
+	for (vaddr_t vaddr = limits.first & PTL1_MASK;
+	     vaddr < PAGE_CEIL(limits.second);
+	     vaddr += PAGE_SIZE)
+	{
+		paddr = m_mmu.virt_to_phys(vaddr);
+		memory_map[paddr] = vaddr;
+	}
+
+	ofstream ofs(filename + ".addr");
+	assert(ofs.good());
+	for (auto pair : memory_map) {
+		ofs.seekp((pair.first / PAGE_SIZE)*sizeof(vaddr_t));
+		ofs.write((char*)&pair.second, sizeof(vaddr_t));
+	}
+	ofs.close();
 }

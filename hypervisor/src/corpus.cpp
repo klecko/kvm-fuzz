@@ -1,23 +1,19 @@
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "corpus.h"
 #include "magic_values.h"
+#include "utils.h"
 
 using namespace std;
 
-string read_file(const string& filepath) {
-	ifstream ifs(filepath);
-	ASSERT(ifs.good(), "Error opening file %s", filepath.c_str());
-	string content((istreambuf_iterator<char>(ifs)),
-	               (istreambuf_iterator<char>()));
-	ASSERT(ifs.good(), "Error reading file %s", filepath.c_str());
-	return content;
-}
-
 Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
-	: m_output_dir(output_dir)
+	: m_output_dir_corpus(output_dir + "/corpus")
+	, m_output_dir_crashes(output_dir + "/crashes")
+	, m_output_dir_min_corpus(output_dir + "/minimized_corpus")
+	, m_output_dir_min_crashes(output_dir + "/minimized_crashes")
 	, m_lock_corpus(false)
 	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
@@ -28,8 +24,10 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
 	, m_lock_basic_blocks_hits(false)
 #endif
+	, m_mutated_inputs_indexes(nthreads)
+	, m_mode(Mode::Unknown)
 {
-	// Try to open the directory
+	// Try to open input directory
 	DIR* dir = opendir(input_dir.c_str());
 	ERROR_ON(!dir, "opening input directory %s", input_dir.c_str());
 
@@ -41,8 +39,7 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	while ((ent = readdir(dir))){
 		filepath = input_dir + "/" + ent->d_name;
 
-		// Check file type. If readdir fails to provide it, fallback
-		// to stat
+		// Check file type. If readdir fails to provide it, fallback to stat
 		if (ent->d_type == DT_UNKNOWN){
 			stat(filepath.c_str(), &st);
 			if (!S_ISREG(st.st_mode))
@@ -50,9 +47,11 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 		} else if (ent->d_type != DT_REG)
 			continue;
 
-		// For each regular file, introduce its content into corpus
+		// For each regular file, add its content to the corpus and save
+		// its filename
 		input = read_file(filepath);
 		m_corpus.push_back(input);
+		m_seeds_filenames.push_back(ent->d_name);
 
 		// Record the size of the largest initial file
 		max_sz = max(max_sz, input.size());
@@ -73,10 +72,11 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	cout << "Total files read: " << m_corpus.size() << endl;
 	cout << "Max mutated input size: " << m_max_input_size << endl;
 
-	// Check output directory
-	dir = opendir(m_output_dir.c_str());
-	ERROR_ON(!dir, "opening output directory %s", m_output_dir.c_str());
-	closedir(dir);
+	// Create output directory (or do nothing if they existed).
+	// Each mode we'll create the subdirectory they'll write their output to
+	// here. Normal mode will write corpus and crashes dir, while each
+	// minimization mode will write to its own directory.
+	create_folder(output_dir);
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
 	// Reset coverage bitmap
@@ -115,12 +115,119 @@ size_t Corpus::coverage() const {
 #endif
 }
 
-const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
+string Corpus::seed_filename(size_t i) const {
+	ASSERT(i < m_seeds_filenames.size(), "OOB i: %lu", i);
+	return m_seeds_filenames[i];
+}
+
+const string& Corpus::element(size_t i) const {
+	ASSERT(i < m_corpus.size(), "OOB i: %lu", i);
+	return m_corpus[i];
+}
+
+string Corpus::corpus_filename(size_t i) {
+	return "id" + to_string(i);
+}
+
+string Corpus::min_corpus_filename(size_t i) {
+	return seed_filename(i) + "_min";
+}
+
+string Corpus::min_crash_filename(size_t i) {
+	return seed_filename(i) + "_min";
+}
+
+void Corpus::write_corpus_file(size_t i) {
+	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
+	write_file(m_output_dir_corpus + "/" + corpus_filename(i), m_corpus[i]);
+}
+
+void Corpus::write_crash_file(size_t i, const FaultInfo& fault) {
+	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
+	write_file(m_output_dir_crashes + "/" + fault.filename(), m_corpus[i]);
+}
+
+void Corpus::write_crash_file(int id, const FaultInfo& fault) {
+	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
+	write_file(m_output_dir_crashes + "/" + fault.filename(),
+	           m_mutated_inputs[id]);
+}
+
+void Corpus::write_min_corpus_file(size_t i) {
+	ASSERT(m_mode == Mode::CorpusMinimization, "mode %d", m_mode);
+	write_file(m_output_dir_min_corpus+ "/" + min_corpus_filename(i),
+	           m_corpus[i]);
+}
+
+void Corpus::write_min_crash_file(size_t i) {
+	ASSERT(m_mode == Mode::CrashesMinimization, "mode %d", m_mode);
+	write_file(m_output_dir_min_crashes + "/" + min_crash_filename(i),
+	           m_corpus[i]);
+}
+
+void Corpus::set_mode_normal() {
+	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
+	m_mode = Mode::Normal;
+	cout << "Set corpus mode: Normal. Output directories will be "
+	     << m_output_dir_corpus << " and " << m_output_dir_crashes << endl;
+
+	// Create output folders and write seed input files to disk
+	create_folder(m_output_dir_corpus);
+	create_folder(m_output_dir_crashes);
+	for (size_t i = 0; i < m_corpus.size(); i++) {
+		write_corpus_file(i);
+	}
+}
+
+void Corpus::set_mode_corpus_min(const vector<set<vaddr_t>>& coverages) {
+	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
+	ASSERT(coverages.size() == m_corpus.size(), "size mismatch: %lu vs %lu",
+	       coverages.size(), m_corpus.size());
+	m_mode = Mode::CorpusMinimization;
+	m_coverages = coverages;
+	cout << "Set corpus mode: Corpus Minimization. Output directory will be "
+	     << m_output_dir_min_corpus << endl;
+
+	// Reduce number of elements using AFL algorithm before start trimming
+	// the rest of the input files
+	double old_size = size();
+	double old_memsize = memsize();
+	minimize();
+	printf("reduced size by %.3f, memsize by %.3f\n",
+	       (1 - (size() / old_size))*100, (1 - (memsize() / old_memsize))*100);
+
+	// Create output folder and write seed input files to disk
+	create_folder(m_output_dir_min_corpus);
+	for (size_t i = 0; i < m_corpus.size(); i++) {
+		write_min_corpus_file(i);
+	}
+}
+
+void Corpus::set_mode_crashes_min(const vector<FaultInfo>& faults) {
+	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
+	ASSERT(faults.size() == m_corpus.size(), "size mismatch: %lu vs %lu",
+	       faults.size(), m_corpus.size());
+	m_mode = Mode::CrashesMinimization;
+	m_faults = faults;
+	cout << "Set corpus mode: Crashes Minimization. Output directory will be "
+	     << m_output_dir_min_crashes << endl;
+
+	// Create output folder and write seed input files to disk
+	create_folder(m_output_dir_min_crashes);
+	for (size_t i = 0; i < m_corpus.size(); i++) {
+		write_min_crash_file(i);
+	}
+}
+
+const string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	// Copy a random input to slot `id`, mutate it and return a
 	// constant reference to it
+	ASSERT(m_mode != Mode::Unknown, "mode not set");
 	cycle_t cycles = rdtsc2();
 	while (m_lock_corpus.test_and_set());
-	m_mutated_inputs[id] = m_corpus[rng.rnd() % m_corpus.size()];
+	size_t i = rng.rnd(0, m_corpus.size() - 1);
+	m_mutated_inputs[id] = m_corpus[i];
+	m_mutated_inputs_indexes[id] = i;
 	m_lock_corpus.clear();
 	stats.mut1_cycles += rdtsc2() - cycles;
 
@@ -131,6 +238,12 @@ const std::string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 }
 
 void Corpus::report_crash(int id, const FaultInfo& fault) {
+	ASSERT(m_mode != Mode::Unknown, "mode not set");
+	if (m_mode == Mode::CrashesMinimization) {
+		handle_crash_crashes_minimization(id, fault);
+		return;
+	}
+
 	// Try to insert fault information into our set
 	while (m_lock_crashes.test_and_set());
 	bool inserted = m_crashes.insert(fault).second;
@@ -138,14 +251,34 @@ void Corpus::report_crash(int id, const FaultInfo& fault) {
 
 	// If it was new, print fault information and dump input file to disk
 	if (inserted) {
-		cout << fault << endl;
-		ofstream ofs(m_output_dir + "/" + fault.filename());
-		ofs << m_mutated_inputs[id];
-		ERROR_ON(!ofs.good(), "Error saving crash file to disk");
-		ofs.close();
+		cout << endl << fault << endl << endl;
+		// We still want to count unique crashes in corpus minimization mode,
+		// but we don't want to write to other directories.
+		if (m_mode != Mode::CorpusMinimization) {
+			//add_input(m_mutated_inputs[id]);
+			write_crash_file(id, fault);
+		}
 	}
 }
 
+void Corpus::handle_crash_crashes_minimization(int id, const FaultInfo& fault) {
+	// If the fault is the same as the one we're trying to minimize and
+	// the size of the mutated input is lower than current input size,
+	// replace current input with mutated input and save file to disk.
+	size_t i = m_mutated_inputs_indexes[id];
+	if (fault == m_faults[i]) {
+		const string& mutated_input = m_mutated_inputs[id];
+		while (m_lock_corpus.test_and_set());
+		if (mutated_input.size() < m_corpus[i].size()) {
+			m_corpus[i] = mutated_input;
+			write_min_crash_file(i);
+		}
+		m_lock_corpus.clear();
+	}
+}
+
+
+#ifdef ENABLE_COVERAGE_INTEL_PT
 __attribute__((always_inline)) inline
 bool lock_bts(int i, uint8_t* p) {
 	bool test = false;
@@ -160,8 +293,10 @@ bool lock_bts(int i, uint8_t* p) {
 	return test;
 }
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
 void Corpus::report_coverage(int id, uint8_t* cov) {
+	// if (m_minimization_mode)
+	// 	return;
+
 	size_t new_cov = 0;
 	size_t rec_cov_v, cov_v, i, j, j_q, j_r;
 
@@ -193,7 +328,18 @@ void Corpus::report_coverage(int id, uint8_t* cov) {
 #endif
 
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
-void Corpus::report_coverage(int id, const std::set<vaddr_t>& new_blocks) {
+void Corpus::report_coverage(int id, const set<vaddr_t>& new_blocks) {
+	ASSERT(m_mode != Mode::Unknown, "mode not set");
+
+	// Crashes minimization mode doesn't care about coverage
+	if (m_mode == Mode::CrashesMinimization)
+		return;
+
+	if (m_mode == Mode::CorpusMinimization) {
+		handle_cov_corpus_minimization(id, new_blocks);
+		return;
+	}
+
 	// For each block, attempt to insert it and check if it's new
 	// This could also be done as a bitmap if we want more performance, but
 	// it isn't worth it for now
@@ -213,49 +359,145 @@ void Corpus::report_coverage(int id, const std::set<vaddr_t>& new_blocks) {
 		add_input(m_mutated_inputs[id]);
 	}
 }
+
+void Corpus::handle_cov_corpus_minimization(int id, const set<vaddr_t>& cov) {
+	// If the coverage is the same and the size of the mutated input is
+	// lower than current input size, replace current input with mutated
+	// input and save file to disk.
+	size_t i = m_mutated_inputs_indexes[id];
+	if (cov == m_coverages[i]) {
+		const string& mutated_input = m_mutated_inputs[id];
+		while (m_lock_corpus.test_and_set());
+		if (mutated_input.size() < m_corpus[i].size()) {
+			m_corpus[i] = mutated_input;
+			write_min_corpus_file(i);
+		}
+		m_lock_corpus.clear();
+	}
+}
 #endif
 
+
+void Corpus::minimize() {
+	ASSERT(m_mode == Mode::CorpusMinimization, "mode %d", m_mode);
+	ASSERT(m_coverages.size() == m_corpus.size(), "size mismatch: %lu vs %lu",
+	       m_coverages.size(), m_corpus.size());
+
+	// Calculate union of all coverages
+	unordered_set<vaddr_t> missing_coverage;
+	for (const set<vaddr_t> coverage : m_coverages) {
+		missing_coverage.insert(coverage.begin(), coverage.end());
+	}
+
+	// Afl-cmin algorithm
+	std::vector<std::string> new_corpus;
+	const size_t INVALID_INDEX = numeric_limits<size_t>::max();
+	while (!missing_coverage.empty()) {
+		// 1. Find next basic block not yet in the temporary working set
+		vaddr_t bb = *missing_coverage.begin();
+
+		// 2. Locate the winning corpus entry for this basic block, which is
+		//    the smallest that covers it
+		size_t i_winning = INVALID_INDEX;
+		for (size_t i = 0; i < m_coverages.size(); i++) {
+			if (m_coverages[i].count(bb)) {
+				if (i_winning == INVALID_INDEX || m_corpus[i].size() < m_corpus[i_winning].size())
+					i_winning = i;
+			}
+		}
+		ASSERT(i_winning != INVALID_INDEX, "there's no input that covers bb?");
+		new_corpus.push_back(m_corpus[i_winning]);
+
+		// 3. Register all basic blocks reached by the winning entry
+		for (vaddr_t bb_reached : m_coverages[i_winning]) {
+			missing_coverage.erase(bb_reached);
+		}
+	}
+
+	m_corpus = new_corpus;
+}
+
+
 void Corpus::add_input(const string& new_input){
+	ASSERT(m_mode == Mode::Normal, "adding input to corpus in mode %d", m_mode);
 	while (m_lock_corpus.test_and_set());
+	size_t i = m_corpus.size();
 	m_corpus.push_back(new_input);
 	m_lock_corpus.clear();
+	write_corpus_file(i);
 }
 
 // MUTATION STUFF
 // I don't remember a shit about this code and I'm not gonna bother reading it
 const vector<Corpus::mutation_strat_t> Corpus::mut_strats = {
-	&Corpus::shrink,
-	&Corpus::expand,
-	&Corpus::bit,
-	&Corpus::dec_byte,
-	&Corpus::inc_byte,
-	&Corpus::neg_byte,
-	&Corpus::add_sub,
-	&Corpus::set,
-	&Corpus::swap,
-	&Corpus::copy,
-	&Corpus::inter_splice,
-	&Corpus::insert_rand,
-	&Corpus::overwrite_rand,
-	&Corpus::byte_repeat_overwrite,
-	&Corpus::byte_repeat_insert,
-	&Corpus::magic_overwrite,
-	&Corpus::magic_insert,
-	&Corpus::random_overwrite,
-	&Corpus::random_insert,
-	&Corpus::splice_overwrite,
-	&Corpus::splice_insert,
+	&Corpus::mut_shrink,
+	&Corpus::mut_expand,
+	&Corpus::mut_bit,
+	&Corpus::mut_dec_byte,
+	&Corpus::mut_inc_byte,
+	&Corpus::mut_neg_byte,
+	&Corpus::mut_add_sub,
+	&Corpus::mut_set,
+	&Corpus::mut_swap,
+	&Corpus::mut_copy,
+	&Corpus::mut_inter_splice,
+	&Corpus::mut_insert_rand,
+	&Corpus::mut_overwrite_rand,
+	&Corpus::mut_byte_repeat_overwrite,
+	&Corpus::mut_byte_repeat_insert,
+	&Corpus::mut_magic_overwrite,
+	&Corpus::mut_magic_insert,
+	&Corpus::mut_random_overwrite,
+	&Corpus::mut_random_insert,
+	&Corpus::mut_splice_overwrite,
+	&Corpus::mut_splice_insert,
+};
+
+const vector<Corpus::mutation_strat_t> Corpus::mut_strats_reduce = {
+	&Corpus::mut_shrink,
+	&Corpus::mut_bit,
+	&Corpus::mut_dec_byte,
+	&Corpus::mut_inc_byte,
+	&Corpus::mut_neg_byte,
+	&Corpus::mut_add_sub,
+	&Corpus::mut_set,
+	&Corpus::mut_swap,
+	&Corpus::mut_copy,
 };
 
 void Corpus::mutate_input(int id, Rng& rng){
+	static_assert(MIN_MUTATIONS <= MAX_MUTATIONS);
+	static_assert(MAX_MUTATIONS != 0, "MAX_MUTATIONS must be positive. To "
+	              "disable mutations undef ENABLE_MUTATIONS instead.");
+#ifndef ENABLE_MUTATIONS
+	return;
+#endif
+
 	string& input = m_mutated_inputs[id];
+	size_t n_muts = rng.rnd(MIN_MUTATIONS, MAX_MUTATIONS);
 	mutation_strat_t mut_strat;
-	for (size_t i = 0; i < rng.rnd(MIN_MUTATIONS, MAX_MUTATIONS); i++){
-		mut_strat = mut_strats[rng.rnd(0, mut_strats.size()-1)];
-		(this->*mut_strat)(input, rng);
+	if (m_mode == Mode::Normal) {
+		for (size_t i = 0; i < n_muts; i++){
+			mut_strat = mut_strats[rng.rnd(0, mut_strats.size()-1)];
+			(this->*mut_strat)(input, rng);
+		}
+		ASSERT(input.size() <= m_max_input_size, "mutation too large: %ld/%ld",
+		       input.size(), m_max_input_size);
+	} else {
+		// We're in a minimization mode. Get mutation strategies from
+		// mut_strats_reduce instead, and make sure we apply shrink at
+		// least once
+		size_t j, i_mut_shrink = rng.rnd(0, n_muts - 1);
+		for (size_t i = 0; i < n_muts; i++) {
+			if (i == i_mut_shrink) {
+				mut_shrink(input, rng);
+			} else {
+				j = rng.rnd(0, mut_strats_reduce.size()-1);
+				mut_strat = mut_strats_reduce[j];
+				(this->*mut_strat)(input, rng);
+			}
+		}
 	}
-	ASSERT(input.size() <= m_max_input_size,
-	       "input mutation too large: %ld/%ld", input.size(), m_max_input_size);
 }
 
 /* POR QUÉ AL INSERTAR COGE EL TAMAÑO COMO SI FUERA A OVERWRITEAR?
@@ -272,7 +514,7 @@ size_t rand_offset(const string& input, Rng& rng, bool plus_one=false){
 	return rng.rnd_exp(0, input.size() - (!plus_one));
 }
 
-void Corpus::shrink(string& input, Rng& rng){
+void Corpus::mut_shrink(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -294,7 +536,7 @@ void Corpus::shrink(string& input, Rng& rng){
 	input.erase(offset, to_remove);
 }
 
-void Corpus::expand(string& input, Rng& rng){
+void Corpus::mut_expand(string& input, Rng& rng){
 	// Check size
 	if (input.size() >= m_max_input_size)
 		return;
@@ -314,7 +556,7 @@ void Corpus::expand(string& input, Rng& rng){
 	input.insert(offset, to_expand, '\x00');
 }
 
-void Corpus::bit(string& input, Rng& rng){
+void Corpus::mut_bit(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -325,7 +567,7 @@ void Corpus::bit(string& input, Rng& rng){
 	input[offset] ^= (1 << bit);
 }
 
-void Corpus::inc_byte(string& input, Rng& rng){
+void Corpus::mut_inc_byte(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -335,7 +577,7 @@ void Corpus::inc_byte(string& input, Rng& rng){
 	input[offset]++;
 }
 
-void Corpus::dec_byte(string& input, Rng& rng){
+void Corpus::mut_dec_byte(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -345,7 +587,7 @@ void Corpus::dec_byte(string& input, Rng& rng){
 	input[offset]--;
 }
 
-void Corpus::neg_byte(string& input, Rng& rng){
+void Corpus::mut_neg_byte(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -355,7 +597,7 @@ void Corpus::neg_byte(string& input, Rng& rng){
 	input[offset] = ~input[offset];
 }
 
-void Corpus::add_sub(string& input, Rng& rng){
+void Corpus::mut_add_sub(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -415,7 +657,7 @@ void Corpus::add_sub(string& input, Rng& rng){
 	#undef mut
 }
 
-void Corpus::set(string& input, Rng& rng){
+void Corpus::mut_set(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -429,7 +671,7 @@ void Corpus::set(string& input, Rng& rng){
 	input.replace(offset, len, len, c);
 }
 
-void Corpus::swap(string& input, Rng& rng){
+void Corpus::mut_swap(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -453,7 +695,7 @@ void Corpus::swap(string& input, Rng& rng){
 	input.replace(offset2, len, tmp);
 }
 
-void Corpus::copy(string& input, Rng& rng){
+void Corpus::mut_copy(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -471,7 +713,7 @@ void Corpus::copy(string& input, Rng& rng){
 	input.replace(dst, len, input, src, len);
 }
 
-void Corpus::inter_splice(std::string& input, Rng& rng){
+void Corpus::mut_inter_splice(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -497,7 +739,7 @@ inline void fill_rand_bytes(string& s, Rng& rng){
 		s[i] = rng.rnd(0x00, 0xFF);
 }
 
-void Corpus::insert_rand(std::string& input, Rng& rng){
+void Corpus::mut_insert_rand(string& input, Rng& rng){
 	// Check size
 	if (input.size() >= m_max_input_size)
 		return;
@@ -510,7 +752,7 @@ void Corpus::insert_rand(std::string& input, Rng& rng){
 	input.insert(offset, bytes);
 }
 
-void Corpus::overwrite_rand(std::string& input, Rng& rng){
+void Corpus::mut_overwrite_rand(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -523,7 +765,7 @@ void Corpus::overwrite_rand(std::string& input, Rng& rng){
 	input.replace(offset, len, bytes);
 }
 
-void Corpus::byte_repeat_overwrite(std::string& input, Rng& rng){
+void Corpus::mut_byte_repeat_overwrite(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -538,7 +780,7 @@ void Corpus::byte_repeat_overwrite(std::string& input, Rng& rng){
 		input[offset + i + 1] = val;
 }
 
-void Corpus::byte_repeat_insert(std::string& input, Rng& rng){
+void Corpus::mut_byte_repeat_insert(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -558,7 +800,7 @@ void Corpus::byte_repeat_insert(std::string& input, Rng& rng){
 	input.insert(offset, bytes);
 }
 
-void Corpus::magic_overwrite(std::string& input, Rng& rng){
+void Corpus::mut_magic_overwrite(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -575,7 +817,7 @@ void Corpus::magic_overwrite(std::string& input, Rng& rng){
 	input.replace(offset, len, magic_value, 0, len);
 }
 
-void Corpus::magic_insert(std::string& input, Rng& rng){
+void Corpus::mut_magic_insert(string& input, Rng& rng){
 	// Check size
 	if (input.size() >= m_max_input_size)
 		return;
@@ -592,7 +834,7 @@ void Corpus::magic_insert(std::string& input, Rng& rng){
 	input.insert(offset, magic_value, 0, len);
 }
 
-void Corpus::random_overwrite(std::string& input, Rng& rng){
+void Corpus::mut_random_overwrite(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -609,7 +851,7 @@ void Corpus::random_overwrite(std::string& input, Rng& rng){
 	input.replace(offset, amount, bytes);
 }
 
-void Corpus::random_insert(std::string& input, Rng& rng){
+void Corpus::mut_random_insert(string& input, Rng& rng){
 	// Check size
 	if (input.size() >= m_max_input_size)
 		return;
@@ -627,7 +869,7 @@ void Corpus::random_insert(std::string& input, Rng& rng){
 	input.insert(offset, bytes);
 }
 
-void Corpus::splice_overwrite(std::string& input, Rng& rng){
+void Corpus::mut_splice_overwrite(string& input, Rng& rng){
 	// Check empty input
 	if (input.empty())
 		return;
@@ -650,7 +892,7 @@ void Corpus::splice_overwrite(std::string& input, Rng& rng){
 	input.replace(dst_off, dst_len, inp, src_off, src_len);
 }
 
-void Corpus::splice_insert(std::string& input, Rng& rng){
+void Corpus::mut_splice_insert(string& input, Rng& rng){
 	// Check size
 	if (input.size() >= m_max_input_size)
 		return;

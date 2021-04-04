@@ -107,6 +107,7 @@ struct kvm_dirty_gfn {
 
 #define PAGE_SIZE PTL1_SIZE
 #define PAGE_OFFSET(addr) ((addr) & (~PTL1_MASK))
+#define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 
 // KVM VMX PT ioctls and stuff
 #define KVM_VMX_PT_SETUP_FD                 _IO(KVMIO,  0xd0)        /* apply vmx_pt fd (via vcpu fd ioctl)*/
