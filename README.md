@@ -10,11 +10,13 @@ Usage:
   kvm-fuzz [ options ] -- /path/to/fuzzed_binary [ args ]
 
 Available options:
+      --minimize-corpus    Set corpus minimization mode
+      --minimize-crashes   Set crashes minimization mode
   -j, --jobs arg           Number of threads to use (default: 8)
   -m, --memory arg         Virtual machine memory limit (default: 8M)
   -k, --kernel path        Kernel path (default: ./kernel/kernel)
-  -i, --input dir          Input folder (initial corpus) (default: ./corpus)
-  -o, --output dir         Output folder (crashes) (default: ./crashes)
+  -i, --input dir          Input folder (initial corpus) (default: ./in)
+  -o, --output dir         Output folder (corpus, crashes, etc) (default: ./out)
   -f, --file path          Memory loaded files for the target. Set once for 
                            each file, or as a list: -f file1,file2
   -b, --basic-blocks path  Path to file containing a list of basic blocks for 
@@ -23,4 +25,5 @@ Available options:
   -s, --single-input path  Path to single input file. A single run will be 
                            performed with this input.
   -h, --help               Print usage
+
 ```
