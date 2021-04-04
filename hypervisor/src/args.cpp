@@ -45,6 +45,8 @@ bool Args::parse(int argc, char** argv) {
 	try {
 		cxxopts::Options cmd("kvm-fuzz", "kvm-fuzz: fuzz x86_64 closed-source applications with hardware acceleration\n");
 		cmd.add_options("Available")
+			("minimize-corpus", "Set corpus minimization mode", cxxopts::value<bool>(minimize_corpus))
+			("minimize-crashes", "Set crashes minimization mode", cxxopts::value<bool>(minimize_crashes))
 			("j,jobs", "Number of threads to use", cxxopts::value<int>(jobs)->default_value(to_string(DEFAULT_NUM_THREADS)))
 			("m,memory", "Virtual machine memory limit", cxxopts::value<string>()->default_value("8M"))
 			("k,kernel", "Kernel path", cxxopts::value<string>(kernel_path)->default_value("./kernel/kernel"), "path")
@@ -53,8 +55,6 @@ bool Args::parse(int argc, char** argv) {
 			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
 			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage. Default value is basic_blocks_<BinaryMD5Hash>.txt", cxxopts::value<string>(basic_blocks_path), "path")
 			("s,single-input", "Path to single input file. A single run will be performed with this input.", cxxopts::value<string>(single_input_path), "path")
-			("minimize-corpus", "Set corpus minimization mode", cxxopts::value<bool>(minimize_corpus))
-			("minimize-crashes", "Set crashes minimization mode", cxxopts::value<bool>(minimize_crashes))
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
 			("h,help", "Print usage")
