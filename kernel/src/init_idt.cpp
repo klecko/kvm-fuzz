@@ -23,6 +23,8 @@ void init_idt() {
 	// Custom ISRS
 	g_idt[ExceptionNumber::DivByZero].set_offset((uint64_t)_handle_div_by_zero);
 	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)_handle_breakpoint);
+	g_idt[ExceptionNumber::StackSegmentFault]
+		.set_offset((uint64_t)_handle_stack_segment_fault);
 	g_idt[ExceptionNumber::GeneralProtectionFault].
 		set_offset((uint64_t)_handle_general_protection_fault);
 	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)_handle_page_fault);

@@ -77,6 +77,17 @@ static void handle_div_by_zero(InterruptFrame* frame) {
 	hc_fault(&fault);
 }
 
+static void handle_stack_segment_fault(InterruptFrame* frame,
+                                       uint64_t error_code) {
+	FaultInfo fault = {
+		.type = FaultInfo::Type::StackSegmentFault,
+		.rip = frame->rip,
+		.fault_addr = 0,
+		.kernel = false, // ?
+	};
+	hc_fault(&fault);
+}
+
 __attribute__((naked))
 void _handle_page_fault() {
 	asm volatile(
@@ -120,5 +131,17 @@ void _handle_div_by_zero() {
 		"hlt;"
 		:
 		: "i" (handle_div_by_zero)
+	);
+}
+
+__attribute__((naked))
+void _handle_stack_segment_fault() {
+	asm volatile(
+		"pop rsi;"
+		"mov rdi, rsp;"
+		"call %0;"
+		"hlt;"
+		:
+		: "i" (handle_stack_segment_fault)
 	);
 }

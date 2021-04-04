@@ -47,6 +47,7 @@ struct FaultInfo {
 		AssertionFailed,
 		DivByZero,
 		GeneralProtectionFault,
+		StackSegmentFault,
 	};
 
 	Type type;

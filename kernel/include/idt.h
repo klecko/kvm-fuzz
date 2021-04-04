@@ -9,6 +9,7 @@
 enum ExceptionNumber {
 	DivByZero = 0,
 	Breakpoint = 3,
+	StackSegmentFault = 12,
 	GeneralProtectionFault = 13,
 	PageFault  = 14,
 };
