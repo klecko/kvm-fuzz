@@ -9,6 +9,7 @@ plot "./stats.txt" using 1:2 with lines title "fcps"
 
 set title "Coverage vs time"
 set ylabel "Coverage"
+set logscale x
 plot "./stats.txt" using 1:3 with lines title "cov"
 
 pause 1
