@@ -16,6 +16,8 @@ set(SOURCE_FILES src/main.cpp src/libcpp.cpp src/hypercalls.cpp src/interrupts.c
                  src/file.cpp src/syscalls.cpp src/printf.cpp src/isrs.asm
                  src/init_idt.cpp src/init_gdt.cpp src/init_syscall.cpp
 				 src/mem.cpp src/page_walker.cpp)
+set_source_files_properties(src/interrupts.cpp PROPERTIES COMPILE_FLAGS
+                            -mgeneral-regs-only)
 add_executable(kernel ${SOURCE_FILES})
 include_directories(include include/STL)
 set_target_properties(kernel PROPERTIES LINK_DEPENDS "${LINKER_FILE}")

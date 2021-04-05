@@ -8,10 +8,30 @@
 
 enum ExceptionNumber {
 	DivByZero = 0,
-	Breakpoint = 3,
-	StackSegmentFault = 12,
-	GeneralProtectionFault = 13,
-	PageFault  = 14,
+	Debug,
+	NonMaskableInsterrupt,
+	Breakpoint,
+	Overflow,
+	BoundRangeExceeded,
+	InvalidOpcode,
+	DeviceNotAvailable,
+	DoubleFault,
+	_reserved1,
+	InvalidTSS,
+	SegmentNotPresent,
+	StackSegmentFault,
+	GeneralProtectionFault,
+	PageFault,
+	_reserved2,
+	x87FloatingPointException,
+	AlignmentCheck,
+	MachineCheck,
+	SIMDFloatingPointException,
+	VirtualizationException,
+	_reserved3,
+	SecurityException,
+	_reserved4,
+	TripleFault
 };
 
 // https://wiki.osdev.org/Interrupt_Descriptor_Table

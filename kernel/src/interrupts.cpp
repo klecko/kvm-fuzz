@@ -17,7 +17,8 @@ extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	TODO
 }
 
-static void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
+__attribute__((interrupt))
+void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool present = error_code & (1 << 0);
 	bool write   = error_code & (1 << 1);
 	bool user    = error_code & (1 << 2);
@@ -52,13 +53,13 @@ static void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	hc_fault(&fault);
 }
 
-static void handle_breakpoint(InterruptFrame* frame) {
+__attribute__((interrupt))
+void handle_breakpoint(InterruptFrame* frame) {
 	TODO
 }
 
-static void handle_general_protection_fault(InterruptFrame* frame,
-                                            uint64_t error_code)
-{
+__attribute__((interrupt))
+void handle_general_protection_fault(InterruptFrame* frame, uint64_t error_code) {
 	FaultInfo fault = {
 		.type = FaultInfo::Type::GeneralProtectionFault,
 		.rip = frame->rip,
@@ -67,7 +68,8 @@ static void handle_general_protection_fault(InterruptFrame* frame,
 	hc_fault(&fault);
 }
 
-static void handle_div_by_zero(InterruptFrame* frame) {
+__attribute__((interrupt))
+void handle_div_by_zero(InterruptFrame* frame) {
 	FaultInfo fault = {
 		.type = FaultInfo::Type::DivByZero,
 		.rip = frame->rip,
@@ -77,8 +79,8 @@ static void handle_div_by_zero(InterruptFrame* frame) {
 	hc_fault(&fault);
 }
 
-static void handle_stack_segment_fault(InterruptFrame* frame,
-                                       uint64_t error_code) {
+__attribute__((interrupt))
+void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 	FaultInfo fault = {
 		.type = FaultInfo::Type::StackSegmentFault,
 		.rip = frame->rip,
@@ -86,62 +88,4 @@ static void handle_stack_segment_fault(InterruptFrame* frame,
 		.kernel = false, // ?
 	};
 	hc_fault(&fault);
-}
-
-__attribute__((naked))
-void _handle_page_fault() {
-	asm volatile(
-		"pop rsi;"
-		"mov rdi, rsp;"
-		"call %0;"
-		"hlt;"
-		:
-		: "i" (handle_page_fault)
-	);
-}
-
-__attribute__((naked))
-void _handle_breakpoint() {
-	asm volatile(
-		"mov rdi, rsp;"
-		"call %0;"
-		"hlt;"
-		:
-		: "i" (handle_breakpoint)
-	);
-}
-
-__attribute__((naked))
-void _handle_general_protection_fault() {
-	asm volatile(
-		"pop rsi;"
-		"mov rdi, rsp;"
-		"call %0;"
-		"hlt;"
-		:
-		: "i" (handle_general_protection_fault)
-	);
-}
-
-__attribute__((naked))
-void _handle_div_by_zero() {
-	asm volatile(
-		"mov rdi, rsp;"
-		"call %0;"
-		"hlt;"
-		:
-		: "i" (handle_div_by_zero)
-	);
-}
-
-__attribute__((naked))
-void _handle_stack_segment_fault() {
-	asm volatile(
-		"pop rsi;"
-		"mov rdi, rsp;"
-		"call %0;"
-		"hlt;"
-		:
-		: "i" (handle_stack_segment_fault)
-	);
 }

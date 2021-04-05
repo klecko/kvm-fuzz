@@ -14,7 +14,7 @@ void init_tss() {
 	g_tss.rsp0 = (uint64_t)kmalloc(0x2000) + 0x2000;
 
 	// Stack used when an exception occurs in ring 0
-	// (requires ist field in IDT to be 1) TODO
+	// (requires ist field in IDT to be 1)
 	g_tss.ist1 = (uint64_t)kmalloc(0x2000) + 0x2000;
 	g_tss.iopb = sizeof(TSSEntry);
 }

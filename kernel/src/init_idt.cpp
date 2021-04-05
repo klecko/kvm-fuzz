@@ -20,14 +20,18 @@ void init_idt() {
 			g_idt[i].set_type(InterruptDescriptor::Type::Interrupt);
 	}
 
+	// Set DoubleFault to use the first stack of the Interrupt Stack Table
+	// located in the TSS
+	g_idt[ExceptionNumber::DoubleFault].set_ist(1);
+
 	// Custom ISRS
-	g_idt[ExceptionNumber::DivByZero].set_offset((uint64_t)_handle_div_by_zero);
-	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)_handle_breakpoint);
+	g_idt[ExceptionNumber::DivByZero].set_offset((uint64_t)handle_div_by_zero);
+	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)handle_breakpoint);
 	g_idt[ExceptionNumber::StackSegmentFault]
-		.set_offset((uint64_t)_handle_stack_segment_fault);
-	g_idt[ExceptionNumber::GeneralProtectionFault].
-		set_offset((uint64_t)_handle_general_protection_fault);
-	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)_handle_page_fault);
+		.set_offset((uint64_t)handle_stack_segment_fault);
+	g_idt[ExceptionNumber::GeneralProtectionFault]
+		.set_offset((uint64_t)handle_general_protection_fault);
+	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)handle_page_fault);
 
 	IDTR idtr = {
 		.size   = sizeof(g_idt) - 1,
