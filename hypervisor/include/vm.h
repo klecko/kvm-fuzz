@@ -51,6 +51,7 @@ public:
 	Mmu& mmu();
 	psize_t memsize() const;
 	FaultInfo fault() const;
+	uint64_t instructions_executed_last_run() const;
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
 	uint8_t* coverage() const;
@@ -64,6 +65,8 @@ public:
 	// Reset Vm state to `other`, given that current Vm has been constructed
 	// as a copy of `other`
 	void reset(const Vm& other, Stats& stats);
+
+	void set_input(const std::string& input);
 
 	RunEndReason run(Stats& stats);
 
@@ -129,6 +132,11 @@ private:
 
 	FaultInfo m_fault;
 
+	// Instructions executed until last run and until previous run.
+	// They are updated when guest uses hypercall EndRun or Fault.
+	uint64_t m_instructions_executed;
+	uint64_t m_instructions_executed_prev;
+
 	// This is just for debugging
 	std::vector<vaddr_t> m_allocations;
 
@@ -145,6 +153,7 @@ private:
 	void setup_kernel_execution();
 	void set_regs_dirty();
 	void set_sregs_dirty();
+	void set_instructions_executed(uint64_t instr_executed);
 	void* fetch_page(uint64_t page, bool* success);
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
@@ -164,8 +173,8 @@ private:
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
 	void do_hc_set_file_pointers(size_t n, vaddr_t buf_addr, vaddr_t length_addr);
 	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp);
-	void do_hc_fault(vaddr_t fault_info_addr);
-	void do_hc_end_run();
+	void do_hc_fault(vaddr_t fault_info_addr, uint64_t instr_executed);
+	void do_hc_end_run(uint64_t instructions_executed);
 
 	/* void handle_syscall();
 	*/

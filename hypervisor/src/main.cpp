@@ -16,7 +16,7 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		new_cov_last_time = start;
 	uint64_t cycles_elapsed, cases_elapsed, cases, cov, cov_old = 0, corpus_n,
 	         crashes, unique_crashes;
-	double fcps, run_time, reset_time, hypercall_time, corpus_mem,
+	double mips, fcps, run_time, reset_time, hypercall_time, corpus_mem,
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
 	       reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
 	       vm_exits_debug, vm_exits_cov;
@@ -36,6 +36,7 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		crashes         = stats.crashes;
 		unique_crashes  = corpus.unique_crashes();
 		fcps            = (double)cases_elapsed / elapsed.count();
+		mips            = (double)(stats.instr - stats_old.instr) / (elapsed.count() * 1000000);
 		vm_exits        = (double)(stats.vm_exits - stats_old.vm_exits) / cases_elapsed;
 		vm_exits_hc     = (double)(stats.vm_exits_hc - stats_old.vm_exits_hc) / cases_elapsed;
 		vm_exits_cov    = (double)(stats.vm_exits_cov - stats_old.vm_exits_cov) / cases_elapsed;
@@ -60,10 +61,11 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		//printf("\x1B[2J\x1B[H");
 
 		// Free stats (no rdtsc)
-		printf("[%.3f] cases: %lu, fcps: %.3f, cov: %lu, corpus: %lu/%.3fKB, "
-		       "unique crashes: %lu (total: %lu), no new cov for: %.3f\n",
-		       elapsed_total.count(), cases, fcps, cov, corpus_n, corpus_mem,
-		       unique_crashes, crashes, no_new_cov_time.count());
+		printf("[%.3f] cases: %lu, mips: %.3f, fcps: %.3f, cov: %lu, "
+		       "corpus: %lu/%.3fKB, unique crashes: %lu (total: %lu), "
+		       "no new cov for: %.3f\n",
+		       elapsed_total.count(), cases, mips, fcps, cov, corpus_n,
+		       corpus_mem, unique_crashes, crashes, no_new_cov_time.count());
 		printf("\tvm exits: %.3f (hc: %.3f, cov: %.3f, debug: %.3f), "
 		       "reset pages: %.3f\n",
 		       vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug,
@@ -110,28 +112,17 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			const string& input = corpus.get_new_input(id, rng, stats);
 			local_stats.mut_cycles += rdtsc1() - cycles;
 
-			// Update input file. Make sure kernel has already submitted a
-			// buffer so the input is being copied into its memory.
-			// TODO: DON'T RESET THIS MEMORY AREA, maybe add other memory slot
-			// for memory that we don't want to reset?
+			// Update input
 			cycles = rdtsc1();
-			runner.set_file("input", input, true);
-
-			// If our target received the input in a buffer instead of using
-			// open & read, we may want to write it to the guest memory, instead
-			// of using memory-loaded files.
-			// Assuming rdi is buffer pointer, rsi is input length and rdx is
-			// buffer length:
-			// size_t input_size = min((size_t)runner.regs().rdx, input.size());
-			// runner.mmu().write_mem(runner.regs().rdi, input.c_str(), input_size);
-			// runner.regs().rsi = input_size;
+			runner.set_input(input);
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
 			// Perform run
 			cycles = rdtsc1();
 			reason = runner.run(local_stats);
-			local_stats.cases++;
 			local_stats.run_cycles += rdtsc1() - cycles;
+			local_stats.cases++;
+			local_stats.instr += runner.instructions_executed_last_run();
 
 			// Check RunEndReason
 			if (reason == Vm::RunEndReason::Crash) {
@@ -190,7 +181,8 @@ int main(int argc, char** argv) {
 
 	// Virtual file, whose content will be provided by the corpus and will be
 	// set before each run. We set its size to the maximum input size so kernel
-	// allocs a buffer of that size.
+	// allocs a buffer of that size. Note this is not needed if we are using
+	// input injection in Vm::set_input, instead of memory-loaded files.
 	string file(corpus.max_input_size(), 'a');
 	vm.set_file("input", file);
 
@@ -214,10 +206,10 @@ int main(int argc, char** argv) {
 
 	if (!args.single_input_path.empty()) {
 		// Just perform a single run and exit
-		printf("Performing single run with input file '%s'\n",
-		       args.single_input_path.c_str());
 		string single_input(read_file(args.single_input_path));
-		vm.set_file("input", single_input);
+		printf("Performing single run with input file '%s', length %lu\n",
+		       args.single_input_path.c_str(), single_input.size());
+		vm.set_input(single_input);
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)
 			cout << vm.fault() << endl;
@@ -238,7 +230,7 @@ int main(int argc, char** argv) {
 		Vm runner(vm);
 		Vm::RunEndReason reason;
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_file("input", corpus.element(i), true);
+			runner.set_input(corpus.element(i));
 			reason = runner.run(stats);
 			if (reason == Vm::RunEndReason::Crash) {
 				printf("Input file '%s' crashed in corpus minimization mode\n",
@@ -259,7 +251,7 @@ int main(int argc, char** argv) {
 		Vm runner(vm);
 		Vm::RunEndReason reason;
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_file("input", corpus.element(i), true);
+			runner.set_input(corpus.element(i));
 			reason = runner.run(stats);
 			ASSERT(reason == Vm::RunEndReason::Crash, "input '%s' didn't crash",
 			       corpus.seed_filename(i).c_str());
@@ -272,7 +264,7 @@ int main(int argc, char** argv) {
 		// Perform run with each seed input and submit total coverage to corpus
 		Vm runner(vm);
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_file("input", corpus.element(i), true);
+			runner.set_input(corpus.element(i));
 			runner.run(stats);
 			runner.reset(vm, stats);
 		}

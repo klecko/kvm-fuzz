@@ -4,6 +4,7 @@
 #include "hypercalls.h"
 
 //#define ENABLE_GUEST_OUTPUT
+#define ENABLE_INSTRUCTION_COUNT
 
 #define hlt() asm("hlt")
 

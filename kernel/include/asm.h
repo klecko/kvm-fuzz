@@ -4,15 +4,19 @@
 #include "common.h"
 
 //x86-64 specific MSRs
-#define MSR_EFER           0xc0000080 // extended feature register
-#define MSR_STAR           0xc0000081 // legacy mode SYSCALL target
-#define MSR_LSTAR          0xc0000082 // long mode SYSCALL target
-#define MSR_CSTAR          0xc0000083 // compat mode SYSCALL target
-#define MSR_SYSCALL_MASK   0xc0000084 // EFLAGS mask for syscall
-#define MSR_FS_BASE        0xc0000100 // 64bit FS base
-#define MSR_GS_BASE        0xc0000101 // 64bit GS base
-#define MSR_KERNEL_GS_BASE 0xc0000102 // SwapGS GS shadow
-#define MSR_TSC_AUX        0xc0000103 // Auxiliary TSC
+#define MSR_EFER             0xc0000080 // extended feature register
+#define MSR_STAR             0xc0000081 // legacy mode SYSCALL target
+#define MSR_LSTAR            0xc0000082 // long mode SYSCALL target
+#define MSR_CSTAR            0xc0000083 // compat mode SYSCALL target
+#define MSR_SYSCALL_MASK     0xc0000084 // EFLAGS mask for syscall
+#define MSR_FS_BASE          0xc0000100 // 64bit FS base
+#define MSR_GS_BASE          0xc0000101 // 64bit GS base
+#define MSR_KERNEL_GS_BASE   0xc0000102 // SwapGS GS shadow
+#define MSR_TSC_AUX          0xc0000103 // Auxiliary TSC
+#define MSR_FIXED_CTR0       0x00000309
+#define MSR_FIXED_CTR_CTRL   0x0000038D
+#define MSR_PERF_GLOBAL_CTRL 0x0000038F
+
 
 inline void wrmsr(unsigned int msr, uint64_t val) {
 	asm volatile(
@@ -72,6 +76,14 @@ inline void flush_tlb_entry(uintptr_t page) {
 		: "r" (page)
 		: "memory"
 	);
+}
+
+inline uint64_t instructions_executed() {
+#ifdef ENABLE_INSTRUCTION_COUNT
+	return rdmsr(MSR_FIXED_CTR0);
+#else
+	return 0;
+#endif
 }
 
 inline void jump_to_user(void* entry, void* stack) {

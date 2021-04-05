@@ -1,4 +1,5 @@
 #include "hypercalls.h"
+#include "asm.h"
 
 // Keep this the same as in the hypervisor!
 enum Hypercall : size_t {
@@ -10,8 +11,8 @@ enum Hypercall : size_t {
 	GetFileLen,
 	GetFileName,
 	SetFilePointers,
-	Fault,
 	PrintStacktrace,
+	Fault,
 	EndRun,
 };
 
@@ -96,16 +97,24 @@ void hc_set_file_pointers(size_t n, void* buf, size_t* length_ptr) {
 }
 
 __attribute__((naked))
-void hc_fault(FaultInfo* fault) {
-	hypercall(Hypercall::Fault);
-}
-
-__attribute__((naked))
 void hc_print_stacktrace(uint64_t rsp, uint64_t rip, uint64_t rbp) {
 	hypercall(Hypercall::PrintStacktrace);
 }
 
 __attribute__((naked))
-void hc_end_run() {
+void _hc_fault(FaultInfo* fault, uint64_t instructions_executed) {
+	hypercall(Hypercall::Fault);
+}
+
+void hc_fault(FaultInfo* fault) {
+	_hc_fault(fault, instructions_executed());
+}
+
+__attribute__((naked))
+void _hc_end_run(uint64_t instructions_executed) {
 	hypercall(Hypercall::EndRun);
+}
+
+void hc_end_run() {
+	_hc_end_run(instructions_executed());
 }

@@ -81,14 +81,17 @@ Vm::Vm(const Vm& other)
 	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
 
 	// Copy MSRs
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*5;
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*8;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
-	msrs->nmsrs = 5;
+	msrs->nmsrs = 8;
 	msrs->entries[0].index = MSR_LSTAR;
 	msrs->entries[1].index = MSR_STAR;
 	msrs->entries[2].index = MSR_SYSCALL_MASK;
 	msrs->entries[3].index = MSR_FS_BASE;
 	msrs->entries[4].index = MSR_GS_BASE;
+	msrs->entries[5].index = MSR_FIXED_CTR_CTRL;
+	msrs->entries[6].index = MSR_PERF_GLOBAL_CTRL;
+	msrs->entries[7].index = MSR_FIXED_CTR0;
 	ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
 	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
 
@@ -294,6 +297,11 @@ void Vm::set_sregs_dirty() {
 	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_SREGS;
 }
 
+void Vm::set_instructions_executed(uint64_t instr_executed) {
+	m_instructions_executed_prev = m_instructions_executed;
+	m_instructions_executed = instr_executed;
+}
+
 kvm_regs& Vm::regs() {
 	return *m_regs;
 }
@@ -312,6 +320,12 @@ psize_t Vm::memsize() const {
 
 FaultInfo Vm::fault() const {
 	return m_fault;
+}
+
+uint64_t Vm::instructions_executed_last_run() const {
+	// Since we are not resetting guest MSRs, these counters are not resetted
+	// each run.
+	return m_instructions_executed - m_instructions_executed_prev;
 }
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -340,11 +354,45 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	memcpy(m_regs, other.m_regs, sizeof(*m_regs));
 	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
 
+	// Reset MSRs
+	// We're not doing this for now because it's too expensive, and everything
+	// seems to work fine. But beware guest is usually setting MSR_FS_BASE
+	// and MSR_GS_BASE with syscall arch_prctl.
+	// size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*8;
+	// kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	// msrs->nmsrs = 8;
+	// msrs->entries[0].index = MSR_LSTAR;
+	// msrs->entries[1].index = MSR_STAR;
+	// msrs->entries[2].index = MSR_SYSCALL_MASK;
+	// msrs->entries[3].index = MSR_FS_BASE;
+	// msrs->entries[4].index = MSR_GS_BASE;
+	// msrs->entries[5].index = MSR_FIXED_CTR_CTRL;
+	// msrs->entries[6].index = MSR_PERF_GLOBAL_CTRL;
+	// msrs->entries[7].index = MSR_FIXED_CTR0;
+	// ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
+	// ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
+
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
 
 	m_allocations = other.m_allocations;
+}
+
+void Vm::set_input(const string& input) {
+	// Set input as a file which the guest will open and read, making sure
+	// the kernel has already submitted a buffer so the input is copied to its
+	// memory.
+	set_file("input", input, true);
+
+	// If our target received the input in a buffer instead of using open and
+	// read, we may want to write it to the guest memory, instead of using
+	// memory-loaded files.
+	// Assuming rdi is buffer pointer, rsi is input length and rdx is
+	// buffer length:
+	// size_t input_size = min((size_t)m_regs->rdx, input.size());
+	// m_mmu.write_mem(m_regs->rdi, input.c_str(), input_size);
+	// m_regs->rsi = input_size;
 }
 
 Vm::RunEndReason Vm::run(Stats& stats) {

@@ -121,7 +121,14 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	return user_stack;
 }
 
+void init_performance_counter() {
+	// Set perfomance counter CTR0 (which counts number of instructions)
+	// to only count when in user mode
+	wrmsr(MSR_FIXED_CTR_CTRL, 2);
 
+	// Enable CTR0
+	wrmsr(MSR_PERF_GLOBAL_CTRL, 1ULL << 32);
+}
 
 extern "C" void kmain(int argc, char** argv) {
 	// Init kernel stuff
@@ -130,6 +137,9 @@ extern "C" void kmain(int argc, char** argv) {
 	init_gdt();
 	init_idt();
 	init_syscall();
+#ifdef ENABLE_INSTRUCTION_COUNT
+	init_performance_counter();
+#endif
 
 	printf("Hello from kernel\n");
 

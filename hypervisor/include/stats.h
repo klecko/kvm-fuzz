@@ -18,6 +18,7 @@ typedef unsigned long long cycle_t;
 // STATS
 struct Stats {
 	uint64_t cases {0};
+	uint64_t instr {0};
 	uint64_t crashes {0};
 	uint64_t vm_exits {0};
 	uint64_t vm_exits_hc {0};
@@ -41,6 +42,7 @@ struct Stats {
 
 	Stats(const Stats& other) {
 		cases             = other.cases;
+		instr             = other.instr;
 		crashes           = other.crashes;
 		vm_exits          = other.vm_exits;
 		vm_exits_hc       = other.vm_exits_hc;
@@ -63,6 +65,7 @@ struct Stats {
 	void update(const Stats& stats){
 		while (lock.test_and_set());
 		cases             += stats.cases;
+		instr             += stats.instr;
 		crashes           += stats.crashes;
 		vm_exits          += stats.vm_exits;
 		vm_exits_hc       += stats.vm_exits_hc;
