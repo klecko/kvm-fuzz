@@ -294,7 +294,7 @@ uint64_t parse_perms(uint32_t perms) {
 	uint64_t flags = 0;
 	if (perms & PF_W)
 		flags |= PDE64_RW;
-	if (perms & PF_X)
+	if (!(perms & PF_X))
 		flags |= PDE64_NX;
 	return flags;
 }

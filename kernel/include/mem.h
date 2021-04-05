@@ -34,6 +34,9 @@
 #define PAGE_OFFSET(addr) ((addr) & (~PTL1_MASK))
 #define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & PTL1_MASK) //+ 0xFFF & ~0xFFF
 
+#define PHYS_MASK (0x000FFFFFFFFFF000)
+#define PHYS_FLAGS(addr) ((addr) & (~PHYS_MASK))
+
 namespace Mem {
 	namespace Phys {
 		void init_memory();

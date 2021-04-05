@@ -24,7 +24,7 @@ struct kvm_dirty_gfn {
 #define PDE64_DIRTY (1U << 6)
 #define PDE64_PS (1U << 7)
 #define PDE64_G (1U << 8)
-#define PDE64_NX 0 // (1LU << 63) // TODO
+#define PDE64_NX (1LU << 63)
 
 /* CR0 bits */
 #define CR0_PE 1u
@@ -111,6 +111,9 @@ struct kvm_dirty_gfn {
 #define PAGE_SIZE PTL1_SIZE
 #define PAGE_OFFSET(addr) ((addr) & (~PTL1_MASK))
 #define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+
+#define PHYS_MASK (0x000FFFFFFFFFF000)
+#define PHYS_FLAGS(addr) ((addr) & (~PHYS_MASK))
 
 // KVM VMX PT ioctls and stuff
 #define KVM_VMX_PT_SETUP_FD                 _IO(KVMIO,  0xd0)        /* apply vmx_pt fd (via vcpu fd ioctl)*/

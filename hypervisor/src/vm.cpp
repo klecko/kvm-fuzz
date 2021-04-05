@@ -134,7 +134,7 @@ void Vm::setup_kvm() {
 	sregs.cr3  = Mmu::PAGE_TABLE_PADDR;
 	sregs.cr4  = CR4_PAE | CR4_OSXMMEXCPT | CR4_OSFXSR;
 	sregs.cr0  = CR0_PE | CR0_MP | CR0_ET| CR0_NE | CR0_WP | CR0_AM | CR0_PG;
-	sregs.efer = EFER_LME | EFER_LMA | EFER_SCE;
+	sregs.efer = EFER_NXE | EFER_LME | EFER_LMA | EFER_SCE;
 
 	// Setup dummy segments. This is needed so we start directly in long mode.
 	// However, this doesn't set the GDT. It will be properly set by the kernel

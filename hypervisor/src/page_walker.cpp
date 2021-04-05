@@ -52,7 +52,7 @@ vaddr_t Mmu::PageWalker::vaddr() {
 
 paddr_t Mmu::PageWalker::paddr() {
 	ASSERT(pte_val(), "Trying to translate not mapped vaddr: 0x%lx", vaddr());
-	return (pte_val() & PTL1_MASK) + PAGE_OFFSET(vaddr());
+	return (pte_val() & PHYS_MASK) + PAGE_OFFSET(vaddr());
 }
 
 vsize_t Mmu::PageWalker::page_size() {
@@ -64,13 +64,13 @@ vsize_t Mmu::PageWalker::page_size() {
 
 uint64_t Mmu::PageWalker::flags() {
 	ASSERT(pte_val(), "Trying to get flags of not mapped vaddr: 0x%lx", vaddr());
-	return PAGE_OFFSET(pte_val()); // FIXME NX
+	return PHYS_FLAGS(pte_val());
 }
 
 void Mmu::PageWalker::set_flags(uint64_t flags) {
 	ASSERT(pte_val(), "Trying to set flags to not mapped vaddr: 0x%lx", vaddr());
-	ASSERT(PAGE_OFFSET(flags) == flags, "bad page flags: %lx", flags);
-	m_mmu.writep(pte(), (pte_val() & PTL1_MASK) | flags);
+	ASSERT(PHYS_FLAGS(flags) == flags, "bad page flags: %lx", flags);
+	m_mmu.writep(pte(), (pte_val() & PHYS_MASK) | flags);
 }
 
 void Mmu::PageWalker::alloc_frame(uint64_t flags) {
@@ -108,7 +108,7 @@ void Mmu::PageWalker::update_ptl3() {
 	if (!m_mmu.readp<paddr_t>(p_ptl3)) {
 		m_mmu.writep(p_ptl3, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl3 = m_mmu.readp<paddr_t>(p_ptl3) & PTL1_MASK;
+	m_ptl3 = m_mmu.readp<paddr_t>(p_ptl3) & PHYS_MASK;
 }
 
 void Mmu::PageWalker::update_ptl2() {
@@ -116,7 +116,7 @@ void Mmu::PageWalker::update_ptl2() {
 	if (!m_mmu.readp<paddr_t>(p_ptl2)) {
 		m_mmu.writep(p_ptl2, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl2 = m_mmu.readp<paddr_t>(p_ptl2) & PTL1_MASK;
+	m_ptl2 = m_mmu.readp<paddr_t>(p_ptl2) & PHYS_MASK;
 }
 
 void Mmu::PageWalker::update_ptl1() {
@@ -124,7 +124,7 @@ void Mmu::PageWalker::update_ptl1() {
 	if (!m_mmu.readp<paddr_t>(p_ptl1)) {
 		m_mmu.writep(p_ptl1, m_mmu.alloc_frame() | FLAGS);
 	}
-	m_ptl1 = m_mmu.readp<paddr_t>(p_ptl1) & PTL1_MASK;
+	m_ptl1 = m_mmu.readp<paddr_t>(p_ptl1) & PHYS_MASK;
 }
 
 void Mmu::PageWalker::next_ptl4_entry() {

@@ -13,7 +13,7 @@
 #define PDE64_DIRTY    (1 << 6)
 #define PDE64_PS       (1 << 7)
 #define PDE64_PROTNONE (1 << 8)
-#define PDE64_NX       0 // (1LU << 63) // TODO
+#define PDE64_NX       (1LU << 63)
 
 struct phinfo_t {
     uint64_t e_phoff;      /* Program header table file offset */

@@ -39,13 +39,13 @@ void PageWalker::alloc_frame(uint64_t flags) {
 	// Map
 	pte() = Mem::Phys::alloc_frame() | flags;
 	flush_tlb_entry(addr());
-	//dbgprintf("mapping: %p to phys %p\n", addr(), *pte() & PTL1_MASK);
+	//dbgprintf("mapping: %p to phys %p\n", addr(), pte() & PHYS_MASK);
 }
 
 void PageWalker::free_frame() {
 	uintptr_t page_addr = addr();
 	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
-	Mem::Phys::free_frame(pte() & PTL1_MASK);
+	Mem::Phys::free_frame(pte() & PHYS_MASK);
 	pte() = 0;
 	flush_tlb_entry(page_addr);
 }
@@ -53,7 +53,7 @@ void PageWalker::free_frame() {
 void PageWalker::set_flags(uint64_t flags) {
 	uintptr_t page_addr = addr();
 	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
-	pte() = (pte() & PTL1_MASK) | flags;
+	pte() = (pte() & PHYS_MASK) | flags;
 	flush_tlb_entry(page_addr);
 }
 
@@ -85,21 +85,21 @@ void PageWalker::update_ptl3() {
 	if (!m_ptl4[m_ptl4_i]) {
 		m_ptl4[m_ptl4_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
-	m_ptl3 = (uintptr_t*)Mem::Phys::virt((m_ptl4[m_ptl4_i] & PTL1_MASK));
+	m_ptl3 = (uintptr_t*)Mem::Phys::virt((m_ptl4[m_ptl4_i] & PHYS_MASK));
 }
 
 void PageWalker::update_ptl2() {
 	if (!m_ptl3[m_ptl3_i]) {
 		m_ptl3[m_ptl3_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
-	m_ptl2 = (uintptr_t*)Mem::Phys::virt((m_ptl3[m_ptl3_i] & PTL1_MASK));
+	m_ptl2 = (uintptr_t*)Mem::Phys::virt((m_ptl3[m_ptl3_i] & PHYS_MASK));
 }
 
 void PageWalker::update_ptl1() {
 	if (!m_ptl2[m_ptl2_i]) {
 		m_ptl2[m_ptl2_i] = Mem::Phys::alloc_frame() | PAGE_TABLE_ENTRIES_FLAGS;
 	}
-	m_ptl1 = (uintptr_t*)Mem::Phys::virt((m_ptl2[m_ptl2_i] & PTL1_MASK));
+	m_ptl1 = (uintptr_t*)Mem::Phys::virt((m_ptl2[m_ptl2_i] & PHYS_MASK));
 }
 
 void PageWalker::next_ptl4_entry() {
