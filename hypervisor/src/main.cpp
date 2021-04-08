@@ -220,6 +220,10 @@ int main(int argc, char** argv) {
 
 	printf("Performing first runs...\n");
 	if (args.minimize_corpus) {
+#ifndef ENABLE_COVERAGE
+		printf("we can't minimize corpus without ENABEL_COVERAGE\n");
+		return 0;
+#else
 		// Ask for breakpoints to dirty memory, so they are resetted after
 		// each run, as we want to get the full coverage and not just new
 		// basic block hits.
@@ -244,6 +248,7 @@ int main(int argc, char** argv) {
 			runner.reset(vm, stats);
 		}
 		corpus.set_mode_corpus_min(coverages);
+#endif
 
 	} else if (args.minimize_crashes) {
 		// Make sure every input actually crashes, and submit faults to corpus
@@ -261,6 +266,7 @@ int main(int argc, char** argv) {
 		corpus.set_mode_crashes_min(faults);
 
 	} else {
+#ifdef ENABLE_COVERAGE
 		// Perform run with each seed input and submit total coverage to corpus
 		Vm runner(vm);
 		for (size_t i = 0; i < corpus.size(); i++) {
@@ -269,6 +275,9 @@ int main(int argc, char** argv) {
 			runner.reset(vm, stats);
 		}
 		corpus.set_mode_normal(runner.coverage());
+#else
+		corpus.set_mode_normal({});
+#endif
 	}
 
 

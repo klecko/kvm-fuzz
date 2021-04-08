@@ -17,7 +17,7 @@
 
 // Enables KVM dirty log ring, available from Linux 5.11. If disabled, the
 // usual bitmap is used
-#define ENABLE_KVM_DIRTY_LOG_RING
+//#define ENABLE_KVM_DIRTY_LOG_RING
 
 // Enables breakpoints-based code coverage. A breakpoint is placed at the start
 // of every basic block. When an input hits a breakpoint, it is removed and the

@@ -121,6 +121,7 @@ void custom_memcpy(void* to, void* from, size_t len) {
 		: "D" (to),
 		  "S" (from),
 		  "c" (len)
+		: "memory"
 	);
 }
 

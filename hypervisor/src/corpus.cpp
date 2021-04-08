@@ -169,7 +169,9 @@ void Corpus::write_min_crash_file(size_t i) {
 void Corpus::set_mode_normal(const set<vaddr_t>& total_coverage) {
 	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
 	m_mode = Mode::Normal;
+#ifdef ENABLE_COVERAGE
 	m_basic_blocks_hit.insert(total_coverage.begin(), total_coverage.end());
+#endif
 	cout << "Set corpus mode: Normal. Output directories will be "
 	     << m_output_dir_corpus << " and " << m_output_dir_crashes << endl;
 
