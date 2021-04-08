@@ -4,6 +4,8 @@
 #include "common.h"
 #include "printf.h"
 #include "string"
+#include "user_ptr.h"
+#include <asm-generic/errno-base.h>
 
 void* kmalloc(size_t size);
 void  kfree(void* p);
@@ -12,6 +14,23 @@ void* operator new(size_t size);
 void* operator new[](size_t size);
 void operator delete(void* p);
 void operator delete[](void* p);
+
+// I have no idea where this should go
+ssize_t print_user(UserPtr<const void*> buf, size_t len);
+
+bool copy_to_user(UserPtr<void*> dest, const void* src, size_t n);
+bool copy_from_user(void* dest, UserPtr<const void*> src, size_t n);
+bool copy_string_from_user(UserPtr<const char*> src, string& dst);
+
+template <class T>
+inline bool copy_from_user(T* dest, UserPtr<const T*> src) {
+	return copy_from_user(dest, src, sizeof(T));
+}
+
+template <class T>
+inline bool copy_to_user(UserPtr<T*> dest, const T* src) {
+	return copy_to_user(dest, src, sizeof(T));
+}
 
 inline void memcpy(void* dest, const void* src, size_t n) {
 	for (size_t i = 0; i < n; i++)

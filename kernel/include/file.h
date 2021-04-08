@@ -3,20 +3,17 @@
 
 #include <sys/stat.h>
 #include "common.h"
+#include "user_ptr.h"
 
-// Used by stat. Fstat should use the corresponding method in File
-void stat_regular(struct stat* statbuf, size_t filesize, unsigned long inode);
-void stat_stdout(struct stat* statbuf);
-
-class File;
-struct file_ops {
-	void (File::*do_stat)(struct stat* statbuf) const;
-	size_t (File::*do_read)(void* buf, size_t len);
-	size_t (File::*do_write)(const void* buf, size_t len);
-};
+typedef unsigned long inode_t;
 
 class File {
 public:
+	// Used by stat. Fstat should use the corresponding method in File
+	static int stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
+					        inode_t inode);
+	static int stat_stdout(UserPtr<struct stat*> stat_ptr);
+
 	File(uint32_t flags = 0, const char* buf = NULL, size_t size = 0);
 
 	uint32_t flags() const;
@@ -30,14 +27,19 @@ public:
 	void set_offset(size_t offset);
 
 	// File operations
-	void stat(struct stat* statbuf) const;
-	size_t read(void* buf, size_t len);
-	size_t write(const void* buf, size_t len);
+	int stat(UserPtr<struct stat*> stat_ptr) const;
+	ssize_t read(UserPtr<void*> buf, size_t len);
+	ssize_t write(UserPtr<const void*> buf, size_t len);
 
 protected:
 	// File operations with C-like polymorphism. Member m_fops is modified by
 	// inherited classes to set one of these. That way polymorphism is achieved
 	// while avoiding dynamic memory allocations
+	struct file_ops {
+		int (File::*do_stat)(UserPtr<struct stat*> stat_ptr) const;
+		ssize_t (File::*do_read)(UserPtr<void*> buf, size_t len);
+		ssize_t (File::*do_write)(UserPtr<const void*> buf, size_t len);
+	};
 	static const file_ops fops_regular;
 	static const file_ops fops_stdin;
 	static const file_ops fops_stdout;
@@ -62,10 +64,10 @@ private:
 	size_t move_cursor(size_t increment);
 
 	// Actual implementations of file operations
-	void   do_stat_regular(struct stat* statbuf) const;
-	void   do_stat_stdout(struct stat* statbuf) const;
-	size_t do_read_regular(void* buf, size_t len);
-	size_t do_write_stdout(const void* buf, size_t len);
+	int do_stat_regular(UserPtr<struct stat*> stat_ptr) const;
+	int do_stat_stdout(UserPtr<struct stat*> stat_ptr) const;
+	ssize_t do_read_regular(UserPtr<void*> buf, size_t len);
+	ssize_t do_write_stdout(UserPtr<const void*> buf, size_t len);
 };
 
 class FileStdin : public File {

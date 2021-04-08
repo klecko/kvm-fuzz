@@ -1,68 +1,70 @@
-#include <sys/fcntl.h>
 #include "file.h"
 #include "libcpp.h"
+#include <sys/fcntl.h>
 
-void stat_regular(struct stat* statbuf, size_t filesize, unsigned long inode) {
-	struct stat st;
-	st.st_dev          = 2052;
-	st.st_ino          = inode;
-	st.st_mode         = 0100664;
-	st.st_nlink        = 1;
-	st.st_uid          = 0;
-	st.st_gid          = 0;
-	st.st_rdev         = 0;
-	st.st_size         = filesize;
-	st.st_atim.tv_sec  = 1615575193;
-	st.st_atim.tv_nsec = 228169446;
-	st.st_mtim.tv_sec  = 1596888770;
-	st.st_mtim.tv_nsec = 0;
-	st.st_ctim.tv_sec  = 1612697533;
-	st.st_ctim.tv_nsec = 117084367;
-	st.st_blksize      = 4096;
-	st.st_blocks       = (filesize/512) + 1;
-	memcpy(statbuf, &st, sizeof(st));
+int File::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
+                       inode_t inode)
+{
+	static constexpr struct stat regular_st = {
+		.st_dev          = 2052,
+		.st_ino          = 0,
+		.st_nlink        = 1,
+		.st_mode         = 0100664,
+		.st_uid          = 0,
+		.st_gid          = 0,
+		.st_rdev         = 0,
+		.st_size         = 0,
+		.st_blksize      = 4096,
+		.st_blocks       = 0,
+		.st_atim         = {1615575193, 228169446},
+		.st_mtim         = {1596888770, 0},
+		.st_ctim         = {1612697533, 117084367}
+	};
+	struct stat st = regular_st;
+	st.st_ino = inode;
+	st.st_size = file_size;
+	st.st_blocks = (file_size / 512) + 1;
+	return (copy_to_user(stat_ptr, &st) ? 0 : -EFAULT);
 }
 
-void stat_stdout(struct stat* statbuf) {
-	struct stat st;
-	st.st_dev          = 22;
-	st.st_ino          = 6;
-	st.st_mode         = 020620;
-	st.st_nlink        = 1;
-	st.st_uid          = 0;
-	st.st_gid          = 0;
-	st.st_rdev         = 34819;
-	st.st_size         = 0;
-	st.st_atim.tv_sec  = 0;
-	st.st_atim.tv_nsec = 0;
-	st.st_mtim.tv_sec  = 0;
-	st.st_mtim.tv_nsec = 0;
-	st.st_ctim.tv_sec  = 0;
-	st.st_ctim.tv_nsec = 0;
-	st.st_blksize      = 1024;
-	st.st_blocks       = 0;
-	memcpy(statbuf, &st, sizeof(st));
+int File::stat_stdout(UserPtr<struct stat*> stat_ptr) {
+	static constexpr struct stat stdout_st = {
+		.st_dev          = 22,
+		.st_ino          = 6,
+		.st_nlink        = 1,
+		.st_mode         = 020620,
+		.st_uid          = 0,
+		.st_gid          = 0,
+		.st_rdev         = 34819,
+		.st_size         = 0,
+		.st_blksize      = 1024,
+		.st_blocks       = 0,
+		.st_atim         = {0, 0},
+		.st_mtim         = {0, 0},
+		.st_ctim         = {0, 0}
+	};
+	return (copy_to_user(stat_ptr, &stdout_st) ? 0 : -EFAULT);
 }
 
-const file_ops File::fops_regular = {
+const File::file_ops File::fops_regular = {
 	.do_stat  = &File::do_stat_regular,
 	.do_read  = &File::do_read_regular,
 	.do_write = NULL,
 };
 
-const file_ops File::fops_stdin = {
+const File::file_ops File::fops_stdin = {
 	.do_stat  = NULL,
 	.do_read  = NULL,
 	.do_write = NULL,
 };
 
-const file_ops File::fops_stdout = {
+const File::file_ops File::fops_stdout = {
 	.do_stat  = &File::do_stat_stdout,
 	.do_read  = NULL,
 	.do_write = &File::do_write_stdout,
 };
 
-const file_ops File::fops_stderr = File::fops_stdout;
+const File::file_ops File::fops_stderr = File::fops_stdout;
 
 File::File(uint32_t flags, const char* buf, size_t size)
 	: m_fops(fops_regular)
@@ -123,45 +125,45 @@ size_t File::move_cursor(size_t increment) {
 	return ret;
 }
 
-void File::stat(struct stat* statbuf) const {
+int File::stat(UserPtr<struct stat*> stat_ptr) const {
 	ASSERT(m_fops.do_stat, "not implemented stat");
-	(this->*m_fops.do_stat)(statbuf);
+	return (this->*m_fops.do_stat)(stat_ptr);
 }
 
-size_t File::read(void* buf, size_t len) {
+ssize_t File::read(UserPtr<void*> buf, size_t len) {
 	ASSERT(m_fops.do_read, "not implemented read");
 	return (this->*m_fops.do_read)(buf, len);
 }
 
-size_t File::write(const void* buf, size_t len) {
+ssize_t File::write(UserPtr<const void*> buf, size_t len) {
 	ASSERT(m_fops.do_write, "not implemented write");
 	return (this->*m_fops.do_write)(buf, len);
 }
 
 // All fstat syscalls fall back to stat
-void File::do_stat_regular(struct stat* statbuf) const {
-	stat_regular(statbuf, m_size, (unsigned long)m_buf);
+int File::do_stat_regular(UserPtr<struct stat*> stat_ptr) const {
+	return stat_regular(stat_ptr, m_size, (inode_t)m_buf);
 }
 
-void File::do_stat_stdout(struct stat* statbuf) const {
-	stat_stdout(statbuf);
+int File::do_stat_stdout(UserPtr<struct stat*> stat_ptr) const {
+	return stat_stdout(stat_ptr);
 }
 
-size_t File::do_read_regular(void* buf, size_t len) {
+ssize_t File::do_read_regular(UserPtr<void*> buf, size_t len) {
 	ASSERT(is_readable(), "trying to read from not readable file");
 
-	// Get cursor, move it, and write to memory the resulting length
+	// Get cursor, move it, and try to write to memory the resulting length
 	const char* p = cursor();
 	len = move_cursor(len);
-	memcpy(buf, p, len);
-	return len;
+	return (copy_to_user(buf, p, len) ? len : -EFAULT);
 }
 
-size_t File::do_write_stdout(const void* buf, size_t len) {
+ssize_t File::do_write_stdout(UserPtr<const void*> buf, size_t len) {
+	ssize_t ret = len;
 #ifdef ENABLE_GUEST_OUTPUT
-	hc_print((const char*)buf, len);
+	ret = print_user(buf, len);
 #endif
-	return len;
+	return ret;
 }
 
 

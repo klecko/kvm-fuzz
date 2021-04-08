@@ -1,13 +1,7 @@
 #include "interrupts.h"
 #include "common.h"
 #include "asm.h"
-
-struct InterruptFrame {
-	uint64_t rip;
-	uint64_t cs;
-	uint64_t rflags;
-	uint64_t rsp;
-};
+#include "safe_mem.h"
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
@@ -25,7 +19,9 @@ void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool execute = error_code & (1 << 4);
 	uint64_t fault_addr = rdcr2();
 	if (!user) {
-		printf("woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",
+		if (handle_safe_access_fault(frame))
+			return;
+		printf("woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d\n",
 		       frame->rip, fault_addr, present, write, execute);
 	}
 	// ASSERT(user, "woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d",

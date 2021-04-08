@@ -6,6 +6,8 @@
 //#define ENABLE_GUEST_OUTPUT
 #define ENABLE_INSTRUCTION_COUNT
 
+typedef long ssize_t;
+
 #define hlt() asm("hlt")
 
 #if DEBUG == 1

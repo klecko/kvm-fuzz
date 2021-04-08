@@ -2,7 +2,12 @@
 #define _INTERRUPTS_H
 #include "common.h"
 
-struct InterruptFrame;
+struct InterruptFrame {
+	uint64_t rip;
+	uint64_t cs;
+	uint64_t rflags;
+	uint64_t rsp;
+};
 
 // Entry point of interrupts
 void handle_page_fault(InterruptFrame* frame, uint64_t error_code);

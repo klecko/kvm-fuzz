@@ -38,6 +38,7 @@ const char* environ[] = {
 	// in the hypervisor
 	//"LC_NAME=es_ES.UTF-8",
 	//"LANG=es_ES.UTF-8",
+	"LTP_COLORIZE_OUTPUT=0",
 	"_=/usr/bin/env",
 };
 const int environ_n = sizeof(environ)/sizeof(*environ);
@@ -76,7 +77,8 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 
 	// Align stack
 	user_stack = (uint8_t*)((uintptr_t)user_stack & ~0xF);
-	user_stack -= 8;
+	if (((sizeof(environ_addrs) + 8 + sizeof(argv_addrs) + 8) & 0xF) == 0)
+		user_stack -= 8;
 
 	// Set up auxp
 	// Note for future Klecko: the only mandatory one seems to be AT_RANDOM.
@@ -117,6 +119,9 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 	dbgprintf("ARGS:\n");
 	for (int i = 0; i < argc; i++)
 		dbgprintf("\t%d: %s\n", i, argv_addrs[i]);
+
+	ASSERT(((uintptr_t)user_stack & ~0xF) == (uintptr_t)user_stack,
+	       "user stack not properly aligned: %p", user_stack);
 
 	return user_stack;
 }

@@ -6,6 +6,7 @@
 #include "asm.h"
 #include "mem.h"
 #include "string"
+#include "user_ptr.h"
 
 // Linux
 #include <asm/prctl.h>
@@ -14,7 +15,6 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
-#include <asm-generic/errno-base.h>
 #include <signal.h>
 
 using namespace std;
@@ -27,9 +27,11 @@ unordered_map<int, File> m_open_files;
 unordered_map<string, struct iovec> m_file_contents;
 Regs* m_user_regs;
 
+static const int MY_PID = 1234;
+
 const char* syscall_str[500];
 
-static uint64_t do_sys_arch_prctl(int code, unsigned long addr) {
+static int do_sys_arch_prctl(int code, unsigned long addr) {
 	uint64_t ret = 0;
 	switch (code) {
 		case ARCH_SET_FS:
@@ -40,19 +42,21 @@ static uint64_t do_sys_arch_prctl(int code, unsigned long addr) {
 		case ARCH_GET_GS:
 			TODO
 		default:
-			ret = -1;
+			ret = -EINVAL;
 	};
 
-	//TODO
 	return ret;
 }
 
-static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
-                              mode_t mode)
+static int do_sys_openat(int dirfd, UserPtr<const char*> pathname_ptr,
+                         int flags, mode_t mode)
 {
-	string pathname_s(pathname);
-	ASSERT(dirfd == AT_FDCWD, "%s dirfd %d", pathname, dirfd);
-	dbgprintf("opening %s\n", pathname);
+	string pathname;
+	if (!copy_string_from_user(pathname_ptr, pathname))
+		return -EFAULT;
+
+	ASSERT(dirfd == AT_FDCWD, "%s dirfd %d", pathname.c_str(), dirfd);
+	dbgprintf("opening %s\n", pathname_ptr);
 
 	// Find unused fd
 	int fd = 3;
@@ -60,50 +64,66 @@ static uint64_t do_sys_openat(int dirfd, const char* pathname, int flags,
 		fd++;
 
 	// Create file
-	if (pathname_s == "-") {
+	if (pathname == "-") {
 		m_open_files[fd] = FileStdout();
 	} else {
-		ASSERT(m_file_contents.count(pathname_s), "unknown file '%s'", pathname);
+		ASSERT(m_file_contents.count(pathname), "unknown file '%s'",
+		       pathname.c_str());
 		ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
-			"%s with write permisions", pathname);
-		struct iovec buf = m_file_contents[pathname_s];
+		       "%s with write permisions", pathname.c_str());
+		struct iovec buf = m_file_contents[pathname];
 		m_open_files[fd] = File(flags, (const char*)buf.iov_base, buf.iov_len);
 	}
 	return fd;
 }
 
-static uint64_t do_sys_open(const char* pathname, int flags, mode_t mode) {
-	return do_sys_openat(AT_FDCWD, pathname, flags, mode);
+static int do_sys_open(UserPtr<const char*> pathname_ptr, int flags,
+                       mode_t mode)
+{
+	return do_sys_openat(AT_FDCWD, pathname_ptr, flags, mode);
 }
 
-static uint64_t do_sys_writev(int fd, const struct iovec* iov, int iovcnt) {
+static ssize_t do_sys_writev(int fd, UserPtr<const struct iovec*> iov_ptr,
+                             int iovcnt)
+{
 	ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
-	uint64_t ret  = 0;
-	//File&    file = m_open_files[fd];
+	ASSERT(iovcnt >= 0, "negative iovcnt: %d", iovcnt);
+	ssize_t ret  = 0;
+	File&   file = m_open_files[fd];
 
 	// Write each iovec to file
 	hc_print("WRITEV\n");
+	struct iovec iov;
 	for (int i = 0; i < iovcnt; i++) {
-		// FIXME
-		hc_print((const char*)iov[i].iov_base, iov[i].iov_len);
-		ret += iov[i].iov_len; //file.write(iov[i].iov_base, iov[i].iov_len);
+		// Copy iovec
+		if (!copy_from_user(&iov, iov_ptr + i))
+			return -EFAULT;
+
+		// Perform write
+		ssize_t n = file.write(UserPtr<const void*>(iov.iov_base), iov.iov_len);
+		// ssize_t n = print_user(UserPtr<const void*>(iov.iov_base), iov.iov_len);
+		if (n < 0)
+			return n;
+		ret += n;
 	}
 
 	//hc_print_stacktrace(m_user_regs->rsp, m_user_regs->rip, m_user_regs->rbp);
-	FaultInfo fault = {
-		.type = FaultInfo::Type::AssertionFailed,
-		.rip = m_user_regs->rip,
-	};
-	hc_fault(&fault);
+	// FaultInfo fault = {
+	// 	.type = FaultInfo::Type::AssertionFailed,
+	// 	.rip = m_user_regs->rip,
+	// };
+	// hc_fault(&fault);
 	return ret;
 }
 
-static uint64_t do_sys_read(int fd, void* buf, size_t count) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+static ssize_t do_sys_read(int fd, UserPtr<void*> buf, size_t count) {
+	ASSERT(m_open_files.count(fd), "not open fd: %d", fd); // EBADF
 	return m_open_files[fd].read(buf, count);
 }
 
-static uint64_t do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
+static ssize_t do_sys_pread64(int fd, UserPtr<void*> buf, size_t count,
+                              off_t offset)
+{
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	ASSERT(offset >= 0, "negative offset on fd %d: %ld", fd, offset);
 
@@ -111,45 +131,48 @@ static uint64_t do_sys_pread64(int fd, void* buf, size_t count, off_t offset) {
 	File& file = m_open_files[fd];
 	size_t original_offset = file.offset();
 	file.set_offset(offset);
-	uint64_t ret = file.read(buf, count);
+	ssize_t ret = file.read(buf, count);
 	file.set_offset(original_offset);
 	return ret;
 }
 
-static uint64_t do_sys_access(const char* pathname, int mode) {
-	if (!m_file_contents.count(pathname)) {
-		return -ENOENT;
-	}
-	ASSERT(false, "access: %s 0x%x\n", pathname, mode);
-	return 0;
+static int do_sys_access(UserPtr<const char*> pathname_ptr, int mode) {
+	string pathname;
+	if (!copy_string_from_user(pathname_ptr, pathname))
+		return -EFAULT;
+	ASSERT(mode == R_OK, "TODO mode %d accessing %s", mode, pathname.c_str());
+
+	return (m_file_contents.count(pathname) ? 0 : -EACCES);
 }
 
-static uint64_t do_sys_write(int fd, const void* buf, size_t count) {
+static ssize_t do_sys_write(int fd, UserPtr<const void*> buf, size_t count) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	return m_open_files[fd].write(buf, count);
 }
 
-static uint64_t do_sys_stat(const char* pathname, struct stat* statbuf) {
-	string pathname_s(pathname);
-	ASSERT(m_file_contents.count(pathname_s), "unknown %s", pathname);
-	const iovec& iov = m_file_contents[pathname_s];
-	stat_regular(statbuf, iov.iov_len, (unsigned long)iov.iov_base);
-	return 0;
+static int do_sys_stat(UserPtr<const char*> pathname_ptr,
+                       UserPtr<struct stat*> stat_ptr)
+{
+	string pathname;
+	if (!copy_string_from_user(pathname_ptr, pathname))
+		return -EFAULT;
+	ASSERT(m_file_contents.count(pathname), "unknown %s", pathname.c_str());
+	const iovec& iov = m_file_contents[pathname];
+	return File::stat_regular(stat_ptr, iov.iov_len, (inode_t)iov.iov_base);
 }
 
-static uint64_t do_sys_fstat(int fd, struct stat* statbuf) {
+static int do_sys_fstat(int fd, UserPtr<struct stat*> stat_ptr) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
-	m_open_files[fd].stat(statbuf);
-	return 0;
+	return m_open_files[fd].stat(stat_ptr);
 }
 
-static uint64_t do_sys_lseek(int fd, off_t offset, int whence) {
+static off_t do_sys_lseek(int fd, off_t offset, int whence) {
 	// We use signed types here, as the syscall does, but we use unsigned types
 	// in File. The syscall fails if the resulting offset is negative, so
 	// there isn't any problem about that
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	File& file = m_open_files[fd];
-	int64_t ret;
+	off_t ret;
 	switch (whence) {
 		case SEEK_SET:
 			ret = offset;
@@ -172,14 +195,14 @@ static uint64_t do_sys_lseek(int fd, off_t offset, int whence) {
 	return ret;
 }
 
-static uint64_t do_sys_close(int fd) {
+static int do_sys_close(int fd) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	//m_open_files.erase(fd); // ADAPTACIÓN STL
 	m_open_files.erase({fd, m_open_files[fd]});
 	return 0;
 }
 
-static uint64_t do_sys_brk(uintptr_t addr) {
+static uintptr_t do_sys_brk(uintptr_t addr) {
 	dbgprintf("trying to set brk to %p, current is %p\n", addr, m_brk);
 	if (addr < m_min_brk)
 		return m_brk;
@@ -205,23 +228,6 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 
 		Mem::Virt::alloc((void*)next_page, sz, flags);
 
-		// while (!Mem::Virt::is_range_free((void*)next_page, sz)) {
-		// 	//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
-		// 	// Range was too big. Reduce it until we can map something
-		// 	sz = PAGE_CEIL(sz/2);
-		// 	if (sz == PAGE_SIZE)
-		// 		return m_brk;
-		// 	addr = next_page + sz;
-		// }
-
-		// while (!Mem::Virt::alloc((void*)next_page, sz, flags, false)) {
-		// 	//printf_once("WARNING: brk OOM allocating %lu\n", sz);
-		// 	sz = PAGE_CEIL(sz/2);
-		// 	if (sz == PAGE_SIZE)
-		// 		return m_brk;
-		// 	addr = next_page + sz;
-		// }
-
 	} else if (addr <= cur_page) {
 		// Free space
 		uintptr_t addr_next_page = PAGE_CEIL(addr);
@@ -233,43 +239,44 @@ static uint64_t do_sys_brk(uintptr_t addr) {
 	return m_brk;
 }
 
-static uint64_t do_sys_uname(struct utsname* buf) {
-	struct utsname uname = {
+static uint64_t do_sys_uname(UserPtr<struct utsname*> uname_ptr) {
+	constexpr static struct utsname uname = {
 		"Linux",                                              // sysname
 		"pep1t0",                                             // nodename
 		"5.8.0-43-generic",                                   // release
 		"#49~20.04.1-Ubuntu SMP Fri Feb 5 09:57:56 UTC 2021", // version
 		"x86_64"                                              // machine
 	};
-	memcpy(buf, &uname, sizeof(uname));
-	return 0;
+	return (copy_to_user(uname_ptr, &uname) ? 0 : -EFAULT);
 }
 
-static uint64_t do_sys_readlink(const char* pathname, char* buf,
-                                size_t bufsize)
+static ssize_t do_sys_readlink(UserPtr<const char*> pathname_ptr,
+                               UserPtr<char*> buf, size_t bufsize)
 {
-	string pathname_s(pathname);
-	ASSERT(pathname_s == "/proc/self/exe", "not implemented %s", pathname);
+	string pathname;
+	if (!copy_string_from_user(pathname_ptr, pathname))
+		return -EFAULT;
+	ASSERT(pathname == "/proc/self/exe", "not implemented %s", pathname.c_str());
 
+	// TODO: size_t doesn't fit in ssize_t
 	// Readlink does not append a null byte to buf
 	size_t size = min(m_elf_path.size(), bufsize);
-	memcpy(buf, m_elf_path.c_str(), size);
-	return size;
+	return (copy_to_user(buf, m_elf_path.c_str(), size) ? size : -EFAULT);
 }
 
-static uint64_t do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
+static int do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	TODO
 	return 0;
 }
 
-static uint64_t do_sys_fcntl(int fd, int cmd, unsigned long arg) {
+static int do_sys_fcntl(int fd, int cmd, unsigned long arg) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	File& file = m_open_files[fd];
 	uint64_t ret = 0;
 	uint32_t flags;
 	switch (cmd) {
-		// There's only one flag defined for this: FD_CLOEXEC.
+		// There's only one flag defined for F_GETFD and F_SETFD: FD_CLOEXEC.
 		// It can also be specified when opening, with O_CLOEXEC.
 		// For simplicity, save it as O_CLOEXEC
 		case F_GETFD:
@@ -303,21 +310,22 @@ uint64_t prot_to_page_flags(int prot) {
 	return page_flags;
 }
 
-static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
-                            int fd, size_t offset)
+static uintptr_t do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
+                             int flags, int fd, size_t offset)
 {
-	// We'll remove this checks little by little :)
 	dbgprintf("mmap(%p, %ld, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
 	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
 
+	// We're not supporting multiple threads, so MAP_SHARED can be safely
+	// removed
 	if (flags & MAP_SHARED) {
 		flags &= ~MAP_SHARED;
 		//printf_once("REMOVING MAP SHARED\n");
 	}
 
 	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
-	ASSERT((flags & supported_flags) == flags, "flags 0x%x", flags);
+	ASSERT((flags & supported_flags) == flags, "unsupported flags 0x%x", flags);
 
 	// Parse perms
 	uint64_t page_flags = prot_to_page_flags(prot);
@@ -333,8 +341,8 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 	void* ret;
 	if (flags & MAP_FIXED) {
 		ASSERT(addr, "MAP_FIXED with no addr");
-		ret = addr;
-		Mem::Virt::alloc(addr, length_upper, page_flags);
+		ret = addr.ptr();
+		Mem::Virt::alloc(ret, length_upper, page_flags);
 	} else {
 		ret = Mem::Virt::alloc(length_upper, page_flags);
 	}
@@ -355,30 +363,30 @@ static uint64_t do_sys_mmap(void* addr, size_t length, int prot, int flags,
 		}
 	}
 
-	return (uint64_t)ret;
+	return (uintptr_t)ret;
 }
 
-static uint64_t do_sys_munmap(void* addr, size_t length) {
-	if (!addr)
+static int do_sys_munmap(UserPtr<void*> addr, size_t length) {
+	if (!addr || !length)
 		return -EINVAL;
 	// Round length to upper page boundary
 	length = PAGE_CEIL(length);
-	Mem::Virt::free(addr, length);
+	Mem::Virt::free(addr.ptr(), length);
 	return 0;
 }
 
-static uint64_t do_sys_mprotect(void* addr, size_t length, int prot) {
+static int do_sys_mprotect(UserPtr<void*> addr, size_t length, int prot) {
 	uint64_t page_flags = prot_to_page_flags(prot);
-	Mem::Virt::set_flags(addr, length, page_flags);
+	Mem::Virt::set_flags(addr.ptr(), length, page_flags);
 	return 0;
 }
 
-static uint64_t do_sys_prlimit(pid_t pid, int resource,
-                               const struct rlimit* new_limit,
-                               struct rlimit* old_limit)
+static int do_sys_prlimit(pid_t pid, int resource,
+                          UserPtr<const struct rlimit*> new_limit_ptr,
+                          UserPtr<struct rlimit*> old_limit_ptr)
 {
-	ASSERT(pid == 0, "TODO pid %d", pid);
-	if (old_limit) {
+	ASSERT(pid == MY_PID, "TODO pid %d", pid);
+	if (old_limit_ptr) {
 		struct rlimit limit;
 		switch (resource) {
 			case RLIMIT_NOFILE:
@@ -392,10 +400,11 @@ static uint64_t do_sys_prlimit(pid_t pid, int resource,
 			default:
 				ASSERT(false, "TODO get limit %d", resource);
 		}
-		memcpy(old_limit, &limit, sizeof(limit));
+		if (!copy_to_user(old_limit_ptr, &limit))
+			return -EFAULT;
 	}
 
-	if (new_limit) {
+	if (new_limit_ptr) {
 		switch (resource) {
 			case RLIMIT_CORE:
 				break;
@@ -406,27 +415,26 @@ static uint64_t do_sys_prlimit(pid_t pid, int resource,
 	return 0;
 }
 
-static uint64_t do_sys_sysinfo(struct sysinfo* info) {
-	struct sysinfo sys = {
+static int do_sys_sysinfo(UserPtr<struct sysinfo*> info_ptr) {
+	static constexpr struct sysinfo sys = {
 		.uptime    = 1234,
 		.loads     = {102176, 105792, 94720},
 		.totalram  = 32UL*1024*1024*1024,
 		.freeram   = 26UL*1024*1024*1024,
-		.sharedram = 1UL*1024*1024*1024,
-		.bufferram = 1UL*1024*1024*1024,
-		.totalswap = 2UL*1024*1024*1024,
-		.freeswap  = 2UL*1024*1024*1024,
+		.sharedram = 1UL *1024*1024*1024,
+		.bufferram = 1UL *1024*1024*1024,
+		.totalswap = 2UL *1024*1024*1024,
+		.freeswap  = 2UL *1024*1024*1024,
 		.procs     = 1234,
 		.totalhigh = 0,
 		.freehigh  = 0,
 		.mem_unit  = 1
 	};
-	memcpy(info, &sys, sizeof(sys));
-	return 0;
+	return (copy_to_user(info_ptr, &sys) ? 0 : -EFAULT);
 }
 
-static uint64_t do_sys_tgkill(int tgid, int tid, int sig) {
-	if (sig == SIGABRT && tgid == 1234 && tid == 1234) {
+static int do_sys_tgkill(int tgid, int tid, int sig) {
+	if (sig == SIGABRT && tgid == MY_PID && tid == MY_PID) {
 		FaultInfo fault = {
 			.type = FaultInfo::AssertionFailed,
 			.rip = m_user_regs->rip
@@ -434,6 +442,19 @@ static uint64_t do_sys_tgkill(int tgid, int tid, int sig) {
 		hc_fault(&fault);
 	}
 	TODO
+	return 0;
+}
+
+static int do_sys_clock_gettime(clockid_t clock_id,
+                                UserPtr<struct timespec*> tp_ptr)
+{
+	printf_once("TODO: clock_gettime\n");
+	struct timespec tp = {
+		.tv_sec = 0,
+		.tv_nsec = 0,
+	};
+	if (!copy_to_user(tp_ptr, &tp))
+		return -EFAULT;
 	return 0;
 }
 
@@ -458,25 +479,25 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 	switch (nr) {
 		case SYS_openat:
 			//hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
-			ret = do_sys_openat(arg0, (const char*)arg1, arg2, arg3);
+			ret = do_sys_openat(arg0, UserPtr<const char*>(arg1), arg2, arg3);
 			break;
 		case SYS_open:
-			ret = do_sys_open((const char*)arg0, arg1, arg2);
+			ret = do_sys_open(UserPtr<const char*>(arg0), arg1, arg2);
 			break;
 		case SYS_read:
-			ret = do_sys_read(arg0, (void*)arg1, arg2);
+			ret = do_sys_read(arg0, UserPtr<void*>(arg1), arg2);
 			break;
 		case SYS_pread64:
-			ret = do_sys_pread64(arg0, (void*)arg1, arg2, arg3);
+			ret = do_sys_pread64(arg0, UserPtr<void*>(arg1), arg2, arg3);
 			break;
 		case SYS_write:
-			ret = do_sys_write(arg0, (const void*)arg1, arg2);
+			ret = do_sys_write(arg0, UserPtr<const void*>(arg1), arg2);
 			break;
 		case SYS_writev:
-			ret = do_sys_writev(arg0, (const iovec*)arg1, arg2);
+			ret = do_sys_writev(arg0, UserPtr<const iovec*>(arg1), arg2);
 			break;
 		case SYS_access:
-			ret = do_sys_access((const char*)arg0, arg1);
+			ret = do_sys_access(UserPtr<const char*>(arg0), arg1);
 			break;
 		case SYS_lseek:
 			ret = do_sys_lseek(arg0, arg1, arg2);
@@ -507,25 +528,27 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			ret = do_sys_arch_prctl(arg0, arg1);
 			break;
 		case SYS_uname:
-			ret = do_sys_uname((struct utsname*)arg0);
+			ret = do_sys_uname(UserPtr<struct utsname*>(arg0));
 			break;
 		case SYS_readlink:
-			ret = do_sys_readlink((const char*)arg0, (char*)arg1, arg2);
+			ret = do_sys_readlink(UserPtr<const char*>(arg0),
+			                      UserPtr<char*>(arg1), arg2);
 			break;
 		case SYS_mmap:
-			ret = do_sys_mmap((void*)arg0, arg1, arg2, arg3, arg4, arg5);
+			ret = do_sys_mmap(UserPtr<void*>(arg0), arg1, arg2, arg3, arg4, arg5);
 			break;
 		case SYS_munmap:
-			ret = do_sys_munmap((void*)arg0, arg1);
+			ret = do_sys_munmap(UserPtr<void*>(arg0), arg1);
 			break;
 		case SYS_mprotect:
-			ret = do_sys_mprotect((void*)arg0, arg1, arg2);
+			ret = do_sys_mprotect(UserPtr<void*>(arg0), arg1, arg2);
 			break;
 		case SYS_fstat:
-			ret = do_sys_fstat(arg0, (struct stat*)arg1);
+			ret = do_sys_fstat(arg0, UserPtr<struct stat*>(arg1));
 			break;
 		case SYS_stat:
-			ret = do_sys_stat((const char*)arg0, (struct stat*)arg1);
+			ret = do_sys_stat(UserPtr<const char*>(arg0),
+			                  UserPtr<struct stat*>(arg1));
 			break;
 		case SYS_ioctl:
 			ret = do_sys_ioctl(arg0, arg1, arg2);
@@ -534,14 +557,17 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			ret = do_sys_fcntl(arg0, arg1, arg2);
 			break;
 		case SYS_prlimit64:
-			ret = do_sys_prlimit(arg0, arg1, (const struct rlimit*)arg2,
-			                     (struct rlimit*)arg3);
+			ret = do_sys_prlimit(arg0, arg1, UserPtr<const struct rlimit*>(arg2),
+			                     UserPtr<struct rlimit*>(arg3));
 			break;
 		case SYS_sysinfo:
-			ret = do_sys_sysinfo((struct sysinfo*)arg0);
+			ret = do_sys_sysinfo(UserPtr<struct sysinfo*>(arg0));
 			break;
 		case SYS_tgkill:
 			ret = do_sys_tgkill(arg0, arg1, arg2);
+			break;
+		case SYS_clock_gettime:
+			ret = do_sys_clock_gettime(arg0, UserPtr<struct timespec*>(arg1));
 			break;
 		case SYS_set_tid_address:
 			ret = 0;
