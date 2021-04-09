@@ -53,7 +53,7 @@ bool Args::parse(int argc, char** argv) {
 			("o,output", "Output folder (corpus, crashes, etc)", cxxopts::value<string>(output_dir)->default_value("./out"), "dir")
 			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
 			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage. Default value is basic_blocks_<BinaryMD5Hash>.txt", cxxopts::value<string>(basic_blocks_path), "path")
-			("s,single-input", "Path to single input file. A single run will be performed with this input.", cxxopts::value<string>(single_input_path), "path")
+			("s,single-run", "Perform a single run, optionally specifying an input file", cxxopts::value<string>(single_run_input_path)->implicit_value("none"), "path")
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
 			("h,help", "Print usage")
@@ -86,6 +86,15 @@ bool Args::parse(int argc, char** argv) {
 		}
 		if (input_dir == "-") {
 			input_dir = output_dir + "/corpus";
+		}
+		if (options.count("single-run")) {
+			// Option was specified. If there is no input file given, just
+			// clear that argument
+			single_run = true;
+			if (single_run_input_path == "none")
+				single_run_input_path.clear();
+		} else {
+			single_run = false;
 		}
 
 	} catch (cxxopts::OptionException& e) {

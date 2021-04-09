@@ -204,12 +204,18 @@ int main(int argc, char** argv) {
 	// Run until main before forking or running single input
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
-	if (!args.single_input_path.empty()) {
-		// Just perform a single run and exit
-		string single_input(read_file(args.single_input_path));
-		printf("Performing single run with input file '%s', length %lu\n",
-		       args.single_input_path.c_str(), single_input.size());
-		vm.set_input(single_input);
+	if (args.single_run) {
+		// Just perform a single run, loading input file if specified, and exit
+		if (args.single_run_input_path.empty()) {
+			string empty_input;
+			vm.set_input(empty_input); // override virtual file set above
+			printf("Performing single run with no input file\n");
+		} else {
+			string single_input(read_file(args.single_run_input_path));
+			vm.set_input(single_input);
+			printf("Performing single run with input file '%s', length %lu\n",
+				   args.single_run_input_path.c_str(), single_input.size());
+		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)
 			cout << vm.fault() << endl;
