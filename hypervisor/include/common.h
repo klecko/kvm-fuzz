@@ -23,7 +23,7 @@
 // of every basic block. When an input hits a breakpoint, it is removed and the
 // input is added to the corpus. This provides basic block coverage instead of
 // edge coverage, but is MUCH cheaper than Intel PT
-#define ENABLE_COVERAGE_BREAKPOINTS
+//#define ENABLE_COVERAGE_BREAKPOINTS
 
 // Enables Intel PT for code coverage. Currently, KVM-PT is used for tracing
 // and libxdc for decoding. There are some performance issues :P

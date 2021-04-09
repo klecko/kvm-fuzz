@@ -30,7 +30,7 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	: m_vm_fd(create_vm())
 	, m_elf(binary_path)
 	, m_kernel(kernel_path)
-	, m_interpreter(NULL)
+	, m_interpreter(nullptr)
 	, m_argv(argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
@@ -116,7 +116,7 @@ int Vm::create_vm() {
 	m_vcpu_fd = ioctl_chk(m_vm_fd, KVM_CREATE_VCPU, 0);
 
 	size_t vcpu_run_size = ioctl_chk(g_kvm_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
-	m_vcpu_run = (kvm_run*)mmap(NULL, vcpu_run_size, PROT_READ|PROT_WRITE,
+	m_vcpu_run = (kvm_run*)mmap(nullptr, vcpu_run_size, PROT_READ|PROT_WRITE,
 	                            MAP_SHARED, m_vcpu_fd, 0);
 	ERROR_ON(m_vcpu_run == MAP_FAILED, "mmap vcpu_run");
 
@@ -142,7 +142,7 @@ void Vm::setup_kvm() {
 	kvm_segment seg = {
 		.base     = 0,          // base address
 		.limit    = 0xffffffff, // limit
-		.selector = 0x8,        // index 1 (index 0 is null segment descriptor)
+		.selector = 0x8,        // index 1 (index 0 is nullptr segment descriptor)
 		.type     = 11,         // read, execute, accessed
 		.present  = 1,          // bit P
 		.dpl      = 0,          // Descriptor Privilege Level. 0 for kernel
@@ -182,7 +182,7 @@ void Vm::setup_coverage() {
 	// VMX PT
 	m_vmx_pt_fd = ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0);
 	size_t vmx_pt_size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0);
-	m_vmx_pt = (uint8_t*)mmap(NULL, vmx_pt_size, PROT_READ|PROT_WRITE,
+	m_vmx_pt = (uint8_t*)mmap(nullptr, vmx_pt_size, PROT_READ|PROT_WRITE,
 	                          MAP_SHARED, m_vmx_pt_fd, 0);
 	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
 	m_vmx_pt_bitmap = (uint8_t*)malloc(COVERAGE_BITMAP_SIZE);
@@ -200,8 +200,8 @@ void Vm::setup_coverage() {
 	filter[0][1] = filter0.b;
 	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
 	                               this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
-	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, NULL);
-	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, NULL);
+	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, nullptr);
+	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, nullptr);
 	//libxdc_enable_tracing(decoder);
 }
 #endif
@@ -272,7 +272,7 @@ void Vm::setup_kernel_execution() {
 		m_mmu.write_mem(m_regs->rsp, arg.c_str(), arg.size()+1);
 		argv_addrs.push_back(m_regs->rsp);
 	}
-	argv_addrs.push_back(0); // null ptr, end of argv
+	argv_addrs.push_back(0); // nullptr ptr, end of argv
 
 	// Align rsp
 	m_regs->rsp &= ~0x7;
@@ -582,7 +582,7 @@ Vm::RunEndReason Vm::single_step(Stats& stats) {
 void* Vm::fetch_page(uint64_t page, bool* success) {
 	thread_local unordered_map<uint64_t, void*> cache;
 	thread_local uint64_t last_page = 0;
-	thread_local void* last_result = NULL;
+	thread_local void* last_result = nullptr;
 	page &= PTL1_MASK;
 	//printf("fetching 0x%lx\n", page);
 

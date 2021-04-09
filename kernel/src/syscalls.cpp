@@ -217,6 +217,10 @@ static int do_sys_close(int fd) {
 	return 0;
 }
 
+void func() {
+	UserPtr<void*> s(nullptr);
+}
+
 static uintptr_t do_sys_brk(uintptr_t addr) {
 	dbgprintf("trying to set brk to %p, current is %p\n", addr, m_brk);
 	if (addr < m_min_brk)

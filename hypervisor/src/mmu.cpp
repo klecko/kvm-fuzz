@@ -11,7 +11,7 @@ using namespace std;
 Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	: m_vm_fd(vm_fd)
 	, m_vcpu_fd(vcpu_fd)
-	, m_memory((uint8_t*)mmap(NULL, mem_size, PROT_READ|PROT_WRITE,
+	, m_memory((uint8_t*)mmap(nullptr, mem_size, PROT_READ|PROT_WRITE,
 	                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0))
 	, m_length(mem_size)
 	, m_ptl4(PAGE_TABLE_PADDR)
@@ -21,7 +21,7 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	, m_dirty_ring_i(0)
 	, m_dirty_ring_entries(ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING) / sizeof(kvm_dirty_gfn))
 	, m_dirty_ring((kvm_dirty_gfn*)
-		mmap(NULL, m_dirty_ring_entries * sizeof(kvm_dirty_gfn),
+		mmap(nullptr, m_dirty_ring_entries * sizeof(kvm_dirty_gfn),
 		     PROT_READ|PROT_WRITE, MAP_SHARED, m_vcpu_fd, KVM_DIRTY_LOG_PAGE_OFFSET*PAGE_SIZE)
 		)
 #else

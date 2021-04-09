@@ -166,8 +166,8 @@ int main(int argc, char** argv) {
 	if (!args.parse(argc, argv))
 		return 0;
 
-	setvbuf(stdout, NULL, _IONBF, 0);
-	setvbuf(stderr, NULL, _IONBF, 0);
+	setvbuf(stdout, nullptr, _IONBF, 0);
+	setvbuf(stderr, nullptr, _IONBF, 0);
 	cout << "Number of threads: " << args.jobs << endl;
 	Stats stats;
 	Corpus corpus(args.jobs, args.input_dir, args.output_dir);

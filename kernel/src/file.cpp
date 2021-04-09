@@ -55,18 +55,18 @@ int File::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 const File::file_ops File::fops_regular = {
 	.do_stat  = &File::do_stat_regular,
 	.do_read  = &File::do_read_regular,
-	.do_write = NULL,
+	.do_write = nullptr,
 };
 
 const File::file_ops File::fops_stdin = {
-	.do_stat  = NULL,
-	.do_read  = NULL,
-	.do_write = NULL,
+	.do_stat  = nullptr,
+	.do_read  = nullptr,
+	.do_write = nullptr,
 };
 
 const File::file_ops File::fops_stdout = {
 	.do_stat  = &File::do_stat_stdout,
-	.do_read  = NULL,
+	.do_read  = nullptr,
 	.do_write = &File::do_write_stdout,
 };
 

@@ -38,7 +38,7 @@ class Rng {
 class Corpus {
 public:
 	static const int MIN_MUTATIONS = 1;
-	static const int MAX_MUTATIONS = 20;
+	static const int MAX_MUTATIONS = 10;
 
 	Corpus(int nthreads, const std::string& input, const std::string& output);
 

@@ -12,5 +12,5 @@ TEST_CASE("uname") {
 	// checked by libc.
 	REQUIRE(strcmp(data.sysname, "Linux") == 0);
 	REQUIRE(strcmp(data.machine, "x86_64") == 0);
-	REQUIRE(strchr(data.release, 0) != NULL);
+	REQUIRE(strchr(data.release, 0) != nullptr);
 }

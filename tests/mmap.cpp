@@ -12,7 +12,7 @@ const int prot = PROT_READ | PROT_WRITE;
 const int flags = MAP_ANON | MAP_PRIVATE;
 
 TEST_CASE("mmap anon write") {
-	uint8_t* p = (uint8_t*)mmap(NULL, PAGE_SIZE, prot, flags, -1, 0);
+	uint8_t* p = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p != MAP_FAILED);
 	*p = 1;
 	*(p + 0xFFF) = 1;
@@ -20,7 +20,7 @@ TEST_CASE("mmap anon write") {
 }
 
 TEST_CASE("mmap anon exec") {
-	void* p = mmap(NULL, PAGE_SIZE, prot | PROT_EXEC, flags, -1, 0);
+	void* p = mmap(nullptr, PAGE_SIZE, prot | PROT_EXEC, flags, -1, 0);
 	REQUIRE(p != MAP_FAILED);
 	memcpy(p, shellcode, sizeof(shellcode));
 	REQUIRE(((int(*)(void))p)() == 0x1234);
@@ -28,7 +28,7 @@ TEST_CASE("mmap anon exec") {
 }
 
 TEST_CASE("mmap OOM") {
-	void* p = mmap(NULL, SIZE_MAX, prot, flags, -1, 0);
+	void* p = mmap(nullptr, SIZE_MAX, prot, flags, -1, 0);
 	REQUIRE(p == MAP_FAILED);
 	REQUIRE(errno == ENOMEM);
 }
@@ -36,7 +36,7 @@ TEST_CASE("mmap OOM") {
 TEST_CASE("mmap file") {
 	int fd = open("../tests/input_hello_world", O_RDONLY);
 	REQUIRE(fd != -1);
-	char* p = (char*)mmap(NULL, PAGE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+	char* p = (char*)mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
 	REQUIRE(p != MAP_FAILED);
 	REQUIRE(strcmp(p, "hello world1\nhello world2") == 0);
 	REQUIRE(munmap(p, PAGE_SIZE) == 0);
@@ -44,7 +44,7 @@ TEST_CASE("mmap file") {
 
 TEST_CASE("mmap fixed") {
 	// First mapping
-	uint8_t* p = (uint8_t*)mmap(NULL, PAGE_SIZE, prot, flags, -1, 0);
+	uint8_t* p = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p != MAP_FAILED);
 	*p = 1;
 
@@ -59,7 +59,7 @@ TEST_CASE("mmap fixed") {
 	*(uint8_t*)p3 = 3;
 
 	// I don't know if these should be required, as they depend on mmap_min_addr
-	// void* p4 = mmap(NULL, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	// void* p4 = mmap(nullptr, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	// REQUIRE(p4 == MAP_FAILED);
 	// void* p5 = mmap((void*)PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	// REQUIRE(p5 == MAP_FAILED);
@@ -77,6 +77,6 @@ TEST_CASE("mmap fixed") {
 	REQUIRE(munmap(p, PAGE_SIZE) == 0);
 	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
 	REQUIRE(munmap(p3, PAGE_SIZE) == 0); // munmap twice is not an error
-	REQUIRE(munmap(NULL, PAGE_SIZE) == 0);  // munmap not mapped address neither
+	REQUIRE(munmap(nullptr, PAGE_SIZE) == 0); // munmap not mapped addr neither
 	REQUIRE(munmap((void*)1, PAGE_SIZE) == -1); // but address must be aligned
 }

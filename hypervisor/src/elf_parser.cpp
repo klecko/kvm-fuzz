@@ -23,7 +23,7 @@ ElfParser::ElfParser(const string& elf_path)
 	ERROR_ON(fd < 0, "elf %s: open", cpath);
 	ERROR_ON(fstat(fd, &st) < 0, "elf %s: fstat", cpath);
 
-	m_data = (uint8_t*)mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	m_data = (uint8_t*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	ERROR_ON(m_data == MAP_FAILED, "elf %s: mmap", cpath);
 	close(fd);
 
@@ -128,7 +128,8 @@ ElfParser::ElfParser(const string& elf_path)
 	int ret;
 	m_dwarf_elf = elf_memory((char*)m_data, st.st_size);
 	ASSERT(m_dwarf_elf, "error reading elf from memory");
-	ret = dwarf_elf_init(m_dwarf_elf, DW_DLC_READ, NULL, NULL, &m_dwarf, &err);
+	ret = dwarf_elf_init(m_dwarf_elf, DW_DLC_READ, nullptr, nullptr,
+	                     &m_dwarf, &err);
 	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
 
 	// Get data
@@ -234,7 +235,7 @@ void ElfParser::get_current_frame_regs_info(vaddr_t instruction_pointer,
 	Dwarf_Error err;
 	Dwarf_Fde fde;
 	int ret = dwarf_get_fde_at_pc(m_dwarf_fde_data, instruction_pointer, &fde,
-		NULL, NULL, &err);
+		nullptr, nullptr, &err);
 	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
 
 	// Get regs information
