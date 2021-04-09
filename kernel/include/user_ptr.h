@@ -20,6 +20,10 @@ public:
 		return m_ptr;
 	}
 
+	uintptr_t flat() const {
+		return (uintptr_t)m_ptr;
+	}
+
 	UserPtr<T*> operator+(size_t n) const {
 		return UserPtr<T*>(m_ptr + n);
 	}

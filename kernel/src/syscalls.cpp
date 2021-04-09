@@ -18,7 +18,7 @@
 #include "linux/types.h"
 #include "linux/signal.h"
 #include "linux/fs.h"
-#include "linux/others.h"
+#include "others.h"
 
 // Global user state
 string m_elf_path;
@@ -88,8 +88,10 @@ static int do_sys_open(UserPtr<const char*> pathname_ptr, int flags,
 static ssize_t do_sys_writev(int fd, UserPtr<const struct iovec*> iov_ptr,
                              int iovcnt)
 {
-	ASSERT(m_open_files.count(fd), "writev: not open fd: %d", fd);
 	ASSERT(iovcnt >= 0, "negative iovcnt: %d", iovcnt);
+	if (!m_open_files.count(fd))
+		return -EBADF;
+
 	ssize_t ret  = 0;
 	File&   file = m_open_files[fd];
 
@@ -119,15 +121,17 @@ static ssize_t do_sys_writev(int fd, UserPtr<const struct iovec*> iov_ptr,
 }
 
 static ssize_t do_sys_read(int fd, UserPtr<void*> buf, size_t count) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd); // EBADF
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	return m_open_files[fd].read(buf, count);
 }
 
 static ssize_t do_sys_pread64(int fd, UserPtr<void*> buf, size_t count,
                               off_t offset)
 {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
 	ASSERT(offset >= 0, "negative offset on fd %d: %ld", fd, offset);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 
 	// Change offset, read and restore offset
 	File& file = m_open_files[fd];
@@ -153,7 +157,8 @@ static int do_sys_access(UserPtr<const char*> pathname_ptr, int mode) {
 }
 
 static ssize_t do_sys_write(int fd, UserPtr<const void*> buf, size_t count) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	return m_open_files[fd].write(buf, count);
 }
 
@@ -169,7 +174,8 @@ static int do_sys_stat(UserPtr<const char*> pathname_ptr,
 }
 
 static int do_sys_fstat(int fd, UserPtr<struct stat*> stat_ptr) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	return m_open_files[fd].stat(stat_ptr);
 }
 
@@ -177,7 +183,8 @@ static off_t do_sys_lseek(int fd, off_t offset, int whence) {
 	// We use signed types here, as the syscall does, but we use unsigned types
 	// in File. The syscall fails if the resulting offset is negative, so
 	// there isn't any problem about that
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	File& file = m_open_files[fd];
 	off_t ret;
 	switch (whence) {
@@ -203,7 +210,8 @@ static off_t do_sys_lseek(int fd, off_t offset, int whence) {
 }
 
 static int do_sys_close(int fd) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	//m_open_files.erase(fd); // ADAPTACIÓN STL
 	m_open_files.erase({fd, m_open_files[fd]});
 	return 0;
@@ -217,12 +225,16 @@ static uintptr_t do_sys_brk(uintptr_t addr) {
 	uintptr_t next_page = PAGE_CEIL(m_brk);
 	uintptr_t cur_page  = m_brk & PTL1_MASK;
 	if (addr > next_page) {
-		// We have to allocate space. First check if range is valid, and then
-		// check if we have enough free memory. Don't do it the other way round,
-		// as walking the page table in is_range_free allocates page table
-		// directories.
+		// We have to allocate space. Don't even bother to check if range is
+		// free if there isn't enough free memory, but ensure there is after
+		// checking it, because is_range_free consumes memory creating
+		// page table directories. TODO: improve this shit
 		size_t sz = PAGE_CEIL(addr - next_page);
 		uint64_t flags = PDE64_USER | PDE64_RW;
+
+		if (!Mem::Virt::enough_free_memory(sz)) {
+			return m_brk;
+		}
 
 		if (!Mem::Virt::is_range_free((void*)next_page, sz)) {
 			//printf_once("WARNING: brk range OOB allocating %lu\n", sz);
@@ -261,6 +273,8 @@ static ssize_t do_sys_readlink(UserPtr<const char*> pathname_ptr,
                                UserPtr<char*> buf, size_t bufsize)
 {
 	string pathname;
+	if (bufsize == 0)
+		return -EINVAL;
 	if (!copy_string_from_user(pathname_ptr, pathname))
 		return -EFAULT;
 	ASSERT(pathname == "/proc/self/exe", "not implemented %s", pathname.c_str());
@@ -272,7 +286,8 @@ static ssize_t do_sys_readlink(UserPtr<const char*> pathname_ptr,
 }
 
 static int do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
 		// We hold the whole struct termios2, but guest may want just a
 		// struct termios
@@ -290,7 +305,8 @@ static int do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 }
 
 static int do_sys_fcntl(int fd, int cmd, unsigned long arg) {
-	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
+	if (!m_open_files.count(fd))
+		return -EBADF;
 	File& file = m_open_files[fd];
 	uint64_t ret = 0;
 	uint32_t flags;
@@ -332,9 +348,10 @@ uint64_t prot_to_page_flags(int prot) {
 static uintptr_t do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
                              int flags, int fd, size_t offset)
 {
-	dbgprintf("mmap(%p, %ld, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
+	dbgprintf("mmap(%p, %lu, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
-	ASSERT(fd == -1 || m_open_files.count(fd), "not open fd: %d", fd);
+	if (fd != -1 && !m_open_files.count(fd))
+		return -EBADF;
 
 	// We're not supporting multiple threads, so MAP_SHARED can be safely
 	// removed
@@ -353,13 +370,14 @@ static uintptr_t do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 
 	// Round length to upper page boundary and check if we have enough memory
 	size_t length_upper = PAGE_CEIL(length);
-	if (!Mem::Virt::enough_free_memory(length_upper))
+	if (length_upper == 0 || !Mem::Virt::enough_free_memory(length_upper))
 		return -ENOMEM;
 
 	// Allocate memory
 	void* ret;
 	if (flags & MAP_FIXED) {
-		ASSERT(addr, "MAP_FIXED with no addr");
+		if (!addr || ((addr.flat() & PTL1_MASK) != addr.flat()))
+			return -EINVAL;
 		ret = addr.ptr();
 		Mem::Virt::alloc(ret, length_upper, page_flags);
 	} else {
@@ -386,10 +404,10 @@ static uintptr_t do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 }
 
 static int do_sys_munmap(UserPtr<void*> addr, size_t length) {
-	if (!addr || !length)
-		return -EINVAL;
 	// Round length to upper page boundary
 	length = PAGE_CEIL(length);
+	if (!length || ((addr.flat() & PTL1_MASK) != addr.flat()))
+		return -EINVAL;
 	Mem::Virt::free(addr.ptr(), length);
 	return 0;
 }

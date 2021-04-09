@@ -121,6 +121,7 @@ bool enough_free_memory(size_t length) {
 	// Also, when allocating memory we also need to allocate frames for page
 	// directory entries.
 	// FIXME: This doesn't guarantee having enough memory in all cases
+	// FIXME: multiplication overflow?
 	return Mem::Phys::amount_free_memory() > length*1.25;
 }
 

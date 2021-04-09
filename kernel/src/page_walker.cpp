@@ -15,7 +15,7 @@ PageWalker::PageWalker(void* start, size_t len)
 {
 	ASSERT((m_start & PTL1_MASK) == m_start, "not aligned start: %p", m_start);
 	ASSERT((m_len & PTL1_MASK) == m_len, "not aligned len: %p", m_len);
-	ASSERT(m_len > 0, "woops");
+	ASSERT(m_len > 0, "length is 0");
 	update_ptl3();
 	update_ptl2();
 	update_ptl1();
@@ -44,7 +44,10 @@ void PageWalker::alloc_frame(uint64_t flags) {
 
 void PageWalker::free_frame() {
 	uintptr_t page_addr = addr();
-	ASSERT(is_allocated(), "address not mapped: %p", page_addr);
+	if (!is_allocated()) {
+		printf_once("freeing not allocated page %p, ignoring\n", addr());
+		return;
+	}
 	Mem::Phys::free_frame(pte() & PHYS_MASK);
 	pte() = 0;
 	flush_tlb_entry(page_addr);
