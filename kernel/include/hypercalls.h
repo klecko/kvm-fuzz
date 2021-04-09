@@ -1,7 +1,8 @@
 #ifndef _HYPERCALLS_H
 #define _HYPERCALLS_H
 
-#include <linux/limits.h>
+#include "linux/limits.h"
+#include "linux/termios.h"
 #include "string"
 #include "common.h"
 
@@ -22,7 +23,8 @@ struct VmInfo {
 	void* elf_entry;
 	void* elf_load_addr;
 	void* interp_base;
-	struct phinfo_t phinfo;
+	phinfo_t phinfo;
+	struct termios2 term;
 };
 
 // Keep this the same as in the hypervisor

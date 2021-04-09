@@ -9,15 +9,16 @@
 #include "user_ptr.h"
 
 // Linux
-#include <asm/prctl.h>
-#include <sys/fcntl.h>
-#include <sys/utsname.h>
-#include <sys/mman.h>
-#include <sys/resource.h>
-#include <sys/sysinfo.h>
-#include <signal.h>
-
-using namespace std;
+#include "asm/prctl.h"
+#include "linux/fcntl.h"
+#include "linux/utsname.h"
+#include "linux/mman.h"
+#include "linux/resource.h"
+#include "linux/sysinfo.h"
+#include "linux/types.h"
+#include "linux/signal.h"
+#include "linux/fs.h"
+#include "linux/others.h"
 
 // Global user state
 string m_elf_path;
@@ -25,6 +26,7 @@ uintptr_t m_brk;
 uintptr_t m_min_brk;
 unordered_map<int, File> m_open_files;
 unordered_map<string, struct iovec> m_file_contents;
+struct termios2 m_term;
 Regs* m_user_regs;
 
 static const int MY_PID = 1234;
@@ -140,9 +142,14 @@ static int do_sys_access(UserPtr<const char*> pathname_ptr, int mode) {
 	string pathname;
 	if (!copy_string_from_user(pathname_ptr, pathname))
 		return -EFAULT;
-	ASSERT(mode == R_OK, "TODO mode %d accessing %s", mode, pathname.c_str());
-
-	return (m_file_contents.count(pathname) ? 0 : -EACCES);
+	if (!m_file_contents.count(pathname))
+		return -EACCES;
+	if ((mode & W_OK) || (mode & X_OK)) {
+		printf_once("access %s, mode %d, denying\n", pathname.c_str(), mode);
+		return -EACCES;
+	}
+	// It's asking for R_OK or F_OK
+	return 0;
 }
 
 static ssize_t do_sys_write(int fd, UserPtr<const void*> buf, size_t count) {
@@ -239,8 +246,8 @@ static uintptr_t do_sys_brk(uintptr_t addr) {
 	return m_brk;
 }
 
-static uint64_t do_sys_uname(UserPtr<struct utsname*> uname_ptr) {
-	constexpr static struct utsname uname = {
+static uint64_t do_sys_uname(UserPtr<struct new_utsname*> uname_ptr) {
+	constexpr static struct new_utsname uname = {
 		"Linux",                                              // sysname
 		"pep1t0",                                             // nodename
 		"5.8.0-43-generic",                                   // release
@@ -266,7 +273,19 @@ static ssize_t do_sys_readlink(UserPtr<const char*> pathname_ptr,
 
 static int do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	ASSERT(m_open_files.count(fd), "not open fd: %d", fd);
-	TODO
+	if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
+		// We hold the whole struct termios2, but guest may want just a
+		// struct termios
+		bool success;
+		if (request == TCGETS) {
+			success = copy_to_user(UserPtr<struct termios*>(arg),
+			                       (struct termios*)&m_term);
+		} else if (request == TCGETS2) {
+			success = copy_to_user(UserPtr<struct termios2*>(arg), &m_term);
+		} else TODO;
+		return (success ? 0 : -EFAULT);
+	}
+	ASSERT(false, "TODO ioctl, fd: %d, request: %p, arg: %p", fd, request, arg);
 	return 0;
 }
 
@@ -528,7 +547,7 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 			ret = do_sys_arch_prctl(arg0, arg1);
 			break;
 		case SYS_uname:
-			ret = do_sys_uname(UserPtr<struct utsname*>(arg0));
+			ret = do_sys_uname(UserPtr<struct new_utsname*>(arg0));
 			break;
 		case SYS_readlink:
 			ret = do_sys_readlink(UserPtr<const char*>(arg0),

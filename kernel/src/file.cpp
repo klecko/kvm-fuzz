@@ -1,6 +1,6 @@
+#include "asm-generic/fcntl.h"
 #include "file.h"
 #include "libcpp.h"
-#include <sys/fcntl.h>
 
 int File::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
                        inode_t inode)
@@ -16,9 +16,12 @@ int File::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
 		.st_size         = 0,
 		.st_blksize      = 4096,
 		.st_blocks       = 0,
-		.st_atim         = {1615575193, 228169446},
-		.st_mtim         = {1596888770, 0},
-		.st_ctim         = {1612697533, 117084367}
+		.st_atime        = 1615575193,
+		.st_atime_nsec   = 228169446,
+		.st_mtime        = 1596888770,
+		.st_mtime_nsec   = 0,
+		.st_ctime        = 1612697533,
+		.st_ctime_nsec   = 117084367,
 	};
 	struct stat st = regular_st;
 	st.st_ino = inode;
@@ -39,9 +42,12 @@ int File::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 		.st_size         = 0,
 		.st_blksize      = 1024,
 		.st_blocks       = 0,
-		.st_atim         = {0, 0},
-		.st_mtim         = {0, 0},
-		.st_ctim         = {0, 0}
+		.st_atime        = 0,
+		.st_atime_nsec   = 0,
+		.st_mtime        = 0,
+		.st_mtime_nsec   = 0,
+		.st_ctime        = 0,
+		.st_ctime_nsec   = 0,
 	};
 	return (copy_to_user(stat_ptr, &stdout_st) ? 0 : -EFAULT);
 }

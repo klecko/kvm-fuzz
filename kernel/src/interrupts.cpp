@@ -19,7 +19,7 @@ void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 	bool execute = error_code & (1 << 4);
 	uint64_t fault_addr = rdcr2();
 	if (!user) {
-		if (handle_safe_access_fault(frame))
+		if (SafeMem::handle_safe_access_fault(frame))
 			return;
 		printf("woops, kernel PF at %p. addr: %p, present: %d, write: %d, ex: %d\n",
 		       frame->rip, fault_addr, present, write, execute);

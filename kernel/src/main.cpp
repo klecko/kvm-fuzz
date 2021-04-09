@@ -1,5 +1,4 @@
-#include <unistd.h>
-#include <elf.h>
+#include "linux/auxvec.h"
 #include "user.h"
 #include "init.h"
 #include "mem.h"
@@ -38,7 +37,6 @@ const char* environ[] = {
 	// in the hypervisor
 	//"LC_NAME=es_ES.UTF-8",
 	//"LANG=es_ES.UTF-8",
-	"LTP_COLORIZE_OUTPUT=0",
 	"_=/usr/bin/env",
 };
 const int environ_n = sizeof(environ)/sizeof(*environ);
@@ -81,10 +79,13 @@ void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
 		user_stack -= 8;
 
 	// Set up auxp
-	// Note for future Klecko: the only mandatory one seems to be AT_RANDOM.
-	// Stop implementing these in an attempt to fix something.
+	// Note for future Klecko: the only mandatory one for static binaries seems
+	// to be AT_RANDOM. Stop implementing these in an attempt to fix something.
 	// Your bug is in another castle.
-	Elf64_auxv_t auxv[] = {
+	struct {
+		uint64_t type;
+		uint64_t value;
+	} auxv[] = {
 		{AT_PHDR,   (uint64_t)info.elf_load_addr + info.phinfo.e_phoff},
 		{AT_PHENT,  info.phinfo.e_phentsize},
 		{AT_PHNUM,  info.phinfo.e_phnum},
@@ -158,9 +159,10 @@ extern "C" void kmain(int argc, char** argv) {
 	}
 
 	// Initialize data members
-	m_elf_path   = string(info.elf_path);
-	m_brk        = info.brk;
-	m_min_brk    = m_brk;
+	m_elf_path = string(info.elf_path);
+	m_brk      = info.brk;
+	m_min_brk  = m_brk;
+	m_term     = info.term;
 	m_open_files[STDIN_FILENO]  = FileStdin();
 	m_open_files[STDOUT_FILENO] = FileStdout();
 	m_open_files[STDERR_FILENO] = FileStderr();

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <linux/limits.h>
 #include <sys/mman.h>
+#include <termios.h>
 #include "vm.h"
 
 using namespace std;
@@ -51,6 +52,7 @@ struct VmInfo {
 	vaddr_t elf_load_addr;
 	vaddr_t interp_base;
 	phinfo_t phinfo;
+	struct termios term;
 };
 
 void Vm::do_hc_get_info(vaddr_t info_addr) {
@@ -75,6 +77,14 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	info.elf_load_addr = m_elf.load_addr();
 	info.interp_base   = (m_interpreter ? m_interpreter->base() : 0);
 	info.phinfo        = m_elf.phinfo();
+
+	// Make sure our struct termios corresponds to the struct termios2
+	// that is used by the kernel
+	#if !defined(_HAVE_STRUCT_TERMIOS_C_ISPEED) ||   \
+	    !defined(_HAVE_STRUCT_TERMIOS_C_OSPEED)
+	#error struct termios in hypervisor is not struct termios2 in the kernel?
+	#endif
+	tcgetattr(STDOUT_FILENO, &info.term);
 
 	m_mmu.write(info_addr, info);
 }

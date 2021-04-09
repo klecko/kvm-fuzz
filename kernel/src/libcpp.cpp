@@ -74,18 +74,18 @@ bool copy_to_user(UserPtr<void*> dest, const void* src, size_t n) {
 	// if (!is_user_range(dest, n))
 	// 	return false;
 	// ASSERT(is_kernel_range(src, n), "woops");
-	return safe_memcpy(dest.ptr(), src, n);
+	return SafeMem::memcpy(dest.ptr(), src, n);
 }
 
 bool copy_from_user(void* dest, UserPtr<const void*> src, size_t n) {
 	// if (!is_user_range(src, n))
 	// 	return false;
 	// ASSERT(is_kernel_range(dest, n), "woops");
-	return safe_memcpy(dest, src.ptr(), n);
+	return SafeMem::memcpy(dest, src.ptr(), n);
 }
 
 bool copy_string_from_user(UserPtr<const char*> src, string& dst) {
-	ssize_t length = safe_strlen(src.ptr());
+	ssize_t length = SafeMem::strlen(src.ptr());
 	if (length == -1)
 		return false;
 

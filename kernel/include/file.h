@@ -1,9 +1,13 @@
 #ifndef _FILE_H
 #define _FILE_H
 
-#include <sys/stat.h>
+#include "asm/stat.h"
 #include "common.h"
 #include "user_ptr.h"
+
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
 
 typedef unsigned long inode_t;
 
