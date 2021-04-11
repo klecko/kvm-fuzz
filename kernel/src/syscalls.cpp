@@ -380,7 +380,7 @@ static uintptr_t do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	// Allocate memory
 	void* ret;
 	if (flags & MAP_FIXED) {
-		if (!addr || ((addr.flat() & PTL1_MASK) != addr.flat()))
+		if (addr.is_null() || ((addr.flat() & PTL1_MASK) != addr.flat()))
 			return -EINVAL;
 		ret = addr.ptr();
 		Mem::Virt::alloc(ret, length_upper, page_flags);
@@ -426,8 +426,9 @@ static int do_sys_prlimit(pid_t pid, int resource,
                           UserPtr<const struct rlimit*> new_limit_ptr,
                           UserPtr<struct rlimit*> old_limit_ptr)
 {
-	ASSERT(pid == MY_PID, "TODO pid %d", pid);
-	if (old_limit_ptr) {
+	// PID 0 refers to calling process' PID
+	ASSERT(pid == MY_PID || pid == 0, "TODO pid %d", pid);
+	if (!old_limit_ptr.is_null()) {
 		struct rlimit limit;
 		switch (resource) {
 			case RLIMIT_NOFILE:
@@ -445,7 +446,7 @@ static int do_sys_prlimit(pid_t pid, int resource,
 			return -EFAULT;
 	}
 
-	if (new_limit_ptr) {
+	if (!new_limit_ptr.is_null()) {
 		switch (resource) {
 			case RLIMIT_CORE:
 				break;
@@ -629,6 +630,10 @@ uint64_t handle_syscall(int nr, uint64_t arg0, uint64_t arg1, uint64_t arg2,
 		case SYS_futex:
 			ret = 0;
 			printf_once("TODO futex\n");
+			break;
+		case SYS_sigaltstack:
+			ret = 0;
+			printf_once("TODO sigaltstack\n");
 			break;
 
 		default:

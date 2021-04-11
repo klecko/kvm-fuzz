@@ -32,8 +32,8 @@ public:
 		m_ptr += n;
 	}
 
-	operator bool() const {
-		return m_ptr;
+	bool is_null() const {
+		return !m_ptr;
 	}
 
 	operator UserPtr<void*>() const {
