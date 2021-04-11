@@ -2,6 +2,7 @@
 #include "common.h"
 #include "asm.h"
 #include "safe_mem.h"
+#include "apic.h"
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
@@ -84,4 +85,10 @@ void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 		.kernel = false, // ?
 	};
 	hc_fault(&fault);
+}
+
+__attribute__((interrupt))
+void handle_apic_timer(InterruptFrame* frame) {
+	// printf("hello from timer\n");
+	APIC::reset_timer();
 }

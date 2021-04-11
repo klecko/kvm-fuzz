@@ -4,6 +4,8 @@
 #include "asm.h"
 #include "syscalls.h"
 
+namespace Syscall {
+
 static void* g_kernel_stack;
 static void* g_user_stack;
 
@@ -21,22 +23,36 @@ static uint64_t _handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
 // dirty any other register
 __attribute__((__always_inline__)) inline
 static void save_kernel_stack() {
-	asm volatile("mov %[kernel_stack], rsp;" : [kernel_stack] "=m"(g_kernel_stack) : :);
+	asm volatile(
+		"mov %[kernel_stack], rsp;"
+		: [kernel_stack] "=m"(g_kernel_stack)
+	);
 }
 
 __attribute__((__always_inline__)) inline
 static void save_user_stack() {
-	asm volatile("mov %[user_stack], rsp;" : [user_stack] "=m"(g_user_stack) : :);
+	asm volatile(
+		"mov %[user_stack], rsp;"
+		: [user_stack] "=m"(g_user_stack)
+	);
 }
 
 __attribute__((__always_inline__)) inline
 static void restore_kernel_stack() {
-	asm volatile("mov rsp, %[kernel_stack];" : [kernel_stack] "=m"(g_kernel_stack) : :);
+	asm volatile(
+		"mov rsp, %[kernel_stack];"
+		:
+		: [kernel_stack] "m"(g_kernel_stack)
+	);
 }
 
 __attribute__((__always_inline__)) inline
 static void restore_user_stack() {
-	asm volatile("mov rsp, %[user_stack];" : [user_stack] "=m"(g_user_stack) : :);
+	asm volatile(
+		"mov rsp, %[user_stack];"
+		:
+		: [user_stack] "m"(g_user_stack)
+	);
 }
 
 __attribute__((naked))
@@ -96,7 +112,7 @@ static void syscall_entry() {
 	asm volatile("sysretq");
 }
 
-void init_syscall() {
+void init() {
 	/*
 	[SYSCALL]
 	CS.selector = STAR 47:32
@@ -113,9 +129,11 @@ void init_syscall() {
 	star |= ((uint64_t)(SEGMENT_SELECTOR_UDATA - 8) << 48);  // for sysret
 	wrmsr(MSR_STAR, star);
 	wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
-	wrmsr(MSR_SYSCALL_MASK, 0x3f7fd5);
+	wrmsr(MSR_SYSCALL_MASK, 0x3F7DD5);
 
 	save_kernel_stack();
 
 	dbgprintf("Syscall handler set\n");
+}
+
 }

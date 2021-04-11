@@ -3,15 +3,15 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -no-pie -DDEBUG=1")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 
 set(SOURCE_FILES
+	src/args.cpp
+	src/corpus.cpp
+	src/elf_parser.cpp
+	src/hypercalls.cpp
 	src/main.cpp
 	src/mmu.cpp
-	src/vm.cpp
-	src/elf_parser.cpp
-	src/corpus.cpp
-	src/args.cpp
-	src/utils.cpp
 	src/page_walker.cpp
-	src/hypercalls.cpp
+	src/utils.cpp
+	src/vm.cpp
 )
 
 include_directories(include)

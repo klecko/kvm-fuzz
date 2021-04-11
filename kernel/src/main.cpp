@@ -1,6 +1,7 @@
 #include "linux/auxvec.h"
 #include "user.h"
 #include "init.h"
+#include "apic.h"
 #include "mem.h"
 #include "asm.h"
 #include "vector"
@@ -139,10 +140,10 @@ void init_performance_counter() {
 extern "C" void kmain(int argc, char** argv) {
 	// Init kernel stuff
 	Mem::Phys::init_memory();
-	init_tss();
-	init_gdt();
-	init_idt();
-	init_syscall();
+	GDT::init();
+	IDT::init();
+	Syscall::init();
+	APIC::init();
 #ifdef ENABLE_INSTRUCTION_COUNT
 	init_performance_counter();
 #endif

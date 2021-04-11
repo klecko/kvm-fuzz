@@ -15,20 +15,22 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib -lgcc")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_FILE}")
 
 set(SOURCE_FILES
-	src/main.cpp
-	src/libcpp.cpp
-	src/hypercalls.cpp
-	src/interrupts.cpp
+	src/apic.cpp
 	src/file.cpp
-	src/syscalls.cpp
-	src/printf.cpp
-	src/isrs.asm
-	src/init_idt.cpp
+	src/hypercalls.cpp
 	src/init_gdt.cpp
+	src/init_idt.cpp
 	src/init_syscall.cpp
+	src/interrupts.cpp
+	src/isrs.asm
+	src/libcpp.cpp
+	src/main.cpp
 	src/mem.cpp
 	src/page_walker.cpp
+	src/pit.cpp
+	src/printf.cpp
 	src/safe_mem.cpp
+	src/syscalls.cpp
 )
 
 include_directories(

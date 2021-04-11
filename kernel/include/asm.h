@@ -4,6 +4,7 @@
 #include "common.h"
 
 //x86-64 specific MSRs
+#define MSR_APIC_BASE        0x0000001B // physical address of APIC
 #define MSR_EFER             0xc0000080 // extended feature register
 #define MSR_STAR             0xc0000081 // legacy mode SYSCALL target
 #define MSR_LSTAR            0xc0000082 // long mode SYSCALL target
@@ -86,12 +87,44 @@ inline uint64_t instructions_executed() {
 #endif
 }
 
+inline void outb(uint16_t port, uint8_t val) {
+	asm volatile(
+		"out %0, %1"
+		:
+		: "Nd" (port), "a"(val)
+	);
+}
+
+inline uint8_t inb(uint16_t port) {
+	uint8_t val;
+	asm volatile(
+		"in %0, %1"
+		: "=a"(val)
+		: "Nd" (port)
+	);
+	return val;
+}
+
+inline void sti() {
+	asm volatile("sti");
+}
+
+inline uint64_t rflags() {
+	uint64_t val;
+	asm volatile (
+		"pushf;"
+		"pop %0;"
+		: "=r"(val)
+	);
+	return val;
+}
+
 inline void jump_to_user(void* entry, void* stack) {
 	asm volatile (
 		// Set user stack, RIP and RFLAGS
 		"mov rsp, %[rsp];"
 		"mov rcx, %[entry];"
-		"mov r11, 0x2;"
+		"mov r11, 0x202;"
 
 		// Clear every other register
 		"xor rax, rax;"

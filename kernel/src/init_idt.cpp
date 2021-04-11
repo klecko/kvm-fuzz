@@ -2,13 +2,17 @@
 #include "idt.h"
 #include "interrupts.h"
 
+// These are defined in isrs.asm, and they just call handle_interrupt.
+extern uint64_t _defaultISRs;
+
+namespace IDT {
+
 static InterruptDescriptor g_idt[N_IDT_ENTRIES];
 
-void init_idt() {
+void init() {
 	static_assert(sizeof(InterruptDescriptor) == 16);
 
-	// These are defined in isrs.asm, and they just call handle_interrupt.
-	extern uint64_t _defaultISRs;
+	// Register default Interrupt Service Routines
 	uint64_t* defaultISRs = &_defaultISRs;
 	for (size_t i = 0; i < 256; i++) {
 		g_idt[i].set_present();
@@ -32,6 +36,7 @@ void init_idt() {
 	g_idt[ExceptionNumber::GeneralProtectionFault]
 		.set_offset((uint64_t)handle_general_protection_fault);
 	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)handle_page_fault);
+	g_idt[IRQNumber::APICTimer].set_offset((uint64_t)handle_apic_timer);
 
 	IDTR idtr = {
 		.size   = sizeof(g_idt) - 1,
@@ -40,4 +45,6 @@ void init_idt() {
 	idtr.load();
 
 	dbgprintf("IDT set\n");
+}
+
 }

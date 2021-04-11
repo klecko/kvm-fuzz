@@ -30,6 +30,10 @@ bool PageWalker::is_allocated() const {
 }
 
 void PageWalker::alloc_frame(uint64_t flags) {
+	map(Mem::Phys::alloc_frame(), flags);
+}
+
+void PageWalker::map(uintptr_t phys, uint64_t flags) {
 	// Free old mapping if address was already mapped
 	if (is_allocated()) {
 		printf_once("mapping %p twice, discarding old mapping\n", addr());
@@ -37,7 +41,7 @@ void PageWalker::alloc_frame(uint64_t flags) {
 	}
 
 	// Map
-	pte() = Mem::Phys::alloc_frame() | flags;
+	pte() = phys | flags;
 	flush_tlb_entry(addr());
 	//dbgprintf("mapping: %p to phys %p\n", addr(), pte() & PHYS_MASK);
 }

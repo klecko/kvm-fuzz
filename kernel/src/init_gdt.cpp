@@ -2,10 +2,12 @@
 #include "gdt.h"
 #include "tss.h"
 
+namespace GDT {
+
 static TSSEntry g_tss;
 static GlobalDescriptor g_gdt[N_GDT_ENTRIES];
 
-void init_tss() {
+static void init_tss() {
 	// The TSS is referenced by a TSSDescriptor in the GDT. The selector of this
 	// TSSDescriptor is loaded into the TSR when loading the GDT.
 	static_assert(sizeof(TSSEntry) == 104);
@@ -19,9 +21,11 @@ void init_tss() {
 	g_tss.iopb = sizeof(TSSEntry);
 }
 
-void init_gdt() {
+void init() {
 	static_assert(sizeof(GlobalDescriptor) == 0x8);
 	static_assert(sizeof(TSSDescriptor) == 0x10);
+
+	init_tss();
 
 	// Null descriptor is at offset 0x00
 	// Kernel code, offset 0x08
@@ -53,4 +57,6 @@ void init_gdt() {
 	gdt_ptr.load();
 
 	dbgprintf("GDT set\n");
+}
+
 }

@@ -14,6 +14,8 @@ public:
 
 	void alloc_frame(uint64_t flags);
 
+	void map(uintptr_t phys, uint64_t flags);
+
 	void free_frame();
 
 	void set_flags(uint64_t flags);

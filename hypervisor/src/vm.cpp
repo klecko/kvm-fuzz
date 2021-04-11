@@ -95,6 +95,11 @@ Vm::Vm(const Vm& other)
 	ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
 	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
 
+	// Copy Local APIC
+	kvm_lapic_state lapic;
+	ioctl_chk(other.m_vcpu_fd, KVM_GET_LAPIC, &lapic);
+	ioctl_chk(m_vcpu_fd, KVM_SET_LAPIC, lapic);
+
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
@@ -102,6 +107,13 @@ Vm::Vm(const Vm& other)
 
 int Vm::create_vm() {
 	m_vm_fd = ioctl_chk(g_kvm_fd, KVM_CREATE_VM, 0);
+
+	struct kvm_pit_config pit = {
+		.flags = KVM_PIT_SPEAKER_DUMMY,
+	};
+	ioctl_chk(m_vm_fd, KVM_CREATE_IRQCHIP, 0);
+	ioctl_chk(m_vm_fd, KVM_CREATE_PIT2, &pit);
+
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
 	size_t max_size = ioctl_chk(m_vm_fd, KVM_CHECK_EXTENSION, KVM_CAP_DIRTY_LOG_RING);
 	ASSERT(max_size, "kvm dirty log ring not available");
