@@ -105,7 +105,7 @@ inline uint8_t inb(uint16_t port) {
 	return val;
 }
 
-inline void sti() {
+inline void enable_interrupts() {
 	asm volatile("sti");
 }
 
