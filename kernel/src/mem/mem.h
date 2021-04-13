@@ -1,7 +1,7 @@
 #ifndef _MEM_H
 #define _MEM_H
 
-#include "x86.h"
+#include "x86/page_table.h"
 
 namespace Mem {
 	namespace Phys {

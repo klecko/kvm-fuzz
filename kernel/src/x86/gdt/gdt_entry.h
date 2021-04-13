@@ -3,16 +3,7 @@
 
 #include "common.h"
 
-// According to syscall and sysret instructions, kernel data must be after
-// kernel code, but user data must be before user code.
-// Detailed in Kernel::register_syscall
-#define N_GDT_ENTRIES             7 // TSS counts twice
-#define SEGMENT_SELECTOR_NULL  0x00
-#define SEGMENT_SELECTOR_KCODE 0x08
-#define SEGMENT_SELECTOR_KDATA 0x10
-#define SEGMENT_SELECTOR_UDATA 0x18
-#define SEGMENT_SELECTOR_UCODE 0x20
-#define SEGMENT_SELECTOR_TSS   0x28
+namespace GDT {
 
 // https://wiki.osdev.org/Global_Descriptor_Table
 // https://wiki.osdev.org/GDT_Tutorial
@@ -105,13 +96,13 @@ public:
 struct GDTPtr {
 	uint16_t size;
 	uint64_t offset;
-	void load() {
+	void load(uint16_t segment_selector_tss) {
 		// Maybe it's SEGMENT_SELECTOR_TSS | 3
 		asm volatile("lgdt %0" : : "m"(*this));
-		asm volatile("ltr %0" : : "r"((uint16_t)SEGMENT_SELECTOR_TSS));
+		asm volatile("ltr %0" : : "r"((uint16_t)segment_selector_tss));
 	}
 } __attribute__((packed));
 
-
+}
 
 #endif

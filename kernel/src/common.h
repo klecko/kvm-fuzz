@@ -1,6 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "libcpp.h"
+#include "libcpp/libcpp.h"
 #include "hypercalls.h"
 
 #define ENABLE_GUEST_OUTPUT

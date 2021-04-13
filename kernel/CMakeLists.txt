@@ -15,22 +15,43 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib -lgcc")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_FILE}")
 
 set(SOURCE_FILES
-	src/apic.cpp
-	src/file.cpp
+	src/apic/apic.cpp
+	src/fs/file_description.cpp
+	src/fs/file_manager.cpp
+	src/gdt/gdt.cpp
 	src/hypercalls.cpp
-	src/init_gdt.cpp
-	src/init_idt.cpp
-	src/init_syscall.cpp
+	src/idt/default_isrs.asm
+	src/idt/idt.cpp
 	src/interrupts.cpp
-	src/isrs.asm
-	src/libcpp.cpp
+	src/libcpp/libcpp.cpp
+	src/libcpp/printf.cpp
+	src/libcpp/safe_mem.cpp
 	src/main.cpp
-	src/mem.cpp
-	src/page_walker.cpp
-	src/pit.cpp
-	src/printf.cpp
-	src/safe_mem.cpp
-	src/syscalls.cpp
+	src/mem/mem.cpp
+	src/mem/page_walker.cpp
+	src/pit/pit.cpp
+	src/process.cpp
+	src/scheduler.cpp
+	src/syscall/syscall.cpp
+	src/syscalls/access.cpp
+	src/syscalls/brk.cpp
+	src/syscalls/dup.cpp
+	src/syscalls/fcntl.cpp
+	src/syscalls/ioctl.cpp
+	src/syscalls/kill.cpp
+	src/syscalls/lseek.cpp
+	src/syscalls/mmap.cpp
+	src/syscalls/open.cpp
+	src/syscalls/prctl.cpp
+	src/syscalls/prlimit.cpp
+	src/syscalls/read.cpp
+	src/syscalls/readlink.cpp
+	src/syscalls/stat.cpp
+	src/syscalls/sysinfo.cpp
+	src/syscalls/time.cpp
+	src/syscalls/uname.cpp
+	src/syscalls/write.cpp
+	src/user.cpp
 )
 
 include_directories(

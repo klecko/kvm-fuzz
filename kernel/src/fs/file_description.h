@@ -4,6 +4,7 @@
 #include "asm/stat.h"
 #include "common.h"
 #include "user_ptr.h"
+#include "linux/fcntl.h"
 
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
@@ -11,14 +12,17 @@
 
 typedef unsigned long inode_t;
 
-class File {
+class FileDescription {
 public:
 	// Used by stat. Fstat should use the corresponding method in File
 	static int stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
 					        inode_t inode);
 	static int stat_stdout(UserPtr<struct stat*> stat_ptr);
 
-	File(uint32_t flags = 0, const char* buf = NULL, size_t size = 0);
+	FileDescription(uint32_t flags=0, const char* buf=nullptr, size_t size=0);
+
+	void ref();
+	void unref();
 
 	uint32_t flags() const;
 	void set_flags(uint32_t flags);
@@ -40,9 +44,9 @@ protected:
 	// inherited classes to set one of these. That way polymorphism is achieved
 	// while avoiding dynamic memory allocations
 	struct file_ops {
-		int (File::*do_stat)(UserPtr<struct stat*> stat_ptr) const;
-		ssize_t (File::*do_read)(UserPtr<void*> buf, size_t len);
-		ssize_t (File::*do_write)(UserPtr<const void*> buf, size_t len);
+		int (FileDescription::*do_stat)(UserPtr<struct stat*> stat_ptr) const;
+		ssize_t (FileDescription::*do_read)(UserPtr<void*> buf, size_t len);
+		ssize_t (FileDescription::*do_write)(UserPtr<const void*> buf, size_t len);
 	};
 	static const file_ops fops_regular;
 	static const file_ops fops_stdin;
@@ -51,6 +55,8 @@ protected:
 	file_ops m_fops;
 
 private:
+	size_t m_ref_count;
+
 	// Flags specified when calling open (O_RDONLY, O_RDWR...)
 	uint32_t m_flags;
 
@@ -74,19 +80,19 @@ private:
 	ssize_t do_write_stdout(UserPtr<const void*> buf, size_t len);
 };
 
-class FileStdin : public File {
+class FileDescriptionStdin : public FileDescription {
 public:
-	FileStdin();
+	FileDescriptionStdin();
 };
 
-class FileStdout : public File {
+class FileDescriptionStdout : public FileDescription {
 public:
-	FileStdout();
+	FileDescriptionStdout();
 };
 
-class FileStderr : public File {
+class FileDescriptionStderr : public FileDescription {
 public:
-	FileStderr();
+	FileDescriptionStderr();
 };
 
 #endif

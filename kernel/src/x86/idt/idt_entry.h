@@ -2,9 +2,8 @@
 #define _IDT_H
 
 #include "common.h"
-#include "gdt.h"
 
-#define N_IDT_ENTRIES 256
+namespace IDT {
 
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 struct InterruptDescriptor {
@@ -15,7 +14,7 @@ private:
 	static const int IDT_SHIFT_TYPE    = 0;
 
 	uint16_t m_offset_low  = 0;
-	uint16_t m_selector    = SEGMENT_SELECTOR_KCODE;
+	uint16_t m_selector    = 0;
 	uint8_t  m_ist         = 0;
 	uint8_t  m_attributes  = 0;
 	uint16_t m_offset_mid  = 0;
@@ -66,5 +65,7 @@ struct IDTR {
 		asm volatile("lidt %0" : : "m"(*this));
 	}
 } __attribute__((packed));
+
+}
 
 #endif

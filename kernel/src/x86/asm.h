@@ -79,13 +79,6 @@ inline void flush_tlb_entry(uintptr_t page) {
 	);
 }
 
-inline uint64_t instructions_executed() {
-#ifdef ENABLE_INSTRUCTION_COUNT
-	return rdmsr(MSR_FIXED_CTR0);
-#else
-	return 0;
-#endif
-}
 
 inline void outb(uint16_t port, uint8_t val) {
 	asm volatile(
@@ -119,35 +112,5 @@ inline uint64_t rflags() {
 	return val;
 }
 
-inline void jump_to_user(void* entry, void* stack) {
-	asm volatile (
-		// Set user stack, RIP and RFLAGS
-		"mov rsp, %[rsp];"
-		"mov rcx, %[entry];"
-		"mov r11, 0x202;"
-
-		// Clear every other register
-		"xor rax, rax;"
-		"xor rbx, rbx;"
-		"xor rdx, rdx;"
-		"xor rdi, rdi;"
-		"xor rsi, rsi;"
-		"xor rbp, rbp;"
-		"xor r8, r8;"
-		"xor r9, r9;"
-		"xor r10, r10;"
-		"xor r12, r12;"
-		"xor r13, r13;"
-		"xor r14, r14;"
-		"xor r15, r15;"
-
-		// Jump to user
-		"sysretq;"
-		:
-		: [rsp]   "a" (stack),
-		  [entry] "b" (entry)
-		:
-	);
-}
 
 #endif

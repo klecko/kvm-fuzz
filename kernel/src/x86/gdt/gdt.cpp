@@ -1,6 +1,6 @@
-#include "init.h"
 #include "gdt.h"
-#include "tss.h"
+#include "gdt_entry.h"
+#include "tss_entry.h"
 
 namespace GDT {
 
@@ -54,7 +54,7 @@ void init() {
 		.size = sizeof(g_gdt) - 1,
 		.offset = (uint64_t)g_gdt
 	};
-	gdt_ptr.load();
+	gdt_ptr.load(SEGMENT_SELECTOR_TSS);
 
 	dbgprintf("GDT set\n");
 }

@@ -1,8 +1,7 @@
-#include "asm-generic/fcntl.h"
-#include "file.h"
-#include "libcpp.h"
+#include "fs/file_description.h"
+#include "libcpp/libcpp.h"
 
-int File::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
+int FileDescription::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
                        inode_t inode)
 {
 	static constexpr struct stat regular_st = {
@@ -30,7 +29,7 @@ int File::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
 	return (copy_to_user(stat_ptr, &st) ? 0 : -EFAULT);
 }
 
-int File::stat_stdout(UserPtr<struct stat*> stat_ptr) {
+int FileDescription::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 	static constexpr struct stat stdout_st = {
 		.st_dev          = 22,
 		.st_ino          = 6,
@@ -52,73 +51,85 @@ int File::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 	return (copy_to_user(stat_ptr, &stdout_st) ? 0 : -EFAULT);
 }
 
-const File::file_ops File::fops_regular = {
-	.do_stat  = &File::do_stat_regular,
-	.do_read  = &File::do_read_regular,
+const FileDescription::file_ops FileDescription::fops_regular = {
+	.do_stat  = &FileDescription::do_stat_regular,
+	.do_read  = &FileDescription::do_read_regular,
 	.do_write = nullptr,
 };
 
-const File::file_ops File::fops_stdin = {
+const FileDescription::file_ops FileDescription::fops_stdin = {
 	.do_stat  = nullptr,
 	.do_read  = nullptr,
 	.do_write = nullptr,
 };
 
-const File::file_ops File::fops_stdout = {
-	.do_stat  = &File::do_stat_stdout,
+const FileDescription::file_ops FileDescription::fops_stdout = {
+	.do_stat  = &FileDescription::do_stat_stdout,
 	.do_read  = nullptr,
-	.do_write = &File::do_write_stdout,
+	.do_write = &FileDescription::do_write_stdout,
 };
 
-const File::file_ops File::fops_stderr = File::fops_stdout;
+const FileDescription::file_ops FileDescription::fops_stderr = FileDescription::fops_stdout;
 
-File::File(uint32_t flags, const char* buf, size_t size)
+FileDescription::FileDescription(uint32_t flags, const char* buf, size_t size)
 	: m_fops(fops_regular)
+	, m_ref_count(1)
 	, m_flags(flags)
 	, m_buf(buf)
 	, m_size(size)
 	, m_offset(0)
 { }
 
-uint32_t File::flags() const {
+void FileDescription::ref() {
+	m_ref_count++;
+}
+
+void FileDescription::unref() {
+	ASSERT(m_ref_count != 0, "unref with ref_count = 0");
+	m_ref_count--;
+	if (m_ref_count == 0)
+		delete this;
+}
+
+uint32_t FileDescription::flags() const {
 	return m_flags;
 }
 
-void File::set_flags(uint32_t flags) {
+void FileDescription::set_flags(uint32_t flags) {
 	m_flags = flags;
 }
 
-bool File::is_readable() const {
+bool FileDescription::is_readable() const {
 	uint32_t accmode = m_flags & O_ACCMODE;
 	return (accmode == O_RDONLY || accmode == O_RDWR);
 }
 
-bool File::is_writable() const {
+bool FileDescription::is_writable() const {
 	uint32_t accmode = m_flags & O_ACCMODE;
 	return (accmode == O_WRONLY || accmode == O_RDWR);
 }
 
-const char* File::buf() const {
+const char* FileDescription::buf() const {
 	return m_buf;
 }
 
-const char* File::cursor() const {
+const char* FileDescription::cursor() const {
 	return m_buf + m_offset;
 }
 
-size_t File::size() const {
+size_t FileDescription::size() const {
 	return m_size;
 }
 
-size_t File::offset() const {
+size_t FileDescription::offset() const {
 	return m_offset;
 }
 
-void File::set_offset(size_t offset) {
+void FileDescription::set_offset(size_t offset) {
 	m_offset = offset;
 }
 
-size_t File::move_cursor(size_t increment) {
+size_t FileDescription::move_cursor(size_t increment) {
 	// Check if offset is currently past end
 	if (m_offset >= m_size)
 		return 0;
@@ -131,31 +142,31 @@ size_t File::move_cursor(size_t increment) {
 	return ret;
 }
 
-int File::stat(UserPtr<struct stat*> stat_ptr) const {
+int FileDescription::stat(UserPtr<struct stat*> stat_ptr) const {
 	ASSERT(m_fops.do_stat, "not implemented stat");
 	return (this->*m_fops.do_stat)(stat_ptr);
 }
 
-ssize_t File::read(UserPtr<void*> buf, size_t len) {
+ssize_t FileDescription::read(UserPtr<void*> buf, size_t len) {
 	ASSERT(m_fops.do_read, "not implemented read");
 	return (this->*m_fops.do_read)(buf, len);
 }
 
-ssize_t File::write(UserPtr<const void*> buf, size_t len) {
+ssize_t FileDescription::write(UserPtr<const void*> buf, size_t len) {
 	ASSERT(m_fops.do_write, "not implemented write");
 	return (this->*m_fops.do_write)(buf, len);
 }
 
 // All fstat syscalls fall back to stat
-int File::do_stat_regular(UserPtr<struct stat*> stat_ptr) const {
+int FileDescription::do_stat_regular(UserPtr<struct stat*> stat_ptr) const {
 	return stat_regular(stat_ptr, m_size, (inode_t)m_buf);
 }
 
-int File::do_stat_stdout(UserPtr<struct stat*> stat_ptr) const {
+int FileDescription::do_stat_stdout(UserPtr<struct stat*> stat_ptr) const {
 	return stat_stdout(stat_ptr);
 }
 
-ssize_t File::do_read_regular(UserPtr<void*> buf, size_t len) {
+ssize_t FileDescription::do_read_regular(UserPtr<void*> buf, size_t len) {
 	ASSERT(is_readable(), "trying to read from not readable file");
 
 	// Get cursor, move it, and try to write to memory the resulting length
@@ -164,7 +175,7 @@ ssize_t File::do_read_regular(UserPtr<void*> buf, size_t len) {
 	return (copy_to_user(buf, p, len) ? len : -EFAULT);
 }
 
-ssize_t File::do_write_stdout(UserPtr<const void*> buf, size_t len) {
+ssize_t FileDescription::do_write_stdout(UserPtr<const void*> buf, size_t len) {
 	ssize_t ret = len;
 #ifdef ENABLE_GUEST_OUTPUT
 	ret = print_user(buf, len);
@@ -173,20 +184,20 @@ ssize_t File::do_write_stdout(UserPtr<const void*> buf, size_t len) {
 }
 
 
-FileStdin::FileStdin()
-	: File(O_RDONLY)
+FileDescriptionStdin::FileDescriptionStdin()
+	: FileDescription(O_RDONLY)
 {
 	m_fops = fops_stdin;
 };
 
-FileStdout::FileStdout()
-	: File(O_WRONLY)
+FileDescriptionStdout::FileDescriptionStdout()
+	: FileDescription(O_WRONLY)
 {
 	m_fops = fops_stdout;
 };
 
-FileStderr::FileStderr()
-	: File(O_WRONLY)
+FileDescriptionStderr::FileDescriptionStderr()
+	: FileDescription(O_WRONLY)
 {
 	m_fops = fops_stderr;
 };

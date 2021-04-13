@@ -1,8 +1,7 @@
-#include "init.h"
 #include "common.h"
-#include "gdt.h"
-#include "asm.h"
-#include "syscalls.h"
+#include "x86/gdt/gdt.h"
+#include "x86/asm.h"
+#include "scheduler.h"
 
 namespace Syscall {
 
@@ -13,10 +12,10 @@ static void* g_user_stack;
 // from there without dirtying any reg
 static uint64_t _handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
                                 uint64_t arg3, uint64_t arg4, uint64_t arg5,
-                                Regs* regs)
+                                Regs* regs, int nr)
 {
-	register int nr asm("eax");
-	return handle_syscall(nr, arg0, arg1, arg2, arg3, arg4, arg5, regs);
+	return Scheduler::current().handle_syscall(nr, arg0, arg1, arg2, arg3, arg4,
+	                                           arg5, regs);
 }
 
 // Warning: -fpie is needed for these to use relative addressing so it doesn't
@@ -79,6 +78,9 @@ static void syscall_entry() {
 	// registers we just pushed, which the handler can read and modify.
 		"push rsp;"
 
+	// Push syscall number as 8th argument for the handler.
+		"push rax;"
+
 	// The forth argument is set in r10. We need to move it to rcx to conform to
 	// C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9, stack.
 		"mov rcx, r10;"
@@ -87,6 +89,7 @@ static void syscall_entry() {
 		"call %[handler];"
 
 	// Restore registers
+		"pop rax;"
 		"pop rsp;"
 
 		"pop rcx;"
@@ -122,11 +125,11 @@ void init() {
 	CS.selector = STAR 63:48 + 16
 	SS.selector = STAR 63:48 + 8
 	*/
-	static_assert(SEGMENT_SELECTOR_KDATA == SEGMENT_SELECTOR_KCODE + 8);
-	static_assert(SEGMENT_SELECTOR_UCODE == SEGMENT_SELECTOR_UDATA + 8);
+	static_assert(GDT::SEGMENT_SELECTOR_KDATA == GDT::SEGMENT_SELECTOR_KCODE + 8);
+	static_assert(GDT::SEGMENT_SELECTOR_UCODE == GDT::SEGMENT_SELECTOR_UDATA + 8);
 	uint64_t star = 0;
-	star |= ((uint64_t)SEGMENT_SELECTOR_KCODE << 32);        // for syscall
-	star |= ((uint64_t)(SEGMENT_SELECTOR_UDATA - 8) << 48);  // for sysret
+	star |= ((uint64_t)GDT::SEGMENT_SELECTOR_KCODE << 32);        // for syscall
+	star |= ((uint64_t)(GDT::SEGMENT_SELECTOR_UDATA - 8) << 48);  // for sysret
 	wrmsr(MSR_STAR, star);
 	wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
 	wrmsr(MSR_SYSCALL_MASK, 0x3F7DD5);

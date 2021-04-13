@@ -1,8 +1,10 @@
 #include "init.h"
 #include "idt.h"
+#include "idt_entry.h"
 #include "interrupts.h"
+#include "x86/GDT/gdt.h"
 
-// These are defined in isrs.asm, and they just call handle_interrupt.
+// These are defined in default_isrs.asm, and they just call handle_interrupt.
 extern uint64_t _defaultISRs;
 
 namespace IDT {
@@ -16,6 +18,7 @@ void init() {
 	uint64_t* defaultISRs = &_defaultISRs;
 	for (size_t i = 0; i < 256; i++) {
 		g_idt[i].set_present();
+		g_idt[i].set_selector(GDT::SEGMENT_SELECTOR_KCODE);
 		g_idt[i].set_offset(defaultISRs[i]);
 		g_idt[i].set_dpl(3);
 		if (i < 32)
@@ -38,6 +41,7 @@ void init() {
 	g_idt[ExceptionNumber::PageFault].set_offset((uint64_t)handle_page_fault);
 	g_idt[IRQNumber::APICTimer].set_offset((uint64_t)handle_apic_timer);
 
+	// Load the IDT
 	IDTR idtr = {
 		.size   = sizeof(g_idt) - 1,
 		.offset = (uint64_t)g_idt

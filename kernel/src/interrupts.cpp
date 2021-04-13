@@ -1,8 +1,8 @@
 #include "interrupts.h"
 #include "common.h"
 #include "asm.h"
-#include "safe_mem.h"
-#include "apic.h"
+#include "libcpp/safe_mem.h"
+#include "x86/APIC/apic.h"
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
