@@ -1,8 +1,8 @@
 #include "apic.h"
 #include "common.h"
-#include "mem/page_walker.h"
 #include "x86/asm.h"
 #include "x86/pit/pit.h"
+#include "mem/vmm.h"
 #include "interrupts.h"
 
 #define APIC_APICID     0x20
@@ -89,8 +89,9 @@ void init() {
 
 	// Map it
 	g_apic = (uint8_t*)0x1234000; // FIXME: which address should i map it to?
-	PageWalker mapper(g_apic, 0x1000);
-	mapper.map(phys, PDE64_RW | PDE64_PRESENT);
+	uint64_t page_flags = PageTableEntry::Present | PageTableEntry::ReadWrite;
+	ASSERT(VMM::kernel_page_table().map((uintptr_t)g_apic, phys, page_flags),
+	       "failed to map APIC?");
 
 	// Initialize APIC
 	write_reg(Register::DestinationFormat, 0x0FFFFFFFF);
@@ -126,6 +127,8 @@ void init() {
 	enable_interrupts();
 	write_reg(Register::TimerInitialCount, g_counter_value);
 	write_reg(Register::LvtTimer, IRQNumber::APICTimer | Mode::Periodic);
+
+	dbgprintf("APIC initialized\n");
 }
 
 void reset_timer() {

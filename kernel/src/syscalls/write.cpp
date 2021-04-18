@@ -8,7 +8,7 @@ ssize_t Process::do_sys_writev(int fd, UserPtr<const struct iovec*> iov_ptr,
 		return -EBADF;
 
 	ssize_t ret  = 0;
-	FileDescription&   file = m_open_files[fd];
+	FileDescription& file = *m_open_files[fd];
 
 	// Write each iovec to file
 	hc_print("WRITEV\n");
@@ -38,5 +38,5 @@ ssize_t Process::do_sys_writev(int fd, UserPtr<const struct iovec*> iov_ptr,
 ssize_t Process::do_sys_write(int fd, UserPtr<const void*> buf, size_t count) {
 	if (!m_open_files.count(fd))
 		return -EBADF;
-	return m_open_files[fd].write(buf, count);
+	return m_open_files[fd]->write(buf, count);
 }

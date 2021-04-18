@@ -29,8 +29,8 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef _PRINTF_H_
-#define _PRINTF_H_
+#ifndef _LIBCPP_PRINTF_H_
+#define _LIBCPP_PRINTF_H_
 
 #include <stdarg.h>
 #include <stddef.h>

@@ -5,11 +5,12 @@
 #include "map"
 #include "string"
 #include "fs/file_description.h"
+#include "mem/address_space.h"
 
 #include "linux/resource.h"
 #include "linux/uio.h"
 #include "linux/sysinfo.h"
-#include "linux/others.h"
+#include "others.h"
 
 // Guest regs that syscall handler can read and modify
 struct Regs {
@@ -29,14 +30,18 @@ struct Regs {
 class Process {
 public:
 	Process(const VmInfo& info);
+
+	void start_user(int argc, char** argv, const VmInfo& info);
+
 	uint64_t handle_syscall(int nr, uint64_t, uint64_t, uint64_t, uint64_t,
 	                        uint64_t, uint64_t, Regs* regs);
 
 private:
 	int m_pid;
+	AddressSpace m_space;
 
 	string m_elf_path;
-	map<int, FileDescription&> m_open_files;
+	map<int, FileDescription*> m_open_files;
 	uintptr_t m_brk;
 	uintptr_t m_min_brk;
 	Regs* m_user_regs;

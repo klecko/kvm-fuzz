@@ -166,7 +166,7 @@ private:
 	void handle_hypercall(RunEndReason&);
 	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
-	void do_hc_get_mem_info(vaddr_t mem_start_addr, vaddr_t mem_length_addr);
+	void do_hc_get_mem_info(vaddr_t mem_info_addr);
 	vaddr_t do_hc_get_kernel_brk();
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);

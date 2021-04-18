@@ -1,5 +1,5 @@
-#ifndef _LIBCPP_H
-#define _LIBCPP_H
+#ifndef _LIBCPP_LIBCPP_H
+#define _LIBCPP_LIBCPP_H
 
 #include "asm-generic/errno-base.h"
 #include "common.h"
@@ -38,8 +38,9 @@ inline void memcpy(void* dest, const void* src, size_t n) {
 }
 
 inline void memset(void* dest, int c, size_t n) {
-	for (size_t i = 0; i < n; i++)
+	for (size_t i = 0; i < n; i++) {
 		((uint8_t*)(dest))[i] = c;
+	}
 }
 
 template <class T>
@@ -64,6 +65,10 @@ size_t strlen(const char* s);
 
 char* strncat(char* dest, const char* src, size_t size);
 
+template<typename T>
+constexpr T&& move(T& arg) {
+    return static_cast<T&&>(arg);
+}
 
 template<typename T>
 string to_str(T val) {

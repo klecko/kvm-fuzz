@@ -1,5 +1,5 @@
-#ifndef _INIT_IDT_H
-#define _INIT_IDT_H
+#ifndef _X86_IDT_H
+#define _X86_IDT_H
 
 namespace IDT {
 

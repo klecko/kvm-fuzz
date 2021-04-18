@@ -8,6 +8,7 @@ set(LINKER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffreestanding -static -Wall -mno-sse")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti -masm=intel")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic -fpie -fno-use-cxa-atexit")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-red-zone")
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG=1")
 
@@ -15,24 +16,26 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -nostdlib -lgcc")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -T ${LINKER_FILE}")
 
 set(SOURCE_FILES
-	src/apic/apic.cpp
 	src/fs/file_description.cpp
 	src/fs/file_manager.cpp
-	src/gdt/gdt.cpp
 	src/hypercalls.cpp
-	src/idt/default_isrs.asm
-	src/idt/idt.cpp
 	src/interrupts.cpp
+	src/libcpp
 	src/libcpp/libcpp.cpp
+	src/libcpp/libcpp.h
 	src/libcpp/printf.cpp
+	src/libcpp/printf.h
 	src/libcpp/safe_mem.cpp
+	src/libcpp/safe_mem.h
+	src/libcpp/user_ptr.h
 	src/main.cpp
-	src/mem/mem.cpp
-	src/mem/page_walker.cpp
-	src/pit/pit.cpp
+	src/mem/address_space.cpp
+	src/mem/heap.cpp
+	src/mem/page_table.cpp
+	src/mem/pmm.cpp
+	src/mem/vmm.cpp
 	src/process.cpp
 	src/scheduler.cpp
-	src/syscall/syscall.cpp
 	src/syscalls/access.cpp
 	src/syscalls/brk.cpp
 	src/syscalls/dup.cpp
@@ -52,13 +55,20 @@ set(SOURCE_FILES
 	src/syscalls/uname.cpp
 	src/syscalls/write.cpp
 	src/user.cpp
+	src/x86/apic/apic.cpp
+	src/x86/gdt/gdt.cpp
+	src/x86/idt/default_isrs.asm
+	src/x86/idt/idt.cpp
+	src/x86/perf/perf.cpp
+	src/x86/pit/pit.cpp
+	src/x86/syscall/syscall.cpp
 )
 
 include_directories(
-	include
-	include/STL
-	include/linux
-	include/linux/x86_64-linux-gnu
+	src
+	src/STL
+	linux
+	linux/x86_64-linux-gnu
 )
 
 set_source_files_properties(src/interrupts.cpp PROPERTIES COMPILE_FLAGS

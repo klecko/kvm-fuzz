@@ -1,5 +1,5 @@
-#ifndef _GDT_H
-#define _GDT_H
+#ifndef _X86_GDT_ENTRY_H
+#define _X86_GDT_ENTRY_H
 
 #include "common.h"
 

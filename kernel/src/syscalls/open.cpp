@@ -33,8 +33,8 @@ int Process::do_sys_open(UserPtr<const char*> pathname_ptr, int flags,
 int Process::do_sys_close(int fd) {
 	if (!m_open_files.count(fd))
 		return -EBADF;
-	FileDescription& description = m_open_files[fd];
+	FileDescription* description = m_open_files[fd];
 	m_open_files.erase({fd, description});
-	description.unref();
+	description->unref();
 	return 0;
 }

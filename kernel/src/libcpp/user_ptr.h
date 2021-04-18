@@ -1,5 +1,5 @@
-#ifndef _USER_PTR_H
-#define _USER_PTR_H
+#ifndef _LIBCPP_USER_PTR_H
+#define _LIBCPP_USER_PTR_H
 
 #include <stddef.h>
 

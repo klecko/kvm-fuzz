@@ -1,5 +1,5 @@
-#ifndef _PIT_H
-#define _PIT_H
+#ifndef _X86_PIT_H
+#define _X86_PIT_H
 
 #include "common.h"
 

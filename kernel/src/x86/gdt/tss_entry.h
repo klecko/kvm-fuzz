@@ -1,5 +1,5 @@
-#ifndef _TSS_H
-#define _TSS_H
+#ifndef _X86_TSS_ENTRY_H
+#define _X86_TSS_ENTRY_H
 
 #include "common.h"
 

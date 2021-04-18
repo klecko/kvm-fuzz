@@ -3,7 +3,7 @@
 ssize_t Process::do_sys_read(int fd, UserPtr<void*> buf, size_t count) {
 	if (!m_open_files.count(fd))
 		return -EBADF;
-	return m_open_files[fd].read(buf, count);
+	return m_open_files[fd]->read(buf, count);
 }
 
 ssize_t Process::do_sys_pread64(int fd, UserPtr<void*> buf, size_t count,
@@ -14,7 +14,7 @@ ssize_t Process::do_sys_pread64(int fd, UserPtr<void*> buf, size_t count,
 		return -EBADF;
 
 	// Change offset, read and restore offset
-	FileDescription& file = m_open_files[fd];
+	FileDescription& file = *m_open_files[fd];
 	size_t original_offset = file.offset();
 	file.set_offset(offset);
 	ssize_t ret = file.read(buf, count);

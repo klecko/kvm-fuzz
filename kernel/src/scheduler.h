@@ -3,9 +3,12 @@
 
 #include "process.h"
 
-class Scheduler {
-public:
-	static Process& current();
+namespace Scheduler {
+
+void init(Process& first_process);
+bool is_running();
+Process& current();
+
 };
 
 #endif

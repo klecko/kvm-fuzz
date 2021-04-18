@@ -1,15 +1,20 @@
 #include "process.h"
 #include "syscall_str.h"
 #include "fs/file_manager.h"
+#include "x86/asm.h"
 
-
-Process::Process(const VmInfo& info) {
+Process::Process(const VmInfo& info)
+	: m_pid(1234)
+	, m_space(rdcr3())
+	, m_elf_path(info.elf_path)
+	, m_brk(info.brk)
+	, m_min_brk(info.brk)
+{
 	m_open_files[STDIN_FILENO] = FileManager::open(FileManager::Stdin);
 	m_open_files[STDOUT_FILENO] = FileManager::open(FileManager::Stdout);
 	m_open_files[STDERR_FILENO] = FileManager::open(FileManager::Stderr);
-	m_elf_path = string(info.elf_path);
-	m_brk      = info.brk;
-	m_min_brk  = m_brk;
+	dbgprintf("Elf path: %s\n", m_elf_path.c_str());
+	dbgprintf("Brk: %p\n", m_brk);
 }
 
 int Process::available_fd() {
@@ -73,6 +78,9 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_close:
 			ret = do_sys_close(arg0);
 			break;
+		case SYS_dup:
+			ret = do_sys_dup(arg0);
+			break;
 		case SYS_brk:
 			ret = do_sys_brk(arg0);
 			break;
@@ -90,7 +98,7 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 			break;
 		case SYS_getpid:
 		case SYS_gettid:
-			ret = 1234;
+			ret = m_pid;
 			break;
 		case SYS_arch_prctl:
 			ret = do_sys_arch_prctl(arg0, arg1);

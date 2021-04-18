@@ -1,3 +1,6 @@
+#ifndef _LIBCPP_SAFE_MEM_H
+#define _LIBCPP_SAFE_MEM_H
+
 #include "common.h"
 #include "interrupts.h"
 
@@ -9,3 +12,5 @@ ssize_t strlen(const char* s);
 bool handle_safe_access_fault(InterruptFrame* frame);
 
 }
+
+#endif

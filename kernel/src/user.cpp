@@ -1,6 +1,8 @@
 #include "common.h"
-#include "mem/mem.h"
+#include "process.h"
 #include "linux/auxvec.h"
+
+// TODO: LOADER
 
 static const char* environ[] = {
 	"SHELL=/bin/bash",
@@ -19,10 +21,9 @@ static const char* environ[] = {
 };
 static const int environ_n = sizeof(environ)/sizeof(*environ);
 
-static void* prepare_user_stack(int argc, char** argv, const VmInfo& info) {
-	// Allocate stack
-	uint8_t* user_stack = (uint8_t*)Mem::Virt::alloc_user_stack();
-
+static uint8_t* setup_user_stack(uint8_t* user_stack, int argc, char** argv,
+                                 const VmInfo& info)
+{
 	user_stack -= 16;
 	memset(user_stack, 0, 16);
 
@@ -136,8 +137,21 @@ inline void jump_to_user(void* entry, void* stack) {
 	);
 }
 
-void start_user(int argc, char** argv, const VmInfo& info) {
-	void* user_stack = prepare_user_stack(argc, argv, info);
+void Process::start_user(int argc, char** argv, const VmInfo& info) {
+	// Allocate stack
+	static const uintptr_t USER_STACK_ADDR = 0x800000000000;
+	static const size_t    USER_STACK_SIZE = 0x10000;
+	Range range(USER_STACK_ADDR - USER_STACK_SIZE, USER_STACK_SIZE);
+	bool success = m_space.alloc_range(range);
+	ASSERT(success, "OOM allocating user stack");
+	success = m_space.map_range(range, MemPerms::Read | MemPerms::Write);
+	ASSERT(success, "error mapping user stack");
+
+	// Set it up
+	uint8_t* user_stack = (uint8_t*)USER_STACK_ADDR;
+	user_stack = setup_user_stack(user_stack, argc, argv, info);
+
+	// Jump to user code
 	printf("Jumping to user at %p!\n", info.user_entry);
 	jump_to_user(info.user_entry, user_stack);
 }

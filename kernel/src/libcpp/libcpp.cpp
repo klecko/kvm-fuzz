@@ -1,7 +1,7 @@
 #define _GNU_SOURCE
 #include "libcpp.h"
 #include "hypercalls.h"
-#include "mem.h"
+#include "mem/vmm.h"
 #include "safe_mem.h"
 
 void* operator new(size_t size) {
@@ -21,35 +21,11 @@ void operator delete[](void* p) {
 }
 
 void* kmalloc(size_t size) {
-	static const size_t INITIAL_ALLOCATION_SIZE = 0x2000;
-	static uint8_t* next_alloc = nullptr;
-	static size_t remaining = 0;
-
-	// Initial allocation
-	if (!next_alloc) {
-		next_alloc = (uint8_t*)hc_get_kernel_brk();
-		dbgprintf("Kernel brk: %p\n", next_alloc);
-		Mem::Virt::alloc(next_alloc, INITIAL_ALLOCATION_SIZE, PDE64_NX | PDE64_RW);
-		remaining = INITIAL_ALLOCATION_SIZE;
-	}
-
-	// Request more size if needed
-	if (size > remaining) {
-		size_t to_alloc = PAGE_CEIL((size_t)(size*1.25));
-		Mem::Virt::alloc(next_alloc + remaining, to_alloc, PDE64_NX | PDE64_RW);
-		remaining += to_alloc;
-	}
-
-	void* ret = next_alloc;
-	remaining -= size;
-	next_alloc += size;
-
-	//dbgprintf("Allocation of %lu: %p\n", size, ret);
-	return ret;
+	return VMM::kernel_heap().alloc(size);
 }
 
 void kfree(void* p) {
-	return;
+	VMM::kernel_heap().free(p);
 }
 
 void __cxa_pure_virtual() {

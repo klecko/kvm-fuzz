@@ -69,7 +69,8 @@ const FileDescription::file_ops FileDescription::fops_stdout = {
 	.do_write = &FileDescription::do_write_stdout,
 };
 
-const FileDescription::file_ops FileDescription::fops_stderr = FileDescription::fops_stdout;
+const FileDescription::file_ops FileDescription::fops_stderr =
+	FileDescription::fops_stdout;
 
 FileDescription::FileDescription(uint32_t flags, const char* buf, size_t size)
 	: m_fops(fops_regular)

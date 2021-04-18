@@ -1,5 +1,5 @@
-#ifndef _INIT_GDT_H
-#define _INIT_GDT_H
+#ifndef _X86_GDT_H
+#define _X86_GDT_H
 
 namespace GDT {
 

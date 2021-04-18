@@ -1,8 +1,7 @@
-#include "init.h"
 #include "idt.h"
 #include "idt_entry.h"
 #include "interrupts.h"
-#include "x86/GDT/gdt.h"
+#include "x86/gdt/gdt.h"
 
 // These are defined in default_isrs.asm, and they just call handle_interrupt.
 extern uint64_t _defaultISRs;
@@ -31,6 +30,9 @@ void init() {
 	// located in the TSS
 	g_idt[ExceptionNumber::DoubleFault].set_ist(1);
 
+	// If we don't set -mno-red-zone, we must stack switch every interrupt
+	// g_idt[IRQNumber::APICTimer].set_ist(1);
+
 	// Custom ISRS
 	g_idt[ExceptionNumber::DivByZero].set_offset((uint64_t)handle_div_by_zero);
 	g_idt[ExceptionNumber::Breakpoint].set_offset((uint64_t)handle_breakpoint);
@@ -48,7 +50,7 @@ void init() {
 	};
 	idtr.load();
 
-	dbgprintf("IDT set\n");
+	dbgprintf("IDT initialized\n");
 }
 
 }

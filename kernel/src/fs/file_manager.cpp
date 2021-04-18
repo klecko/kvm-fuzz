@@ -5,11 +5,6 @@
 
 namespace FileManager {
 
-struct OpenFile {
-	FileDescription description;
-	size_t ref_count;
-};
-
 map<string, struct iovec> g_file_contents;
 
 void init(size_t num_files) {
@@ -40,7 +35,7 @@ bool exists(const string& pathname) {
 	return g_file_contents.count(pathname);
 }
 
-FileDescription& open(const string& pathname, int flags) {
+FileDescription* open(const string& pathname, int flags) {
 	// The idea is that checks are performed in syscalls, and here we just
 	// panic if something goes wrong.
 	ASSERT(exists(pathname), "attempt to open not existing file: %s",
@@ -51,18 +46,20 @@ FileDescription& open(const string& pathname, int flags) {
 		(const char*)content.iov_base,
 		content.iov_len
 	);
-	return *description;
+	return description;
 }
 
-FileDescription& open(SpecialFile file) {
+FileDescription* open(SpecialFile file) {
 	switch (file) {
 		case Stdin:
-			return *new FileDescriptionStdin();
+			return new FileDescriptionStdin();
 		case Stdout:
-			return *new FileDescriptionStdout();
+			return new FileDescriptionStdout();
 		case Stderr:
-			return *new FileDescriptionStderr();
+			return new FileDescriptionStderr();
 	}
+	UNREACHABLE;
+	return nullptr;
 }
 
 int stat(const string& pathname, UserPtr<struct stat*> stat_ptr) {

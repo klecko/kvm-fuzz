@@ -1,5 +1,5 @@
-#ifndef _PERF_H
-#define _PERF_H
+#ifndef _X86_PERF_H
+#define _X86_PERF_H
 
 #include "common.h"
 

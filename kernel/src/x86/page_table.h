@@ -1,3 +1,8 @@
+#ifndef _X86_PAGE_TABLE_H
+#define _X86_PAGE_TABLE_H
+
+#include "common.h"
+
 // Page table stuff
 #define PTL4_SHIFT 39
 #define PTL4_BITS   9
@@ -30,16 +35,82 @@
 #define PAGE_SIZE PTL1_SIZE
 #define PAGE_OFFSET(addr) ((addr) & (~PTL1_MASK))
 #define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & PTL1_MASK) //+ 0xFFF & ~0xFFF
+#define IS_PAGE_ALIGNED(addr) (((addr) & PTL1_MASK) == (addr))
 
 #define PHYS_MASK (0x000FFFFFFFFFF000)
 #define PHYS_FLAGS(addr) ((addr) & (~PHYS_MASK))
 
-// PTE bits
-#define PDE64_PRESENT  (1 << 0)
-#define PDE64_RW       (1 << 1)
-#define PDE64_USER     (1 << 2)
-#define PDE64_ACCESSED (1 << 5)
-#define PDE64_DIRTY    (1 << 6)
-#define PDE64_PS       (1 << 7)
-#define PDE64_PROTNONE (1 << 8)
-#define PDE64_NX       (1LU << 63)
+class PageTableEntry {
+public:
+	enum Flags {
+		Present   = (1 << 0),
+		ReadWrite = (1 << 1),
+		User      = (1 << 2),
+		Accessed  = (1 << 5),
+		Dirty     = (1 << 6),
+		Huge      = (1 << 7),
+		Global    = (1 << 8),
+		NoExecute = (1UL << 63)
+	};
+
+	uintptr_t raw() {
+		return m_raw;
+	}
+
+	uintptr_t frame_base() {
+		return m_raw & PHYS_MASK;
+	}
+
+	void set_frame_base(uintptr_t base) {
+		ASSERT((base & PHYS_MASK) == base, "invalid base: %p", base);
+		m_raw &= ~PHYS_MASK;
+		m_raw |= base;
+	}
+
+	void set_flags(uint64_t page_flags) {
+		ASSERT((page_flags & ~PHYS_MASK) == page_flags, "invalig page flags: %p",
+		       page_flags);
+		m_raw &= PHYS_MASK;
+		m_raw |= page_flags;
+	}
+
+	void clear() { m_raw = 0; }
+
+	bool is_present() const { return m_raw & Flags::Present; }
+	void set_present(bool b) { set_bit(Flags::Present, b); }
+
+	bool is_writable() const { return m_raw & Flags::ReadWrite; }
+	void set_writable(bool b) { set_bit(Flags::ReadWrite, b); }
+
+	bool is_user() const { return m_raw & Flags::User; }
+	void set_user(bool b) { set_bit(Flags::User, b); }
+
+	bool is_huge() const { return m_raw & Flags::Huge; }
+	void set_huge(bool b) { set_bit(Flags::Huge, b); }
+
+	bool is_global() const { return m_raw & Flags::Global; }
+	void set_global(bool b) { set_bit(Flags::Global, b); }
+
+	bool is_execute_disabled() const { return m_raw & Flags::NoExecute; }
+	void set_execute_disabled(bool b) { set_bit(Flags::NoExecute, b); }
+
+private:
+
+	void set_bit(uint64_t bit, bool value) {
+		if (value)
+			m_raw |= bit;
+		else
+			m_raw &= ~bit;
+	}
+
+	uintptr_t m_raw;
+};
+
+// YOLO
+typedef PageTableEntry PageTableLevel2Entry;
+typedef PageTableEntry PageTableLevel3Entry;
+typedef PageTableEntry PageTableLevel4Entry;
+
+static_assert(sizeof(PageTableEntry) == 8);
+
+#endif

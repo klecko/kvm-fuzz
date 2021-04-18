@@ -33,9 +33,11 @@ typedef long ssize_t;
 
 #define TODO ASSERT(false, "TODO");
 
+#define UNREACHABLE ASSERT(false, "UNREACHABLE")
+
 #define die(...) do {                                            \
 	printf(__VA_ARGS__);                                         \
-	hlt();                                                       \
+	asm("out 17, al");                                           \
 } while(0)
 
 #define printf_once(...) do {                                    \

@@ -1,5 +1,5 @@
 #include "pit.h"
-#include "asm.h"
+#include "x86/asm.h"
 
 namespace PIT {
 

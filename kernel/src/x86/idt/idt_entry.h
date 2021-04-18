@@ -1,5 +1,5 @@
-#ifndef _IDT_H
-#define _IDT_H
+#ifndef _X86_IDT_ENTRY_H
+#define _X86_IDT_ENTRY_H
 
 #include "common.h"
 

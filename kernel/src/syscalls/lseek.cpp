@@ -7,7 +7,7 @@ off_t Process::do_sys_lseek(int fd, off_t offset, int whence) {
 	// there isn't any problem about that
 	if (!m_open_files.count(fd))
 		return -EBADF;
-	FileDescription& file = m_open_files[fd];
+	FileDescription& file = *m_open_files[fd];
 	off_t ret;
 	switch (whence) {
 		case SEEK_SET:
@@ -24,6 +24,7 @@ off_t Process::do_sys_lseek(int fd, off_t offset, int whence) {
 
 		default:
 			TODO
+			ret = 0;
 	}
 	if (ret < 0)
 		return -EINVAL;

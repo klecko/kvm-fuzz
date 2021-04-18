@@ -1,5 +1,5 @@
 #include "process.h"
-#include "asm.h"
+#include "x86/asm.h"
 #include "asm/prctl.h"
 
 int Process::do_sys_arch_prctl(int code, uint64_t addr) {

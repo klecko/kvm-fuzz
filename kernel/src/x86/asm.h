@@ -1,5 +1,5 @@
-#ifndef _ASM_H
-#define _ASM_H
+#ifndef _X86_ASM_H
+#define _X86_ASM_H
 
 #include "common.h"
 
@@ -47,7 +47,6 @@ inline uint64_t rdcr2() {
 	asm volatile(
 		"mov %0, cr2"
 		: "=r" (val)
-		: :
 	);
 	return val;
 }
@@ -57,9 +56,17 @@ inline uint64_t rdcr3() {
 	asm volatile(
 		"mov %0, cr3"
 		: "=r" (val)
-		: :
 	);
 	return val;
+}
+
+inline void wrcr3(uint64_t val) {
+	asm volatile(
+		"mov cr3, %0"
+		:
+		: "r" (val)
+		: "memory"
+	);
 }
 
 inline void flush_tlb() {
@@ -70,11 +77,11 @@ inline void flush_tlb() {
 	);
 }
 
-inline void flush_tlb_entry(uintptr_t page) {
+inline void flush_tlb_entry(uintptr_t page_vaddr) {
 	asm volatile(
 		"invlpg [%0]"
 		:
-		: "r" (page)
+		: "r" (page_vaddr)
 		: "memory"
 	);
 }

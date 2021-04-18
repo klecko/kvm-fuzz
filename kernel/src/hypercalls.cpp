@@ -68,7 +68,7 @@ void hc_print(const string& msg) {
 }
 
 __attribute__((naked))
-void hc_get_mem_info(void** mem_start, size_t* mem_length) {
+void hc_get_mem_info(MemInfo* info) {
 	hypercall(Hypercall::GetMemInfo);
 }
 

@@ -12,7 +12,7 @@ static void* g_user_stack;
 // from there without dirtying any reg
 static uint64_t _handle_syscall(uint64_t arg0, uint64_t arg1, uint64_t arg2,
                                 uint64_t arg3, uint64_t arg4, uint64_t arg5,
-                                Regs* regs, int nr)
+                                int nr, Regs* regs)
 {
 	return Scheduler::current().handle_syscall(nr, arg0, arg1, arg2, arg3, arg4,
 	                                           arg5, regs);
@@ -74,11 +74,11 @@ static void syscall_entry() {
 		"push rdx;"
 		"push rcx;"
 
-	// Push stack pointer as 7th argument for the handler. This points to the
+	// Push stack pointer as 8th argument for the handler. This points to the
 	// registers we just pushed, which the handler can read and modify.
 		"push rsp;"
 
-	// Push syscall number as 8th argument for the handler.
+	// Push syscall number as 7th argument for the handler.
 		"push rax;"
 
 	// The forth argument is set in r10. We need to move it to rcx to conform to
@@ -89,7 +89,7 @@ static void syscall_entry() {
 		"call %[handler];"
 
 	// Restore registers
-		"pop rax;"
+		"pop rcx;" // scratch
 		"pop rsp;"
 
 		"pop rcx;"
@@ -136,7 +136,7 @@ void init() {
 
 	save_kernel_stack();
 
-	dbgprintf("Syscall handler set\n");
+	dbgprintf("Syscall handler initialized\n");
 }
 
 }
