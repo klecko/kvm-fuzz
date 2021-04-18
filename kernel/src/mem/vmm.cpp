@@ -4,8 +4,8 @@
 
 namespace VMM {
 
-PageTable g_kernel_page_table;
-Heap g_kernel_heap;
+static PageTable g_kernel_page_table;
+static Heap g_kernel_heap;
 
 void init() {
 	g_kernel_page_table.set(rdcr3());

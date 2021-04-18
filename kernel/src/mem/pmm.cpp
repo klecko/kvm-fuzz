@@ -5,10 +5,10 @@
 
 namespace PMM {
 
-uintptr_t g_physmap_vaddr;
-uintptr_t g_next_frame_alloc;
-size_t g_memory_length;
-stack<uintptr_t> g_free_frames;
+static uintptr_t g_physmap_vaddr;
+static uintptr_t g_next_frame_alloc;
+static size_t g_memory_length;
+static stack<uintptr_t> g_free_frames;
 
 void init() {
 	// Get ownership of the physical memory

@@ -27,7 +27,7 @@ void init() {
 	}
 
 	// Set DoubleFault to use the first stack of the Interrupt Stack Table
-	// located in the TSS
+	// located in the TSS. This stack is allocated in gdt.cpp
 	g_idt[ExceptionNumber::DoubleFault].set_ist(1);
 
 	// If we don't set -mno-red-zone, we must stack switch every interrupt
