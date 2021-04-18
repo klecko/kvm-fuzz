@@ -1,5 +1,6 @@
 #include "hypercalls.h"
-#include "asm.h"
+#include "x86/asm.h"
+#include "x86/perf/perf.h"
 
 // Keep this the same as in the hypervisor!
 enum Hypercall : size_t {
@@ -67,7 +68,7 @@ void hc_print(const string& msg) {
 }
 
 __attribute__((naked))
-void hc_get_mem_info(void** mem_start, size_t* mem_length) {
+void hc_get_mem_info(MemInfo* info) {
 	hypercall(Hypercall::GetMemInfo);
 }
 
@@ -107,7 +108,7 @@ void _hc_fault(FaultInfo* fault, uint64_t instructions_executed) {
 }
 
 void hc_fault(FaultInfo* fault) {
-	_hc_fault(fault, instructions_executed());
+	_hc_fault(fault, Perf::instructions_executed());
 }
 
 __attribute__((naked))
@@ -116,5 +117,5 @@ void _hc_end_run(uint64_t instructions_executed) {
 }
 
 void hc_end_run() {
-	_hc_end_run(instructions_executed());
+	_hc_end_run(Perf::instructions_executed());
 }

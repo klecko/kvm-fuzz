@@ -98,7 +98,7 @@ Vm::Vm(const Vm& other)
 	// Copy Local APIC
 	kvm_lapic_state lapic;
 	ioctl_chk(other.m_vcpu_fd, KVM_GET_LAPIC, &lapic);
-	ioctl_chk(m_vcpu_fd, KVM_SET_LAPIC, lapic);
+	ioctl_chk(m_vcpu_fd, KVM_SET_LAPIC, &lapic);
 
 	// Indicate we have dirtied registers
 	set_regs_dirty();

@@ -1,8 +1,9 @@
 #include "interrupts.h"
 #include "common.h"
-#include "asm.h"
-#include "safe_mem.h"
-#include "apic.h"
+#include "libcpp/safe_mem.h"
+#include "scheduler.h"
+#include "x86/asm.h"
+#include "x86/apic/apic.h"
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
@@ -90,5 +91,6 @@ void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 __attribute__((interrupt))
 void handle_apic_timer(InterruptFrame* frame) {
 	// printf("hello from timer\n");
+	ASSERT(!Scheduler::is_running(), "we're not ready for multitasking!!");
 	APIC::reset_timer();
 }

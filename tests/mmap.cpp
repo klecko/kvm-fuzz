@@ -34,7 +34,7 @@ TEST_CASE("mmap OOM") {
 }
 
 TEST_CASE("mmap file") {
-	int fd = open("../tests/input_hello_world", O_RDONLY);
+	int fd = open(input, O_RDONLY);
 	REQUIRE(fd != -1);
 	char* p = (char*)mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
 	REQUIRE(p != MAP_FAILED);

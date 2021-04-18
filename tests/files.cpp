@@ -5,8 +5,6 @@
 #include "common.h"
 #include "catch.hpp"
 
-const char input[] = "../tests/input_hello_world";
-
 TEST_CASE("files") {
 	// Check file exists and we have read access
 	REQUIRE(access(input, R_OK) == 0);

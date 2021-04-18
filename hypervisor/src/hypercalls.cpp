@@ -26,10 +26,20 @@ void Vm::do_hc_print(vaddr_t msg_addr) {
 	cout << "[KERNEL] " << msg;
 }
 
-void Vm::do_hc_get_mem_info(vaddr_t mem_start_addr, vaddr_t mem_length_addr) {
-	paddr_t next_frame_alloc = m_mmu.next_frame_alloc();
-	m_mmu.write<vaddr_t>(mem_start_addr, next_frame_alloc);
-	m_mmu.write<vaddr_t>(mem_length_addr, m_mmu.size());
+// Keep this the same as in the kernel
+struct MemInfo {
+	paddr_t mem_start;
+	psize_t mem_length;
+	vaddr_t physmap_vaddr;
+};
+
+void Vm::do_hc_get_mem_info(vaddr_t mem_info_addr) {
+	MemInfo info = {
+		.mem_start = m_mmu.next_frame_alloc(),
+		.mem_length = m_mmu.size(),
+		.physmap_vaddr = Mmu::PHYSMAP_ADDR,
+	};
+	m_mmu.write(mem_info_addr, info);
 
 	// From this point on, kernel is in charge of managing physical memory
 	// and not us
@@ -152,7 +162,7 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			do_hc_print(m_regs->rdi);
 			break;
 		case Hypercall::GetMemInfo:
-			do_hc_get_mem_info(m_regs->rdi, m_regs->rsi);
+			do_hc_get_mem_info(m_regs->rdi);
 			break;
 		case Hypercall::GetKernelBrk:
 			ret = do_hc_get_kernel_brk();
