@@ -46,7 +46,7 @@ TEST_CASE("dup2") {
 	REQUIRE(read_and_check_first_five_bytes(fd1, buf) == 0);
 
 	// Dup non open fd should fail
-	const int other_fd = 1234;
+	const int other_fd = 123;
 	REQUIRE(dup2(other_fd, fd2) == -1);
 	REQUIRE(errno == EBADF);
 
