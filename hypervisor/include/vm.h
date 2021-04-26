@@ -49,6 +49,7 @@ public:
 	kvm_regs& regs();
 	kvm_regs regs() const;
 	Mmu& mmu();
+	ElfParser& elf();
 	psize_t memsize() const;
 	FaultInfo fault() const;
 	uint64_t instructions_executed_last_run() const;

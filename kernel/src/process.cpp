@@ -81,6 +81,9 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_dup:
 			ret = do_sys_dup(arg0);
 			break;
+		case SYS_dup2:
+			ret = do_sys_dup2(arg0, arg1);
+			break;
 		case SYS_brk:
 			ret = do_sys_brk(arg0);
 			break;
@@ -145,6 +148,40 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_clock_gettime:
 			ret = do_sys_clock_gettime(arg0, UserPtr<struct timespec*>(arg1));
 			break;
+		case SYS_getcwd:
+			ret = do_sys_getcwd(UserPtr<char*>(arg0), arg1);
+			break;
+		case SYS_chdir:
+			ret = do_sys_chdir(UserPtr<const char*>(arg0));
+			break;
+		case SYS_socket:
+			ret = do_sys_socket(arg0, arg1, arg2);
+			break;
+		case SYS_setsockopt:
+			ret = do_sys_setsockopt(arg0, arg1, arg2,
+			                        UserPtr<const void*>(arg3), arg4);
+			break;
+		case SYS_bind:
+			ret = do_sys_bind(arg0, UserPtr<const struct sockaddr*>(arg1), arg2);
+			break;
+		case SYS_listen:
+			ret = do_sys_listen(arg0, arg1);
+			break;
+		case SYS_getpeername:
+			ret = do_sys_getpeername(arg0, UserPtr<struct sockaddr*>(arg1),
+			                         UserPtr<socklen_t*>(arg2));
+			break;
+		case SYS_accept:
+			ret = do_sys_accept(arg0, UserPtr<struct sockaddr*>(arg1),
+			                    UserPtr<socklen_t*>(arg2));
+			break;
+		case SYS_sendfile:
+			ret = do_sys_sendfile(arg0, arg1, UserPtr<off_t*>(arg2), arg3);
+			break;
+		case SYS_shutdown:
+			ret = 0;
+			printf_once("TODO shutdown\n");
+			break;
 		case SYS_set_tid_address:
 			ret = 0;
 			printf_once("TODO set_tid_address\n");
@@ -168,6 +205,10 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_sigaltstack:
 			ret = 0;
 			printf_once("TODO sigaltstack\n");
+			break;
+		case SYS_setitimer:
+			ret = 0;
+			printf_once("TODO setitimer\n");
 			break;
 
 		default:

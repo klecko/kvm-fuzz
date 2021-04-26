@@ -3,8 +3,11 @@ set(SOURCE_FILES
 	brk.cpp
 	dup.cpp
 	files.cpp
+	getcwd.cpp
 	mmap.cpp
 	readlink.cpp
+	socket.cpp
+	stdin.cpp
 	tests.cpp
 	thread_local.cpp
 	uname.cpp

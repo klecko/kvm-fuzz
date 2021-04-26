@@ -40,6 +40,7 @@ set(SOURCE_FILES
 	src/syscalls/brk.cpp
 	src/syscalls/dup.cpp
 	src/syscalls/fcntl.cpp
+	src/syscalls/getcwd.cpp
 	src/syscalls/ioctl.cpp
 	src/syscalls/kill.cpp
 	src/syscalls/lseek.cpp
@@ -50,6 +51,7 @@ set(SOURCE_FILES
 	src/syscalls/read.cpp
 	src/syscalls/readlink.cpp
 	src/syscalls/stat.cpp
+	src/syscalls/socket.cpp
 	src/syscalls/sysinfo.cpp
 	src/syscalls/time.cpp
 	src/syscalls/uname.cpp

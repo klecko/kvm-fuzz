@@ -1,4 +1,5 @@
 #include "fs/file_description.h"
+#include "fs/file_manager.h"
 #include "libcpp/libcpp.h"
 
 int FileDescription::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
@@ -51,30 +52,8 @@ int FileDescription::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 	return (copy_to_user(stat_ptr, &stdout_st) ? 0 : -EFAULT);
 }
 
-const FileDescription::file_ops FileDescription::fops_regular = {
-	.do_stat  = &FileDescription::do_stat_regular,
-	.do_read  = &FileDescription::do_read_regular,
-	.do_write = nullptr,
-};
-
-const FileDescription::file_ops FileDescription::fops_stdin = {
-	.do_stat  = nullptr,
-	.do_read  = nullptr,
-	.do_write = nullptr,
-};
-
-const FileDescription::file_ops FileDescription::fops_stdout = {
-	.do_stat  = &FileDescription::do_stat_stdout,
-	.do_read  = nullptr,
-	.do_write = &FileDescription::do_write_stdout,
-};
-
-const FileDescription::file_ops FileDescription::fops_stderr =
-	FileDescription::fops_stdout;
-
 FileDescription::FileDescription(uint32_t flags, const char* buf, size_t size)
-	: m_fops(fops_regular)
-	, m_ref_count(1)
+	: m_ref_count(1)
 	, m_flags(flags)
 	, m_buf(buf)
 	, m_size(size)
@@ -90,6 +69,11 @@ void FileDescription::unref() {
 	m_ref_count--;
 	if (m_ref_count == 0)
 		delete this;
+}
+
+void FileDescription::set_buf(const char* buf, size_t size) {
+	m_buf = buf;
+	m_size = size;
 }
 
 uint32_t FileDescription::flags() const {
@@ -143,31 +127,13 @@ size_t FileDescription::move_cursor(size_t increment) {
 	return ret;
 }
 
+
+// REGULAR FILE
 int FileDescription::stat(UserPtr<struct stat*> stat_ptr) const {
-	ASSERT(m_fops.do_stat, "not implemented stat");
-	return (this->*m_fops.do_stat)(stat_ptr);
-}
-
-ssize_t FileDescription::read(UserPtr<void*> buf, size_t len) {
-	ASSERT(m_fops.do_read, "not implemented read");
-	return (this->*m_fops.do_read)(buf, len);
-}
-
-ssize_t FileDescription::write(UserPtr<const void*> buf, size_t len) {
-	ASSERT(m_fops.do_write, "not implemented write");
-	return (this->*m_fops.do_write)(buf, len);
-}
-
-// All fstat syscalls fall back to stat
-int FileDescription::do_stat_regular(UserPtr<struct stat*> stat_ptr) const {
 	return stat_regular(stat_ptr, m_size, (inode_t)m_buf);
 }
 
-int FileDescription::do_stat_stdout(UserPtr<struct stat*> stat_ptr) const {
-	return stat_stdout(stat_ptr);
-}
-
-ssize_t FileDescription::do_read_regular(UserPtr<void*> buf, size_t len) {
+ssize_t FileDescription::read(UserPtr<void*> buf, size_t len) {
 	ASSERT(is_readable(), "trying to read from not readable file");
 
 	// Get cursor, move it, and try to write to memory the resulting length
@@ -176,7 +142,60 @@ ssize_t FileDescription::do_read_regular(UserPtr<void*> buf, size_t len) {
 	return (copy_to_user(buf, p, len) ? len : -EFAULT);
 }
 
-ssize_t FileDescription::do_write_stdout(UserPtr<const void*> buf, size_t len) {
+ssize_t FileDescription::write(UserPtr<const void*> buf, size_t len) {
+	TODO
+	return 0;
+}
+
+
+// STDIN
+FileDescriptionStdin::FileDescriptionStdin()
+	: FileDescription(0, nullptr, 0)
+	, m_input_opened(false)
+{
+}
+
+int FileDescriptionStdin::stat(UserPtr<struct stat*> stat_ptr) const {
+	TODO
+	return 0;
+}
+
+ssize_t FileDescriptionStdin::read(UserPtr<void*> buf, size_t len) {
+	// Guest is trying to read from stdin. Let's do a little hack here.
+	// Assuming it's expecting to read from input file, let's set that input
+	// file as our buffer, and read from there as a regular file.
+	// We can't do this at the beginning, as we wouldn't get the real size from
+	// the hypervisor when it updated the input file.
+	if (!m_input_opened) {
+		m_input_opened = true;
+		struct iovec input = FileManager::file_content("input");
+		set_buf((const char*)input.iov_base, input.iov_len);
+	}
+	return FileDescription::read(buf, len);
+}
+
+ssize_t FileDescriptionStdin::write(UserPtr<const void*> buf, size_t len) {
+	TODO
+	return 0;
+}
+
+
+// STDOUT
+FileDescriptionStdout::FileDescriptionStdout()
+	: FileDescription(0, nullptr, 0)
+{
+}
+
+int FileDescriptionStdout::stat(UserPtr<struct stat*> stat_ptr) const {
+	return stat_stdout(stat_ptr);
+}
+
+ssize_t FileDescriptionStdout::read(UserPtr<void*> buf, size_t len) {
+	TODO
+	return 0;
+}
+
+ssize_t FileDescriptionStdout::write(UserPtr<const void*> buf, size_t len) {
 	ssize_t ret = len;
 #ifdef ENABLE_GUEST_OUTPUT
 	ret = print_user(buf, len);
@@ -185,20 +204,71 @@ ssize_t FileDescription::do_write_stdout(UserPtr<const void*> buf, size_t len) {
 }
 
 
-FileDescriptionStdin::FileDescriptionStdin()
-	: FileDescription(O_RDONLY)
+// SOCKET
+FileDescriptionSocket::FileDescriptionSocket(const char* buf, size_t size,
+                                             SocketType type)
+	: FileDescription(O_RDWR, buf, size)
+	, m_type(type)
+	, m_binded(false)
+	, m_listening(false)
+	, m_connected(false)
 {
-	m_fops = fops_stdin;
-};
+}
 
-FileDescriptionStdout::FileDescriptionStdout()
-	: FileDescription(O_WRONLY)
-{
-	m_fops = fops_stdout;
-};
+SocketType FileDescriptionSocket::type() const {
+	return m_type;
+}
 
-FileDescriptionStderr::FileDescriptionStderr()
-	: FileDescription(O_WRONLY)
+bool FileDescriptionSocket::is_binded() const {
+	return m_binded;
+}
+
+void FileDescriptionSocket::set_binded(bool binded) {
+	m_binded = binded;
+}
+
+bool FileDescriptionSocket::is_listening() const {
+	return m_listening;
+}
+
+void FileDescriptionSocket::set_listening(bool listening) {
+	m_listening = listening;
+}
+
+bool FileDescriptionSocket::is_connected() const {
+	return m_connected;
+}
+
+void FileDescriptionSocket::set_connected(bool connected) {
+	m_connected = connected;
+}
+
+int FileDescriptionSocket::stat(UserPtr<struct stat*> stat_ptr) const {
+	TODO
+	return 0;
+}
+
+ssize_t FileDescriptionSocket::read(UserPtr<void*> buf, size_t len) {
+	if (!m_connected)
+		return -ENOTCONN;
+	return FileDescription::read(buf, len);
+}
+
+ssize_t FileDescriptionSocket::write(UserPtr<const void*> buf, size_t len) {
+	TODO
+	return 0;
+}
+
+int FileDescriptionSocket::bind(UserPtr<const struct sockaddr*> addr_ptr,
+                                size_t addr_len)
 {
-	m_fops = fops_stderr;
-};
+	set_binded(true);
+	return 0;
+}
+
+int FileDescriptionSocket::listen(int backlog) {
+	// This is possible. In that case, the OS must assign the address and port.
+	ASSERT(is_binded(), "listening on not binded socket");
+	set_listening(true);
+	return 0;
+}

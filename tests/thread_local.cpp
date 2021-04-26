@@ -1,5 +1,4 @@
 #include "common.h"
-#include "catch.hpp"
 
 TEST_CASE("thread_local") {
 	// This looks trivial, but it makes sure arch_prctl ARCH_SET_FS is working,

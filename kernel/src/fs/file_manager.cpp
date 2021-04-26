@@ -1,7 +1,6 @@
 #include "map"
 #include "vector"
 #include "fs/file_manager.h"
-#include "linux/uio.h"
 
 namespace FileManager {
 
@@ -35,18 +34,31 @@ bool exists(const string& pathname) {
 	return g_file_contents.count(pathname);
 }
 
+struct iovec file_content(const string& pathname) {
+	ASSERT(exists(pathname), "attempt to get contents of not existing file: %s",
+	       pathname.c_str());
+	return g_file_contents[pathname];
+}
+
 FileDescription* open(const string& pathname, int flags) {
 	// The idea is that checks are performed in syscalls, and here we just
 	// panic if something goes wrong.
-	ASSERT(exists(pathname), "attempt to open not existing file: %s",
-	       pathname.c_str());
-	struct iovec content = g_file_contents[pathname];
+	struct iovec content = file_content(pathname);
 	FileDescription* description = new FileDescription(
 		flags,
 		(const char*)content.iov_base,
 		content.iov_len
 	);
 	return description;
+}
+
+FileDescriptionSocket* open_socket(SocketType type) {
+	struct iovec content = file_content("input");
+	return new FileDescriptionSocket(
+		(const char*)content.iov_base,
+		content.iov_len,
+		type
+	);
 }
 
 FileDescription* open(SpecialFile file) {
@@ -63,7 +75,7 @@ FileDescription* open(SpecialFile file) {
 }
 
 int stat(const string& pathname, UserPtr<struct stat*> stat_ptr) {
-	const iovec& iov = g_file_contents[pathname];
+	struct iovec iov = file_content(pathname);
 	return FileDescription::stat_regular(
 		stat_ptr,
 		iov.iov_len,

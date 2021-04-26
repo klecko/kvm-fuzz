@@ -3,7 +3,6 @@
 #include <cstring>
 #include <sys/stat.h>
 #include "common.h"
-#include "catch.hpp"
 
 TEST_CASE("files") {
 	// Check file exists and we have read access

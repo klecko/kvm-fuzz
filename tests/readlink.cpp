@@ -2,7 +2,6 @@
 #include <linux/limits.h>
 #include <cstring>
 #include "common.h"
-#include "catch.hpp"
 
 const char path[] = "/proc/self/exe";
 

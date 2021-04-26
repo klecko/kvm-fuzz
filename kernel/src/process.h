@@ -59,6 +59,7 @@ private:
 	int do_sys_fstat(int, UserPtr<struct stat*>);
 	off_t do_sys_lseek(int, off_t, int);
 	int do_sys_dup(int);
+	int do_sys_dup2(int, int);
 	int do_sys_close(int);
 	int do_sys_arch_prctl(int, uint64_t);
 	uintptr_t do_sys_brk(uintptr_t);
@@ -73,6 +74,15 @@ private:
 	int do_sys_sysinfo(UserPtr<struct sysinfo*>);
 	int do_sys_tgkill(int, int, int);
 	int do_sys_clock_gettime(clockid_t, UserPtr<struct timespec*>);
+	int do_sys_getcwd(UserPtr<char*>, size_t);
+	int do_sys_chdir(UserPtr<const char*>);
+	int do_sys_socket(int, int, int);
+	int do_sys_setsockopt(int, int, int, UserPtr<const void*>, socklen_t);
+	int do_sys_bind(int, UserPtr<const struct sockaddr*>, socklen_t);
+	int do_sys_listen(int, int);
+	int do_sys_accept(int, UserPtr<struct sockaddr*>, UserPtr<socklen_t*>);
+	int do_sys_getpeername(int, UserPtr<struct sockaddr*>, UserPtr<socklen_t*>);
+	ssize_t do_sys_sendfile(int, int, UserPtr<off_t*>, ssize_t);
 };
 
 #endif

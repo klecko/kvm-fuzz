@@ -16,8 +16,10 @@ int Process::do_sys_openat(int dirfd, UserPtr<const char*> pathname_ptr,
 	int fd = available_fd();
 
 	// Open file
-	ASSERT(FileManager::exists(pathname), "unknown file '%s'",
-	       pathname.c_str());
+	if (!FileManager::exists(pathname)) {
+		dbgprintf("warning: opening unknown file '%s'\n", pathname.c_str());
+		return -ENOENT;
+	}
 	ASSERT(!((flags & O_WRONLY) || (flags & O_RDWR)),
 	       "%s with write permisions", pathname.c_str());
 	m_open_files[fd] = FileManager::open(pathname, flags);

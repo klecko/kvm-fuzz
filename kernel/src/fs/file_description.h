@@ -19,7 +19,8 @@ public:
 					        inode_t inode);
 	static int stat_stdout(UserPtr<struct stat*> stat_ptr);
 
-	FileDescription(uint32_t flags=0, const char* buf=nullptr, size_t size=0);
+	FileDescription(uint32_t flags, const char* buf, size_t size);
+	virtual ~FileDescription() {};
 
 	void ref();
 	void unref();
@@ -34,25 +35,16 @@ public:
 	size_t offset() const;
 	void set_offset(size_t offset);
 
+	virtual bool is_socket() const { return false; }
+
 	// File operations
-	int stat(UserPtr<struct stat*> stat_ptr) const;
-	ssize_t read(UserPtr<void*> buf, size_t len);
-	ssize_t write(UserPtr<const void*> buf, size_t len);
+	virtual int stat(UserPtr<struct stat*> stat_ptr) const;
+	virtual ssize_t read(UserPtr<void*> buf, size_t len);
+	virtual ssize_t write(UserPtr<const void*> buf, size_t len);
 
 protected:
-	// File operations with C-like polymorphism. Member m_fops is modified by
-	// inherited classes to set one of these. That way polymorphism is achieved
-	// while avoiding dynamic memory allocations
-	struct file_ops {
-		int (FileDescription::*do_stat)(UserPtr<struct stat*> stat_ptr) const;
-		ssize_t (FileDescription::*do_read)(UserPtr<void*> buf, size_t len);
-		ssize_t (FileDescription::*do_write)(UserPtr<const void*> buf, size_t len);
-	};
-	static const file_ops fops_regular;
-	static const file_ops fops_stdin;
-	static const file_ops fops_stdout;
-	static const file_ops fops_stderr;
-	file_ops m_fops;
+	// Set file buffer and size
+	void set_buf(const char* buf, size_t size);
 
 private:
 	size_t m_ref_count;
@@ -72,27 +64,60 @@ private:
 	// Attempt to move the cursor. Returns the real increment performed,
 	// emulating read or write
 	size_t move_cursor(size_t increment);
-
-	// Actual implementations of file operations
-	int do_stat_regular(UserPtr<struct stat*> stat_ptr) const;
-	int do_stat_stdout(UserPtr<struct stat*> stat_ptr) const;
-	ssize_t do_read_regular(UserPtr<void*> buf, size_t len);
-	ssize_t do_write_stdout(UserPtr<const void*> buf, size_t len);
 };
 
 class FileDescriptionStdin : public FileDescription {
 public:
 	FileDescriptionStdin();
+	int stat(UserPtr<struct stat*> stat_ptr) const override;
+	ssize_t read(UserPtr<void*> buf, size_t len) override;
+	ssize_t write(UserPtr<const void*> buf, size_t len) override;
+
+private:
+	bool m_input_opened;
 };
 
 class FileDescriptionStdout : public FileDescription {
 public:
 	FileDescriptionStdout();
+	int stat(UserPtr<struct stat*> stat_ptr) const override;
+	ssize_t read(UserPtr<void*> buf, size_t len) override;
+	ssize_t write(UserPtr<const void*> buf, size_t len) override;
 };
 
-class FileDescriptionStderr : public FileDescription {
+typedef FileDescriptionStdout FileDescriptionStderr;
+
+
+struct SocketType {
+	int domain;
+	int type;
+	int protocol;
+};
+
+class FileDescriptionSocket : public FileDescription {
 public:
-	FileDescriptionStderr();
+	FileDescriptionSocket(const char* buf, size_t size, SocketType type);
+
+	bool is_socket() const override { return true; }
+	SocketType type() const;
+	bool is_binded() const;
+	void set_binded(bool);
+	bool is_listening() const;
+	void set_listening(bool);
+	bool is_connected() const;
+	void set_connected(bool);
+
+	int stat(UserPtr<struct stat*> stat_ptr) const override;
+	ssize_t read(UserPtr<void*> buf, size_t len) override;
+	ssize_t write(UserPtr<const void*> buf, size_t len) override;
+	int bind(UserPtr<const struct sockaddr*> addr_ptr, size_t addr_len);
+	int listen(int backlog);
+
+private:
+	SocketType m_type;
+	bool m_binded;
+	bool m_listening;
+	bool m_connected;
 };
 
 #endif

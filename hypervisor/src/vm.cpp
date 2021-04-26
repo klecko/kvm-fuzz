@@ -326,6 +326,10 @@ Mmu& Vm::mmu() {
 	return m_mmu;
 }
 
+ElfParser& Vm::elf() {
+	return m_elf;
+}
+
 psize_t Vm::memsize() const {
 	return m_mmu.size();
 }
@@ -808,6 +812,9 @@ void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
 }
 
 void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames) {
+	if (!m_elf.has_dwarf())
+		return;
+
 	vsize_t regs[DwarfReg::MAX];
 	kvm_to_dwarf_regs(kregs, regs);
 

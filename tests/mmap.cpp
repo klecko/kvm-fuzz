@@ -2,7 +2,6 @@
 #include <fcntl.h>
 #include <cstring>
 #include "common.h"
-#include "catch.hpp"
 
 // mov rax, 0x1234; ret
 const uint8_t shellcode[] = "\x48\xc7\xc0\x34\x12\x00\x00\xc3";

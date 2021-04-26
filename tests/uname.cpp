@@ -1,7 +1,6 @@
 #include <sys/utsname.h>
 #include <cstring>
 #include "common.h"
-#include "catch.hpp"
 
 TEST_CASE("uname") {
 	struct utsname data;

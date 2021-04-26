@@ -1,7 +1,6 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include "common.h"
-#include "catch.hpp"
 
 const int PAGE_SIZE = 0x1000;
 

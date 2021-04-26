@@ -125,6 +125,7 @@ class ElfParser {
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
 		std::string addr_to_symbol_name(vaddr_t addr) const;
+		bool has_dwarf();
 		void get_current_frame_regs_info(vaddr_t instruction_pointer,
 		                                 Dwarf_Regtable3* regtable);
 
@@ -144,6 +145,7 @@ class ElfParser {
 		//std::vector<relocation_t> m_relocations;
 
 		// libdwarf stuff
+		bool m_has_dwarf;
 		dwarf_elf_handle m_dwarf_elf;
 		Dwarf_Debug m_dwarf;
 		Dwarf_Cie* m_dwarf_cie_data;

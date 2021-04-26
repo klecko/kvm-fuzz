@@ -1,7 +1,7 @@
 #ifndef _LIBCPP_LIBCPP_H
 #define _LIBCPP_LIBCPP_H
 
-#include "asm-generic/errno-base.h"
+#include "asm-generic/errno.h"
 #include "common.h"
 #include "printf.h"
 #include "string"

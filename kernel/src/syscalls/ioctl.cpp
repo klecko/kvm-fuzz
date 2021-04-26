@@ -16,6 +16,6 @@ int Process::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	// 	} else TODO;
 	// 	return (success ? 0 : -EFAULT);
 	// }
-	ASSERT(false, "TODO ioctl, fd: %d, request: %p, arg: %p", fd, request, arg);
-	return 0;
+	printf("TODO ioctl, fd: %d, request: %p, arg: %p\n", fd, request, arg);
+	return -EINVAL;
 }

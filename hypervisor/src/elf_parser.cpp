@@ -135,7 +135,7 @@ ElfParser::ElfParser(const string& elf_path)
 	// Get data
 	ret = dwarf_get_fde_list_eh(m_dwarf, &m_dwarf_cie_data, &m_dwarf_cie_count,
 		&m_dwarf_fde_data, &m_dwarf_fde_count, &err);
-	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+	m_has_dwarf = (ret == DW_DLV_OK);
 }
 
 const uint8_t* ElfParser::data() const {
@@ -228,9 +228,15 @@ string ElfParser::addr_to_symbol_name(vaddr_t addr) const {
 	return "unknown";
 }
 
+bool ElfParser::has_dwarf() {
+	return m_has_dwarf;
+}
+
 void ElfParser::get_current_frame_regs_info(vaddr_t instruction_pointer,
                                             Dwarf_Regtable3* regtable)
 {
+	ASSERT(m_has_dwarf, "attempt to use non existing dwarf info");
+
 	// Get Frame Description Entry for instruction pointer
 	Dwarf_Error err;
 	Dwarf_Fde fde;
