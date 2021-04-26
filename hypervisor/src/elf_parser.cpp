@@ -147,8 +147,9 @@ void ElfParser::set_base(vaddr_t base) {
 	m_base = base;
 
 	// Update all virtual addresses accordingly
-	m_entry     += diff;
-	m_load_addr += diff;
+	m_entry       += diff;
+	m_load_addr   += diff;
+	m_initial_brk += diff;
 	for (segment_t& segment : m_segments) {
 		segment.vaddr += diff;
 		segment.paddr += diff;

@@ -40,8 +40,18 @@ uintptr_t alloc_frame() {
 }
 
 bool alloc_frames(size_t n, vector<uintptr_t>& frames) {
-	if (amount_free_frames() < n)
+	frames.clear();
+
+	// Check if there are enough free frames. We must also count those required
+	// for the vector.
+	size_t frames_required_for_vector = 1 + (n*sizeof(uintptr_t))/PAGE_SIZE;
+	if (amount_free_frames() < n + frames_required_for_vector)
 		return false;
+
+	// Reserve exactly the number of slots we're going to use
+	frames.reserve(n);
+
+	// Allocate frames
 	for (size_t i = 0; i < n; i++) {
 		uintptr_t frame = alloc_frame();
 		ASSERT(frame, "failed after ensuring there were enough frames?");
@@ -63,7 +73,7 @@ void* phys_to_virt(uintptr_t phys) {
 
 size_t amount_free_frames() {
 	size_t reused_frames = g_free_frames.size();
-	size_t new_frames = (g_next_frame_alloc - g_memory_length)/PAGE_SIZE;
+	size_t new_frames = (g_memory_length - g_next_frame_alloc)/PAGE_SIZE;
 	return reused_frames + new_frames;
 }
 

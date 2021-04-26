@@ -175,8 +175,7 @@ int main(int argc, char** argv) {
 		args.memory,
 		args.kernel_path,
 		args.binary_path,
-		args.binary_argv,
-		args.basic_blocks_path
+		args.binary_argv
 	);
 
 	// Virtual file, whose content will be provided by the corpus and will be
@@ -203,6 +202,15 @@ int main(int argc, char** argv) {
 
 	// Run until main before forking or running single input
 	vm.run_until(vm.resolve_symbol("main"), stats);
+
+	// We do this here because we need libraries to be already loaded in case
+	// we want to get code coverage in those areas.
+	// printf("%x\n", *vm.mmu().get(0x7ffff808dc30));
+#if defined(ENABLE_COVERAGE_INTEL_PT)
+	vm.setup_coverage();
+#elif defined(ENABLE_COVERAGE_BREAKPOINTS)
+	vm.setup_coverage(args.basic_blocks_path);
+#endif
 
 	if (args.single_run) {
 		// Just perform a single run, loading input file if specified, and exit

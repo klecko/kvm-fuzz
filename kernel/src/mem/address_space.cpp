@@ -5,6 +5,7 @@
 
 AddressSpace::AddressSpace(uintptr_t ptl4_paddr)
 	: m_page_table(ptl4_paddr)
+	, m_next_user_mapping(USER_MAPPINGS_START_ADDR)
 {
 }
 

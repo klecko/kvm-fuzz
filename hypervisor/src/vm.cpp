@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <cstring>
 #include "vm.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -26,7 +27,7 @@ void init_kvm() {
 }
 
 Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
-       const vector<string>& argv, const string& basic_blocks_path)
+       const vector<string>& argv)
 	: m_vm_fd(create_vm())
 	, m_elf(binary_path)
 	, m_kernel(kernel_path)
@@ -37,20 +38,8 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_breakpoints_dirty(false)
 {
 	load_elfs();
-
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	// This has to be done after elfs have been loaded and relocated, so we know
-	// the address range we want to get coverage from
-	setup_coverage();
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	setup_coverage(basic_blocks_path);
-#endif
-
 	setup_kvm();
-
 	setup_kernel_execution();
-
 	printf("Ready to run!\n");
 }
 
@@ -226,7 +215,7 @@ void Vm::setup_coverage(const string& path) {
 		printf("Basic blocks file '%s' doesn't exist. It will be created using "
 		       "angr. This can take some minutes.\n", path.c_str());
 		string cmd = "../scripts/generate_basic_blocks.py " + m_elf.path() +
-		             " " + path;
+		             " " + path + " " + to_hex(m_elf.load_addr());
 		ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
 		bbs.open(path);
 	}

@@ -30,7 +30,7 @@ public:
 	};
 
 	struct Breakpoint {
-		enum Type {
+		enum Type : uint8_t {
 			RunEnd = 1 << 0,
 			Coverage = 1 << 1,
 			Hook = 1 << 2,
@@ -40,8 +40,7 @@ public:
 	};
 
 	Vm(vsize_t mem_size, const std::string& kernel_path,
-	   const std::string& binary_path, const std::vector<std::string>& argv,
-	   const std::string& basic_blocks_path);
+	   const std::string& binary_path, const std::vector<std::string>& argv);
 
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
@@ -54,10 +53,11 @@ public:
 	FaultInfo fault() const;
 	uint64_t instructions_executed_last_run() const;
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
+#if defined(ENABLE_COVERAGE_INTEL_PT)
+	void setup_coverage();
 	uint8_t* coverage() const;
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
+#elif defined(ENABLE_COVERAGE_BREAKPOINTS)
+	void setup_coverage(const std::string& path);
 	const std::set<vaddr_t>& coverage() const;
 #endif
 
@@ -145,11 +145,7 @@ private:
 	void setup_kvm();
 	void load_elfs();
 #ifdef ENABLE_COVERAGE_INTEL_PT
-	void setup_coverage();
 	void update_coverage(Stats& stats);
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	void setup_coverage(const std::string& path);
 #endif
 	void setup_kernel_execution();
 	void set_regs_dirty();

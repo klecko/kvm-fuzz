@@ -13,6 +13,8 @@ static const char* environ[] = {
 	"USERNAME=klecko",
 	"TERM=xterm-256color",
 	"PATH=/home/klecko/.cargo/bin:/home/klecko/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/klecko/.local/bin/:/opt/x86_64-elf/bin/:/home/klecko/zig/",
+	// "LD_DEBUG=files", // show base address of each library
+	// "LD_SHOW_AUXV=1", // dump auxv vector
 	// If these are set, file /usr/lib/locale/locale-archive has to be loaded
 	// in the hypervisor
 	//"LC_NAME=es_ES.UTF-8",
@@ -32,6 +34,15 @@ static uint8_t* setup_user_stack(uint8_t* user_stack, int argc, char** argv,
 	uint8_t* random_bytes = user_stack;
 	for (size_t i = 0; i < 16; i++)
 		random_bytes[i] = i;
+
+	// Platform for auxv
+	const char platform_string[] = "x86_64";
+	user_stack -= sizeof(platform_string) + 1;
+	memcpy(user_stack, platform_string, sizeof(platform_string) + 1);
+	uint8_t* platform = user_stack;
+
+	// Align stack
+	user_stack = (uint8_t*)((uintptr_t)user_stack & ~0xF);
 
 	// Write argv strings saving pointers to each arg
 	char* argv_addrs[argc];
@@ -65,19 +76,22 @@ static uint8_t* setup_user_stack(uint8_t* user_stack, int argc, char** argv,
 		uint64_t type;
 		uint64_t value;
 	} auxv[] = {
-		{AT_PHDR,   (uint64_t)info.elf_load_addr + info.phinfo.e_phoff},
-		{AT_PHENT,  info.phinfo.e_phentsize},
-		{AT_PHNUM,  info.phinfo.e_phnum},
-		{AT_PAGESZ, PAGE_SIZE},
-		{AT_BASE,   (uint64_t)info.interp_base},
-		{AT_ENTRY,  (uint64_t)info.elf_entry},
-		{AT_RANDOM, (uint64_t)random_bytes},
-		{AT_EXECFN, (uint64_t)argv_addrs[0]},
-		{AT_UID,	0},
-		{AT_EUID,	0},
-		{AT_GID,	0},
-		{AT_EGID,	0},
-		{AT_NULL,   0}
+		{AT_PHDR,     (uint64_t)info.elf_load_addr + info.phinfo.e_phoff},
+		{AT_PHENT,    info.phinfo.e_phentsize},
+		{AT_PHNUM,    info.phinfo.e_phnum},
+		{AT_PAGESZ,   PAGE_SIZE},
+		{AT_BASE,     (uint64_t)info.interp_base},
+		{AT_FLAGS,    0},
+		{AT_ENTRY,    (uint64_t)info.elf_entry},
+		{AT_RANDOM,   (uint64_t)random_bytes},
+		{AT_EXECFN,   (uint64_t)argv_addrs[0]},
+		{AT_PLATFORM, (uint64_t)platform},
+		{AT_SECURE,   0},
+		{AT_UID,      0},
+		{AT_EUID,     0},
+		{AT_GID,      0},
+		{AT_EGID,     0},
+		{AT_NULL,     0}
 	};
 	user_stack -= sizeof(auxv);
 	memcpy(user_stack, &auxv, sizeof(auxv));

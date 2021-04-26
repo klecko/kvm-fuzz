@@ -13,7 +13,7 @@
 
 // If disabled, input file will be chose from the initial corpus but it will
 // not be mutated
-//#define ENABLE_MUTATIONS
+#define ENABLE_MUTATIONS
 
 // Enables KVM dirty log ring, available from Linux 5.11. If disabled, the
 // usual bitmap is used

@@ -20,6 +20,7 @@ void PageTable::set(uintptr_t ptl4_paddr) {
 bool PageTable::map(uintptr_t virt, uintptr_t phys, uint64_t page_flags,
                     bool discard_already_mapped)
 {
+	ASSERT(virt, "mapping address 0 >:(");
 	PageTableEntry* pte = ensure_pte(virt);
 	if (!pte)
 		return false;

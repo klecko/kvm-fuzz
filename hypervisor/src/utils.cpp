@@ -54,3 +54,9 @@ string md5(const string& s) {
 string md5_file(const string& filepath) {
 	return md5(read_file(filepath));
 }
+
+string to_hex(size_t num) {
+	ostringstream ss;
+	ss << hex << num;
+	return ss.str();
+}

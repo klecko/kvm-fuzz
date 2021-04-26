@@ -173,7 +173,8 @@ void Corpus::set_mode_normal(const set<vaddr_t>& total_coverage) {
 	m_basic_blocks_hit.insert(total_coverage.begin(), total_coverage.end());
 #endif
 	cout << "Set corpus mode: Normal. Output directories will be "
-	     << m_output_dir_corpus << " and " << m_output_dir_crashes << endl;
+	     << m_output_dir_corpus << " and " << m_output_dir_crashes
+	     << ". Seed corpus coverage: " << coverage() << endl;
 
 	// Create output folders. Write seed input files to disk only if corpus
 	// directory is not the same as input directory, as we would just overwrite
