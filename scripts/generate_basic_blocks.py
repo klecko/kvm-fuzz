@@ -16,7 +16,7 @@ def main():
 		project = angr.Project(
 			elf_path,
 			load_options={'auto_load_libs': False},
-			main_opts={'custom_base_addr': base_address}
+			main_opts={'base_addr': base_address}
 		)
 
 		t = time.time()
