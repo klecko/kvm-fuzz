@@ -132,13 +132,11 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 				die("unexpected RunEndReason: %d\n", reason);
 			}
 
-#ifdef ENABLE_COVERAGE
 			// Report coverage
 			cycles = rdtsc1();
 			corpus.report_coverage(id, runner.coverage());
 			runner.reset_coverage();
 			local_stats.report_cov_cycles += rdtsc1() - cycles;
-#endif
 
 			// Reset vm
 			cycles = rdtsc1();
@@ -201,14 +199,15 @@ int main(int argc, char** argv) {
 	// vm.set_breakpoint(vm.resolve_symbol("__libc_pvalloc"), Vm::Breakpoint::Hook);
 
 	// Run until main before forking or running single input
+	// vm.run_until(vm.elf().entry(), stats);
+	// vm.run_until(vm.elf().load_addr() + 0x7640, stats);
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
-	// We do this here because we need libraries to be already loaded in case
-	// we want to get code coverage in those areas.
-	// printf("%x\n", *vm.mmu().get(0x7ffff808dc30));
 #if defined(ENABLE_COVERAGE_INTEL_PT)
 	vm.setup_coverage();
 #elif defined(ENABLE_COVERAGE_BREAKPOINTS)
+	// We do this here because we need libraries to be already loaded in case
+	// we want to put breakpoints to get code coverage in those areas.
 	vm.setup_coverage(args.basic_blocks_path);
 #endif
 
@@ -235,7 +234,7 @@ int main(int argc, char** argv) {
 	printf("Performing first runs...\n");
 	if (args.minimize_corpus) {
 #ifndef ENABLE_COVERAGE
-		printf("we can't minimize corpus without ENABEL_COVERAGE\n");
+		printf("we can't minimize corpus without coverage\n");
 		return 0;
 #else
 		// Ask for breakpoints to dirty memory, so they are resetted after
@@ -244,7 +243,7 @@ int main(int argc, char** argv) {
 		vm.set_breakpoints_dirty(true);
 
 		// Get coverage of every input and submit it to corpus
-		vector<set<vaddr_t>> coverages;
+		vector<Coverage> coverages;
 		Vm runner(vm);
 		Vm::RunEndReason reason;
 		for (size_t i = 0; i < corpus.size(); i++) {
@@ -280,7 +279,6 @@ int main(int argc, char** argv) {
 		corpus.set_mode_crashes_min(faults);
 
 	} else {
-#ifdef ENABLE_COVERAGE
 		// Perform run with each seed input and submit total coverage to corpus
 		Vm runner(vm);
 		for (size_t i = 0; i < corpus.size(); i++) {
@@ -289,9 +287,6 @@ int main(int argc, char** argv) {
 			runner.reset(vm, stats);
 		}
 		corpus.set_mode_normal(runner.coverage());
-#else
-		corpus.set_mode_normal({});
-#endif
 	}
 
 

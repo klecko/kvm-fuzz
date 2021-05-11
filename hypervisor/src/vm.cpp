@@ -123,6 +123,12 @@ int Vm::create_vm() {
 
 	m_regs  = &m_vcpu_run->s.regs.regs;
 	m_sregs = &m_vcpu_run->s.regs.sregs;
+
+#ifdef ENABLE_COVERAGE_INTEL_PT
+	m_vmx_pt_fd      = 0;
+	m_vmx_pt         = nullptr;
+	m_vmx_pt_decoder = nullptr;
+#endif
 	return m_vm_fd;
 }
 
@@ -173,7 +179,7 @@ void Vm::setup_kvm() {
 	m_vcpu_run->kvm_valid_regs = KVM_SYNC_X86_REGS | KVM_SYNC_X86_SREGS;
 }
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
+#if defined(ENABLE_COVERAGE_INTEL_PT)
 void Vm::setup_coverage() {
 	// Get coverage range. Elf should have been loaded by now
 	auto limits = m_elf.section_limits(".text");
@@ -186,7 +192,6 @@ void Vm::setup_coverage() {
 	m_vmx_pt = (uint8_t*)mmap(nullptr, vmx_pt_size, PROT_READ|PROT_WRITE,
 	                          MAP_SHARED, m_vmx_pt_fd, 0);
 	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
-	m_vmx_pt_bitmap = (uint8_t*)malloc(COVERAGE_BITMAP_SIZE);
 
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter0);
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE_ADDR0, 0);
@@ -199,15 +204,15 @@ void Vm::setup_coverage() {
 	uint64_t filter[4][2] = {0};
 	filter[0][0] = filter0.a;
 	filter[0][1] = filter0.b;
+	void* bitmap = m_coverage.bitmap();
 	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
-	                               this, m_vmx_pt_bitmap, COVERAGE_BITMAP_SIZE);
+	                               this, bitmap, COVERAGE_BITMAP_SIZE);
 	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, nullptr);
 	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, nullptr);
 	//libxdc_enable_tracing(decoder);
 }
-#endif
 
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
+#elif defined(ENABLE_COVERAGE_BREAKPOINTS)
 void Vm::setup_coverage(const string& path) {
 	ifstream bbs(path);
 	if (!bbs.good()) {
@@ -333,25 +338,13 @@ uint64_t Vm::instructions_executed_last_run() const {
 	return m_instructions_executed - m_instructions_executed_prev;
 }
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
-uint8_t* Vm::coverage() const {
-	return m_vmx_pt_bitmap;
+const Coverage& Vm::coverage() const {
+	return m_coverage;
 }
 
 void Vm::reset_coverage() {
-	memset(m_vmx_pt_bitmap, 0, COVERAGE_BITMAP_SIZE);
+	m_coverage.reset();
 }
-#endif
-
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-const set<vaddr_t>& Vm::coverage() const {
-	return m_new_basic_block_hits;
-}
-
-void Vm::reset_coverage() {
-	m_new_basic_block_hits.clear();
-}
-#endif
 
 void Vm::reset(const Vm& other, Stats& stats) {
 	// Reset mmu, regs and sregs
@@ -471,8 +464,10 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 	}
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
-	// Before returning, update coverage
-	update_coverage(stats);
+	// Before returning, update coverage if VMX PT has been initialised
+	if (m_vmx_pt) {
+		update_coverage(stats);
+	}
 #endif
 
 	return reason;
@@ -510,7 +505,7 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	// remove it
 	if (m_breakpoints[addr].type & Breakpoint::Type::Coverage) {
 		remove_breakpoint(addr, Breakpoint::Coverage);
-		m_new_basic_block_hits.insert(addr);
+		m_coverage.add(addr);
 	}
 #endif
 

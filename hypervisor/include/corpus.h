@@ -6,6 +6,7 @@
 #include <stats.h>
 #include "common.h"
 #include "fault.h"
+#include "coverage.h"
 
 // Used for mutating inputs. We don't use glibc rand() because it uses locks
 // in order to be thread safe. Instead, we implement a simpler algorithm, and
@@ -54,8 +55,8 @@ public:
 	// Set mode. This must be called before doing anything else. Normal mode
 	// requires the total coverage of the seed corpus, while minimization
 	// modes require the coverage or fault associated to each seed input.
-	void set_mode_normal(const std::set<vaddr_t>& total_coverage);
-	void set_mode_corpus_min(const std::vector<std::set<vaddr_t>>& coverages);
+	void set_mode_normal(const Coverage& total_coverage);
+	void set_mode_corpus_min(const std::vector<Coverage>& coverages);
 	void set_mode_crashes_min(const std::vector<FaultInfo>& faults);
 
 	// Get a new mutated input, which will be a constant reference to
@@ -65,12 +66,8 @@ public:
 	// Report a new crash
 	void report_crash(int id, const FaultInfo& fault);
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	void report_coverage(int id, uint8_t* cov);
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	void report_coverage(int id, const std::set<vaddr_t>& new_blocks);
-#endif
+	// Report coverage of a run
+	void report_coverage(int id, const Coverage& cov);
 
 private:
 	enum Mode {
@@ -98,16 +95,8 @@ private:
 	// Vector with one mutated input for each thread. No need to lock
 	std::vector<std::string> m_mutated_inputs;
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	// Bitmap of recorded coverage
-	uint8_t* m_recorded_cov_bitmap;
-	std::atomic<size_t> m_recorded_cov;
-#endif
-
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	std::atomic_flag m_lock_basic_blocks_hits;
-	std::unordered_set<vaddr_t> m_basic_blocks_hit;
-#endif
+	// Recorded coverage in all runs
+	SharedCoverage m_recorded_coverage;
 
 	// Max input size, used in expand mutation
 	size_t m_max_input_size;
@@ -123,7 +112,7 @@ private:
 	Mode m_mode;
 
 	// Coverage of each of the seeds, when in mode CorpusMinimization
-	std::vector<std::set<vaddr_t>> m_coverages;
+	std::vector<Coverage> m_coverages;
 
 	// Fault of each of the seeds, when in mode FaultMinimization
 	std::vector<FaultInfo> m_faults;
@@ -139,7 +128,7 @@ private:
 	// the same. In that case, replace associated input in the corpus with
 	// the reduced one, and write it to its corresponding dir.
 	void handle_crash_crashes_minimization(int id, const FaultInfo& fault);
-	void handle_cov_corpus_minimization(int id, const std::set<vaddr_t>& cov);
+	void handle_cov_corpus_minimization(int id, const Coverage& cov);
 
 	// Apply afl-cmin algorithm to reduce number of elements in the corpus
 	void minimize();

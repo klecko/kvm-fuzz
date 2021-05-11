@@ -18,13 +18,6 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	, m_lock_corpus(false)
 	, m_lock_crashes(false)
 	, m_mutated_inputs(nthreads)
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	, m_recorded_cov_bitmap(new uint8_t[COVERAGE_BITMAP_SIZE])
-	, m_recorded_cov(0)
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	, m_lock_basic_blocks_hits(false)
-#endif
 	, m_mutated_inputs_indexes(nthreads)
 	, m_mode(Mode::Unknown)
 {
@@ -78,11 +71,6 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	// here. Normal mode will write corpus and crashes dir, while each
 	// minimization mode will write to its own directory.
 	create_folder(output_dir);
-
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	// Reset coverage bitmap
-	memset(m_recorded_cov_bitmap, 0, COVERAGE_BITMAP_SIZE);
-#endif
 }
 
 size_t Corpus::size() const {
@@ -105,15 +93,7 @@ size_t Corpus::unique_crashes() const {
 }
 
 size_t Corpus::coverage() const {
-#ifdef ENABLE_COVERAGE_INTEL_PT
-	return m_recorded_cov;
-#endif
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	return m_basic_blocks_hit.size();
-#endif
-#ifndef ENABLE_COVERAGE
-	return 0;
-#endif
+	return m_recorded_coverage.count();
 }
 
 string Corpus::seed_filename(size_t i) const {
@@ -166,12 +146,10 @@ void Corpus::write_min_crash_file(size_t i) {
 	           m_corpus[i]);
 }
 
-void Corpus::set_mode_normal(const set<vaddr_t>& total_coverage) {
+void Corpus::set_mode_normal(const Coverage& total_coverage) {
 	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
 	m_mode = Mode::Normal;
-#ifdef ENABLE_COVERAGE
-	m_basic_blocks_hit.insert(total_coverage.begin(), total_coverage.end());
-#endif
+	m_recorded_coverage = total_coverage;
 	cout << "Set corpus mode: Normal. Output directories will be "
 	     << m_output_dir_corpus << " and " << m_output_dir_crashes
 	     << ". Seed corpus coverage: " << coverage() << endl;
@@ -188,7 +166,10 @@ void Corpus::set_mode_normal(const set<vaddr_t>& total_coverage) {
 	}
 }
 
-void Corpus::set_mode_corpus_min(const vector<set<vaddr_t>>& coverages) {
+void Corpus::set_mode_corpus_min(const vector<Coverage>& coverages) {
+#ifndef ENABLE_COVERAGE
+	ASSERT(false, "corpus minimization mode needs coverage");
+#endif
 	ASSERT(m_mode == Mode::Unknown, "corpus mode already set to %d", m_mode);
 	ASSERT(coverages.size() == m_corpus.size(), "size mismatch: %lu vs %lu",
 	       coverages.size(), m_corpus.size());
@@ -286,90 +267,26 @@ void Corpus::handle_crash_crashes_minimization(int id, const FaultInfo& fault) {
 	}
 }
 
+void Corpus::report_coverage(int id, const Coverage& cov) {
 
-#ifdef ENABLE_COVERAGE_INTEL_PT
-__attribute__((always_inline)) inline
-bool lock_bts(int i, uint8_t* p) {
-	bool test = false;
-	asm(
-		"lock bts %[i], %[val];"
-		"setc %[test];"
-		: [val] "+m" (*p),
-		  [test] "+r" (test)
-		: [i] "r" (i)
-		:
-	);
-	return test;
-}
-
-void Corpus::report_coverage(int id, uint8_t* cov) {
-	// if (m_minimization_mode)
-	// 	return;
-
-	size_t new_cov = 0;
-	size_t rec_cov_v, cov_v, i, j, j_q, j_r;
-
-	// Go over both bitmaps using size_t. When there is new coverage in one
-	// of those words, go over its bits to see which is the new one.
-	for (i = 0; i < COVERAGE_BITMAP_SIZE; i += sizeof(cov_v)) {
-		cov_v     = *(size_t*)(cov + i);
-		rec_cov_v = *(size_t*)(m_recorded_cov_bitmap + i);
-		if ((cov_v | rec_cov_v) != rec_cov_v) {
-			// There is new coverage. Test each bit in cov_v
-			for (j = i*8; j < (i+sizeof(size_t))*8; j++) {
-				j_q = j / 8;
-				j_r = j % 8;
-				if (cov[j_q] & (1 << j_r)) {
-					// Set bit in recorded cov bitmap. If it was 0, then that's
-					// a new bit
-					new_cov += !lock_bts(j_r, &m_recorded_cov_bitmap[j_q]);
-				}
+	switch (m_mode) {
+		case Mode::CrashesMinimization:
+			break;
+		case Mode::CorpusMinimization:
+			handle_cov_corpus_minimization(id, cov);
+			break;
+		case Mode::Normal:
+			if (m_recorded_coverage.add(cov)) {
+				// There was new coverage
+				add_input(m_mutated_inputs[id]);
 			}
-		}
-	}
-
-	// If there was new coverage, update count and add input to corpus
-	if (new_cov) {
-		m_recorded_cov += new_cov;
-		add_input(m_mutated_inputs[id]);
-	}
-}
-#endif
-
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-void Corpus::report_coverage(int id, const set<vaddr_t>& new_blocks) {
-	ASSERT(m_mode != Mode::Unknown, "mode not set");
-
-	// Crashes minimization mode doesn't care about coverage
-	if (m_mode == Mode::CrashesMinimization)
-		return;
-
-	if (m_mode == Mode::CorpusMinimization) {
-		handle_cov_corpus_minimization(id, new_blocks);
-		return;
-	}
-
-	// For each block, attempt to insert it and check if it's new
-	// This could also be done as a bitmap if we want more performance, but
-	// it isn't worth it for now
-	bool inserted, new_cov = false;
-	for (vaddr_t block : new_blocks) {
-		while (m_lock_basic_blocks_hits.test_and_set());
-		inserted = m_basic_blocks_hit.insert(block).second;
-		m_lock_basic_blocks_hits.clear();
-		new_cov |= inserted;
-		// if (inserted) {
-		// 	printf("new cov: 0x%lx\n", block);
-		// }
-	}
-
-	// If there was new coverage, add input to corpus
-	if (new_cov) {
-		add_input(m_mutated_inputs[id]);
+			break;
+		case Mode::Unknown:
+			ASSERT(false, "mode not set");
 	}
 }
 
-void Corpus::handle_cov_corpus_minimization(int id, const set<vaddr_t>& cov) {
+void Corpus::handle_cov_corpus_minimization(int id, const Coverage& cov) {
 	// If the coverage is the same and the size of the mutated input is
 	// lower than current input size, replace current input with mutated
 	// input and save file to disk.
@@ -384,46 +301,49 @@ void Corpus::handle_cov_corpus_minimization(int id, const set<vaddr_t>& cov) {
 		m_lock_corpus.clear();
 	}
 }
-#endif
-
 
 void Corpus::minimize() {
+#ifdef ENABLE_COVERAGE_BREAKPOINTS
 	ASSERT(m_mode == Mode::CorpusMinimization, "mode %d", m_mode);
 	ASSERT(m_coverages.size() == m_corpus.size(), "size mismatch: %lu vs %lu",
 	       m_coverages.size(), m_corpus.size());
 
 	// Calculate union of all coverages
-	unordered_set<vaddr_t> missing_coverage;
-	for (const set<vaddr_t> coverage : m_coverages) {
-		missing_coverage.insert(coverage.begin(), coverage.end());
+	SharedCoverage missing_coverage;
+	for (const Coverage& coverage : m_coverages) {
+		missing_coverage.add(coverage);
 	}
 
 	// Afl-cmin algorithm
 	std::vector<std::string> new_corpus;
 	const size_t INVALID_INDEX = numeric_limits<size_t>::max();
-	while (!missing_coverage.empty()) {
+	while (missing_coverage.count() > 0) {
 		// 1. Find next basic block not yet in the temporary working set
-		vaddr_t bb = *missing_coverage.begin();
+		size_t missing = *missing_coverage.begin();
 
 		// 2. Locate the winning corpus entry for this basic block, which is
 		//    the smallest that covers it
 		size_t i_winning = INVALID_INDEX;
 		for (size_t i = 0; i < m_coverages.size(); i++) {
-			if (m_coverages[i].count(bb)) {
-				if (i_winning == INVALID_INDEX || m_corpus[i].size() < m_corpus[i_winning].size())
-					i_winning = i;
-			}
+			if (!m_coverages[i].contains(missing))
+				continue;
+			bool is_better = m_corpus[i].size() < m_corpus[i_winning].size();
+			if (is_better || i_winning == INVALID_INDEX)
+				i_winning = i;
 		}
 		ASSERT(i_winning != INVALID_INDEX, "there's no input that covers bb?");
 		new_corpus.push_back(m_corpus[i_winning]);
 
 		// 3. Register all basic blocks reached by the winning entry
 		for (vaddr_t bb_reached : m_coverages[i_winning]) {
-			missing_coverage.erase(bb_reached);
+			missing_coverage.remove(bb_reached);
 		}
 	}
 
 	m_corpus = new_corpus;
+#else
+	// TODO maybe
+#endif
 }
 
 

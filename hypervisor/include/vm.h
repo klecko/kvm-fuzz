@@ -10,6 +10,7 @@
 #include "common.h"
 #include "kvm_aux.h"
 #include "fault.h"
+#include "coverage.h"
 
 void init_kvm();
 
@@ -55,11 +56,10 @@ public:
 
 #if defined(ENABLE_COVERAGE_INTEL_PT)
 	void setup_coverage();
-	uint8_t* coverage() const;
 #elif defined(ENABLE_COVERAGE_BREAKPOINTS)
 	void setup_coverage(const std::string& path);
-	const std::set<vaddr_t>& coverage() const;
 #endif
+	const Coverage& coverage() const;
 
 	void reset_coverage();
 
@@ -104,15 +104,12 @@ private:
 	kvm_sregs* m_sregs;
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
-	int m_vmx_pt_fd;
+	int        m_vmx_pt_fd;
 	uint8_t*   m_vmx_pt;
-	uint8_t*   m_vmx_pt_bitmap;
 	libxdc_t*  m_vmx_pt_decoder;
 #endif
 
-#ifdef ENABLE_COVERAGE_BREAKPOINTS
-	std::set<vaddr_t> m_new_basic_block_hits;
-#endif
+	Coverage   m_coverage;
 
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
