@@ -111,8 +111,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	if (map_fixed && (addr.is_null() || !IS_PAGE_ALIGNED(addr.flat())))
 		return -EINVAL;
 
-	// Try to allocate range. This will fail if there isn't enough memory,
-	// or if it is out of user address space range. Both cases return ENOMEM.
+	// Try to allocate range. This will fail if there isn't enough memory.
 	Range range(addr.flat() & PTL1_MASK, length_upper);
 	if (!m_space.alloc_range(range))
 		return -ENOMEM;
@@ -166,7 +165,7 @@ int Process::do_sys_munmap(UserPtr<void*> addr, size_t length) {
 
 	Range range(addr.flat(), length);
 	if (!m_space.unmap_range(range, true))
-		return -ENOMEM;
+		return -EINVAL;
 	return 0;
 }
 

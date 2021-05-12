@@ -78,4 +78,18 @@ TEST_CASE("mmap fixed") {
 	REQUIRE(munmap(p3, PAGE_SIZE) == 0); // munmap twice is not an error
 	REQUIRE(munmap(nullptr, PAGE_SIZE) == 0); // munmap not mapped addr neither
 	REQUIRE(munmap((void*)1, PAGE_SIZE) == -1); // but address must be aligned
+	REQUIRE(errno == EINVAL);
+}
+
+TEST_CASE("mmap kernel") {
+	void* kernel_addr = (void*)0xffffffffa1d0f000;
+	void* p = mmap(kernel_addr, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == ENOMEM);
+
+	REQUIRE(mprotect(kernel_addr, 0x1000, PROT_NONE) == -1);
+	REQUIRE(errno == ENOMEM);
+
+	REQUIRE(munmap(kernel_addr, 0x1000) == -1);
+	REQUIRE(errno == EINVAL);
 }

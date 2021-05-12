@@ -67,3 +67,18 @@ TEST_CASE("files") {
 	REQUIRE(errno == EBADF);
 	delete[] buf;
 }
+
+TEST_CASE("read oob") {
+	void* kernel_addr = (void*)0xffffffff80202000;
+	int fd = open(input, O_RDONLY);
+	REQUIRE(read(fd, kernel_addr, 1) == -1);
+	REQUIRE(errno == EFAULT);
+
+	REQUIRE(read(fd, 0, 1) == -1);
+	REQUIRE(errno == EFAULT);
+
+	REQUIRE(read(fd, (void*)&read, 1) == -1);
+	REQUIRE(errno == EFAULT);
+
+	REQUIRE(close(fd) == 0);
+}

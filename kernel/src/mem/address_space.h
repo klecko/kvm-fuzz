@@ -15,6 +15,10 @@ enum MemPerms : uint8_t {
 
 class AddressSpace {
 public:
+	static bool is_user_address(uintptr_t addr);
+	static bool is_user_range(uintptr_t addr, size_t len);
+	static bool is_user_range(const Range& range);
+
 	AddressSpace(uintptr_t ptl4_paddr);
 
 	// Given a range, attempt to allocate physical memory for it

@@ -2,6 +2,7 @@
 #include "libcpp.h"
 #include "hypercalls.h"
 #include "mem/vmm.h"
+#include "mem/address_space.h"
 #include "safe_mem.h"
 
 void* operator new(size_t size) {
@@ -47,16 +48,16 @@ ssize_t print_user(UserPtr<const void*> buf, size_t len) {
 }
 
 bool copy_to_user(UserPtr<void*> dest, const void* src, size_t n) {
-	// if (!is_user_range(dest, n))
-	// 	return false;
-	// ASSERT(is_kernel_range(src, n), "woops");
+	if (!AddressSpace::is_user_range(dest.flat(), n))
+		return false;
+	ASSERT(!AddressSpace::is_user_range((uintptr_t)src, n), "copying from user");
 	return SafeMem::memcpy(dest.ptr(), src, n);
 }
 
 bool copy_from_user(void* dest, UserPtr<const void*> src, size_t n) {
-	// if (!is_user_range(src, n))
-	// 	return false;
-	// ASSERT(is_kernel_range(dest, n), "woops");
+	if (!AddressSpace::is_user_range(src.flat(), n))
+		return false;
+	ASSERT(!AddressSpace::is_user_range((uintptr_t)dest, n), "copying to user");
 	return SafeMem::memcpy(dest, src.ptr(), n);
 }
 
@@ -65,10 +66,9 @@ bool copy_string_from_user(UserPtr<const char*> src, string& dst) {
 	if (length == -1)
 		return false;
 
-	// TODO: This is definitely not safe. The correct way should be allocating a
-	// buffer, calling safe_memcpy and then assigning that buffer to the string.
-	dst = string(src.ptr(), length);
-	return true;
+	// TODO: is there a way to avoid OOM, as we do in print_user?
+	dst = string(length, 0);
+	return copy_from_user(&dst[0], src, length);
 }
 
 
