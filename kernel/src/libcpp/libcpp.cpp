@@ -48,16 +48,20 @@ ssize_t print_user(UserPtr<const void*> buf, size_t len) {
 }
 
 bool copy_to_user(UserPtr<void*> dest, const void* src, size_t n) {
+	if (!n)
+		return true;
 	if (!AddressSpace::is_user_range(dest.flat(), n))
 		return false;
-	ASSERT(!AddressSpace::is_user_range((uintptr_t)src, n), "copying from user");
+	ASSERT(!AddressSpace::is_user_range((uintptr_t)src, n), "src is user: %p", src);
 	return SafeMem::memcpy(dest.ptr(), src, n);
 }
 
 bool copy_from_user(void* dest, UserPtr<const void*> src, size_t n) {
+	if (!n)
+		return true;
 	if (!AddressSpace::is_user_range(src.flat(), n))
 		return false;
-	ASSERT(!AddressSpace::is_user_range((uintptr_t)dest, n), "copying to user");
+	ASSERT(!AddressSpace::is_user_range((uintptr_t)dest, n), "dst is user: %p", dest);
 	return SafeMem::memcpy(dest, src.ptr(), n);
 }
 
