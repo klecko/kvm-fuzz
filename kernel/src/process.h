@@ -82,6 +82,10 @@ private:
 	int do_sys_listen(int, int);
 	int do_sys_accept(int, UserPtr<struct sockaddr*>, UserPtr<socklen_t*>);
 	int do_sys_getpeername(int, UserPtr<struct sockaddr*>, UserPtr<socklen_t*>);
+	ssize_t do_sys_recvfrom(int, UserPtr<void*>, size_t, int,
+	                        UserPtr<struct sockaddr*>, UserPtr<socklen_t*>);
+	ssize_t do_sys_sendto(int, UserPtr<void*>, size_t, int,
+	                      UserPtr<const struct sockaddr*>, socklen_t);
 	ssize_t do_sys_sendfile(int, int, UserPtr<off_t*>, ssize_t);
 };
 

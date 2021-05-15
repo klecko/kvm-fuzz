@@ -72,6 +72,37 @@ int Process::do_sys_getpeername(int sockfd, UserPtr<struct sockaddr*> addr_ptr,
 	return 0;
 }
 
+ssize_t Process::do_sys_recvfrom(
+	int sockfd, UserPtr<void*> buf, size_t len,
+    int flags, UserPtr<struct sockaddr*> src_addr_ptr,
+	UserPtr<socklen_t*> addr_len_ptr
+) {
+	ASSERT(flags == 0, "TODO");
+	ASSERT(src_addr_ptr.is_null(), "TODO");
+	ASSERT(addr_len_ptr.is_null(), "TODO");
+	if (!m_open_files.count(sockfd))
+		return -EBADF;
+	if (!m_open_files[sockfd]->is_socket())
+		return -ENOTSOCK;
+	return m_open_files[sockfd]->read(buf, len);
+}
+
+ssize_t Process::do_sys_sendto(
+	int sockfd, UserPtr<void*> buf, size_t len, int flags,
+	UserPtr<const struct sockaddr*> dest_addr_ptr, socklen_t addr_len
+) {
+	ASSERT(flags == 0, "TODO");
+	ASSERT(dest_addr_ptr.is_null(), "TODO");
+	ASSERT(addr_len == 0, "TODO");
+	if (!m_open_files.count(sockfd))
+		return -EBADF;
+	if (!m_open_files[sockfd]->is_socket())
+		return -ENOTSOCK;
+
+	// Don't do anything
+	return len;
+}
+
 ssize_t Process::do_sys_sendfile(int out_fd, int in_fd, UserPtr<off_t*> off_ptr,
                                  ssize_t count)
 {

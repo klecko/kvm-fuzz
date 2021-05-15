@@ -175,6 +175,15 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 			ret = do_sys_accept(arg0, UserPtr<struct sockaddr*>(arg1),
 			                    UserPtr<socklen_t*>(arg2));
 			break;
+		case SYS_recvfrom:
+			ret = do_sys_recvfrom(arg0, UserPtr<void*>(arg1), arg2, arg3,
+			                      UserPtr<struct sockaddr*>(arg4),
+			                      UserPtr<socklen_t*>(arg5));
+			break;
+		case SYS_sendto:
+			ret = do_sys_sendto(arg0, UserPtr<void*>(arg1), arg2, arg3,
+			                    UserPtr<const struct sockaddr*>(arg4), arg5);
+			break;
 		case SYS_sendfile:
 			ret = do_sys_sendfile(arg0, arg1, UserPtr<off_t*>(arg2), arg3);
 			break;
