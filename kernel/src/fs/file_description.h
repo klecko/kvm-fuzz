@@ -17,6 +17,7 @@ public:
 	// Used by stat. Fstat should use the corresponding method in File
 	static int stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
 					        inode_t inode);
+	static int stat_stdin(UserPtr<struct stat*> stat_ptr);
 	static int stat_stdout(UserPtr<struct stat*> stat_ptr);
 
 	FileDescription(uint32_t flags, const char* buf, size_t size);

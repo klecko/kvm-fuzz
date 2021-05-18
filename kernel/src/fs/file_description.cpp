@@ -30,6 +30,28 @@ int FileDescription::stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_si
 	return (copy_to_user(stat_ptr, &st) ? 0 : -EFAULT);
 }
 
+int FileDescription::stat_stdin(UserPtr<struct stat*> stat_ptr) {
+	static constexpr struct stat stdin_st = {
+		.st_dev          = 24,
+		.st_ino          = 15,
+		.st_nlink        = 1,
+		.st_mode         = 020620,
+		.st_uid          = 0,
+		.st_gid          = 0,
+		.st_rdev         = 34827,
+		.st_size         = 0,
+		.st_blksize      = 1024,
+		.st_blocks       = 0,
+		.st_atime        = 0,
+		.st_atime_nsec   = 0,
+		.st_mtime        = 0,
+		.st_mtime_nsec   = 0,
+		.st_ctime        = 0,
+		.st_ctime_nsec   = 0,
+	};
+	return (copy_to_user(stat_ptr, &stdin_st) ? 0 : -EFAULT);
+}
+
 int FileDescription::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 	static constexpr struct stat stdout_st = {
 		.st_dev          = 22,
@@ -156,8 +178,7 @@ FileDescriptionStdin::FileDescriptionStdin()
 }
 
 int FileDescriptionStdin::stat(UserPtr<struct stat*> stat_ptr) const {
-	TODO
-	return 0;
+	return stat_stdin(stat_ptr);
 }
 
 ssize_t FileDescriptionStdin::read(UserPtr<void*> buf, size_t len) {
@@ -175,8 +196,12 @@ ssize_t FileDescriptionStdin::read(UserPtr<void*> buf, size_t len) {
 }
 
 ssize_t FileDescriptionStdin::write(UserPtr<const void*> buf, size_t len) {
-	TODO
-	return 0;
+	printf_once("printing to stdin, maybe a bug?\n");
+	ssize_t ret = len;
+#ifdef ENABLE_GUEST_OUTPUT
+	ret = print_user(bug, len);
+#endif
+	return ret;
 }
 
 

@@ -15,7 +15,13 @@ int Process::do_sys_openat(int dirfd, UserPtr<const char*> pathname_ptr,
 	// Find unused fd
 	int fd = available_fd();
 
-	// Open file
+	// Let's open the file. Special hacky case for stdout.
+	if (pathname == "stdout") {
+		m_open_files[fd] = FileManager::open(FileManager::SpecialFile::Stdout);
+		return fd;
+	}
+
+	// Every other file
 	if (!FileManager::exists(pathname)) {
 		dbgprintf("warning: opening unknown file '%s'\n", pathname.c_str());
 		return -ENOENT;
