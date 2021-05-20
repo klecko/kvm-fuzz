@@ -25,8 +25,8 @@ extern "C" void kmain(int argc, char** argv) {
 	IDT::init();
 	PMM::init();
 	VMM::init();
-	APIC::init();
 	Perf::init();
+	APIC::init();
 	Syscall::init();
 	FileManager::init(info.num_files);
 

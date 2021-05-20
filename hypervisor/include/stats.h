@@ -20,6 +20,7 @@ struct Stats {
 	uint64_t cases {0};
 	uint64_t instr {0};
 	uint64_t crashes {0};
+	uint64_t timeouts {0};
 	uint64_t vm_exits {0};
 	uint64_t vm_exits_hc {0};
 	uint64_t vm_exits_debug {0};
@@ -44,6 +45,7 @@ struct Stats {
 		cases             = other.cases;
 		instr             = other.instr;
 		crashes           = other.crashes;
+		timeouts          = other.timeouts;
 		vm_exits          = other.vm_exits;
 		vm_exits_hc       = other.vm_exits_hc;
 		vm_exits_debug    = other.vm_exits_debug;
@@ -67,6 +69,7 @@ struct Stats {
 		cases             += stats.cases;
 		instr             += stats.instr;
 		crashes           += stats.crashes;
+		timeouts          += stats.timeouts;
 		vm_exits          += stats.vm_exits;
 		vm_exits_hc       += stats.vm_exits_hc;
 		vm_exits_debug    += stats.vm_exits_debug;

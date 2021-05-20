@@ -7,7 +7,7 @@ int Process::do_sys_tgkill(int tgid, int tid, int sig) {
 			.type = FaultInfo::AssertionFailed,
 			.rip = m_user_regs->rip
 		};
-		hc_fault(&fault);
+		hc_end_run(RunEndReason::Crash, &fault);
 	}
 	TODO
 	return 0;

@@ -15,7 +15,7 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now(),
 		new_cov_last_time = start;
 	uint64_t cycles_elapsed, cases_elapsed, cases, cov, cov_old = 0, corpus_n,
-	         crashes, unique_crashes;
+	         crashes, unique_crashes, timeouts;
 	double mips, fcps, run_time, reset_time, hypercall_time, corpus_mem,
 	       kvm_time, mut_time, mut1_time, mut2_time, set_input_time,
 	       reset_pages, vm_exits, vm_exits_hc, update_cov_time, report_cov_time,
@@ -35,6 +35,7 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		corpus_mem      = (double)corpus.memsize() / 1024;
 		crashes         = stats.crashes;
 		unique_crashes  = corpus.unique_crashes();
+		timeouts        = stats.timeouts;
 		fcps            = (double)cases_elapsed / elapsed.count();
 		mips            = (double)(stats.instr - stats_old.instr) / (elapsed.count() * 1000000);
 		vm_exits        = (double)(stats.vm_exits - stats_old.vm_exits) / cases_elapsed;
@@ -63,9 +64,10 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 		// Free stats (no rdtsc)
 		printf("[%.3f] cases: %lu, mips: %.3f, fcps: %.3f, cov: %lu, "
 		       "corpus: %lu/%.3fKB, unique crashes: %lu (total: %lu), "
-		       "no new cov for: %.3f\n",
+		       "timeouts: %lu, no new cov for: %.3f\n",
 		       elapsed_total.count(), cases, mips, fcps, cov, corpus_n,
-		       corpus_mem, unique_crashes, crashes, no_new_cov_time.count());
+		       corpus_mem, unique_crashes, crashes, timeouts,
+		       no_new_cov_time.count());
 		printf("\tvm exits: %.3f (hc: %.3f, cov: %.3f, debug: %.3f), "
 		       "reset pages: %.3f\n",
 		       vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug,
@@ -128,6 +130,8 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			if (reason == Vm::RunEndReason::Crash) {
 				stats.crashes++;
 				corpus.report_crash(id, runner.fault());
+			} else if (reason == Vm::RunEndReason::Timeout) {
+				stats.timeouts++;
 			} else if (reason != Vm::RunEndReason::Exit) {
 				die("unexpected RunEndReason: %d\n", reason);
 			}
@@ -202,6 +206,10 @@ int main(int argc, char** argv) {
 	// vm.run_until(vm.elf().entry(), stats);
 	// vm.run_until(vm.elf().load_addr() + 0x7640, stats);
 	vm.run_until(vm.resolve_symbol("main"), stats);
+
+	// Reset timer so it starts counting from 0, and set a timeout of 2ms
+	vm.reset_timer();
+	vm.set_timeout(1000*2);
 
 #if defined(ENABLE_COVERAGE_INTEL_PT)
 	vm.setup_coverage();

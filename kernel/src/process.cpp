@@ -91,7 +91,7 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_exit_group:
 			//dbgprintf("end run --------------------------------\n\n");
 			//print_syscalls();
-			hc_end_run();
+			hc_end_run(RunEndReason::Exit, nullptr);
 			break;
 		case SYS_getuid:
 		case SYS_getgid:

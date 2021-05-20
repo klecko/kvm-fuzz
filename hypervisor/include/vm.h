@@ -27,6 +27,7 @@ public:
 		Exit,
 		Debug,
 		Crash,
+		Timeout,
 		Unknown = -1,
 	};
 
@@ -91,6 +92,14 @@ public:
 	              bool check = false);
 
 	vaddr_t resolve_symbol(const std::string& symbol_name);
+
+	// Reset the timer inside the VM
+	void reset_timer();
+
+	// Set a timeout. If the timer inside the VM exceeds this value, run will
+	// finish with RunEndReason::Timeout.
+	void set_timeout(size_t microsecs);
+
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
@@ -135,6 +144,11 @@ private:
 	uint64_t m_instructions_executed;
 	uint64_t m_instructions_executed_prev;
 
+	// Addresses of the timer and timeout value inside the VM. These are
+	// submitted by the kernel using `hc_set_timeout_pointers`.
+	vaddr_t m_timer_addr;
+	vaddr_t m_timeout_addr;
+
 	// This is just for debugging
 	std::vector<vaddr_t> m_allocations;
 
@@ -166,9 +180,10 @@ private:
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
 	void do_hc_set_file_pointers(size_t n, vaddr_t buf_addr, vaddr_t length_addr);
+	void do_hc_set_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
 	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp);
-	void do_hc_fault(vaddr_t fault_info_addr, uint64_t instr_executed);
-	void do_hc_end_run(uint64_t instructions_executed);
+	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
+	                   uint64_t instructions_executed);
 
 	/* void handle_syscall();
 	*/

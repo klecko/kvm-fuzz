@@ -4,6 +4,7 @@
 #include "scheduler.h"
 #include "x86/asm.h"
 #include "x86/apic/apic.h"
+#include "x86/perf/perf.h"
 
 extern "C" void handle_interrupt(int interrupt, InterruptFrame* frame) {
 	// Default interrupt handler, called by default ISRs
@@ -48,7 +49,7 @@ void handle_page_fault(InterruptFrame* frame, uint64_t error_code) {
 			                      FaultInfo::Type::OutOfBoundsRead);
 
 	// This won't return
-	hc_fault(&fault);
+	hc_end_run(RunEndReason::Crash, &fault);
 }
 
 __attribute__((interrupt))
@@ -63,7 +64,7 @@ void handle_general_protection_fault(InterruptFrame* frame, uint64_t error_code)
 		.rip = frame->rip,
 		.kernel = false, // ?
 	};
-	hc_fault(&fault);
+	hc_end_run(RunEndReason::Crash, &fault);
 }
 
 __attribute__((interrupt))
@@ -74,7 +75,7 @@ void handle_div_by_zero(InterruptFrame* frame) {
 		.fault_addr = 0,
 		.kernel = false, // ?
 	};
-	hc_fault(&fault);
+	hc_end_run(RunEndReason::Crash, &fault);
 }
 
 __attribute__((interrupt))
@@ -85,12 +86,15 @@ void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 		.fault_addr = 0,
 		.kernel = false, // ?
 	};
-	hc_fault(&fault);
+	hc_end_run(RunEndReason::Crash, &fault);
 }
 
 __attribute__((interrupt))
 void handle_apic_timer(InterruptFrame* frame) {
-	// printf("hello from timer\n");
 	ASSERT(!Scheduler::is_running(), "we're not ready for multitasking!!");
+
+	// Check timeout
+	Perf::tick();
+
 	APIC::reset_timer();
 }

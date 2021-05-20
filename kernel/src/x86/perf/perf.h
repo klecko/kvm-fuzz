@@ -6,7 +6,8 @@
 namespace Perf {
 
 void init();
-uint64_t instructions_executed();
+size_t instructions_executed();
+void tick();
 
 }
 

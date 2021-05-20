@@ -1,5 +1,4 @@
 #include "apic.h"
-#include "common.h"
 #include "x86/asm.h"
 #include "x86/pit/pit.h"
 #include "mem/vmm.h"
@@ -135,6 +134,10 @@ void reset_timer() {
 	// Reset counter and signal end of interrupt
 	write_reg(Register::TimerInitialCount, g_counter_value);
 	write_reg(Register::EndOfInterrupt, 0);
+}
+
+size_t timer_microsecs() {
+	return TIMER_MICROSECS;
 }
 
 }

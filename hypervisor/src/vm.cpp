@@ -36,6 +36,10 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
 	, m_breakpoints_dirty(false)
+	, m_instructions_executed(0)
+	, m_instructions_executed_prev(0)
+	, m_timer_addr(0)
+	, m_timeout_addr(0)
 {
 	load_elfs();
 	setup_kvm();
@@ -54,6 +58,10 @@ Vm::Vm(const Vm& other)
 	, m_breakpoints(other.m_breakpoints)
 	, m_breakpoints_dirty(other.m_breakpoints_dirty)
 	, m_file_contents(other.m_file_contents)
+	, m_instructions_executed(other.m_instructions_executed)
+	, m_instructions_executed_prev(other.m_instructions_executed_prev)
+	, m_timer_addr(other.m_timer_addr)
+	, m_timeout_addr(other.m_timeout_addr)
 	, m_allocations(other.m_allocations)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
@@ -369,6 +377,12 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// msrs->entries[7].index = MSR_FIXED_CTR0;
 	// ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
 	// ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
+
+	// Reset LAPIC. This is also expensive. Let's just not reset it and hope
+	// everything is okay :')
+	// kvm_lapic_state lapic;
+	// ioctl_chk(other.m_vcpu_fd, KVM_GET_LAPIC, &lapic);
+	// ioctl_chk(m_vcpu_fd, KVM_SET_LAPIC, &lapic);
 
 	// Indicate we have dirtied registers
 	set_regs_dirty();
@@ -764,6 +778,16 @@ vaddr_t Vm::resolve_symbol(const string& symbol_name) {
 		if (symbol.name == symbol_name)
 			return symbol.value;
 	ASSERT(false, "not found symbol: %s", symbol_name.c_str());
+}
+
+void Vm::reset_timer() {
+	ASSERT(m_timer_addr, "trying to reset timer but kernel didn't submit ptr");
+	m_mmu.write<vsize_t>(m_timer_addr, 0);
+}
+
+void Vm::set_timeout(size_t microsecs) {
+	ASSERT(m_timeout_addr, "trying to set timeout but kernel didnt submit ptr");
+	m_mmu.write<vsize_t>(m_timeout_addr, microsecs);
 }
 
 void Vm::print_instruction_pointer(int i, vaddr_t instruction_pointer) {

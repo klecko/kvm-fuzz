@@ -16,8 +16,8 @@ enum Hypercall : size_t {
 	GetFileLen,
 	GetFileName,
 	SetFilePointers,
+	SetTimeoutPointers,
 	PrintStacktrace,
-	Fault,
 	EndRun,
 };
 
@@ -131,6 +131,11 @@ void Vm::do_hc_set_file_pointers(size_t n, vaddr_t data_addr,
 	          it->first.c_str(), data_addr, length_addr);
 }
 
+void Vm::do_hc_set_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr) {
+	m_timer_addr   = timer_addr;
+	m_timeout_addr = timeout_addr;
+}
+
 void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp) {
 	// For now we set just rsp, rip and rbp, which seem to be the only
 	// ones needed in most situations, and initialize the others to 0.
@@ -144,13 +149,12 @@ void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp) {
 	print_stacktrace(regs);
 }
 
-void Vm::do_hc_fault(vaddr_t fault_addr, uint64_t instr_executed) {
-	m_fault = m_mmu.read<FaultInfo>(fault_addr);
+void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
+                       uint64_t instr_executed)
+{
 	set_instructions_executed(instr_executed);
-}
-
-void Vm::do_hc_end_run(uint64_t instr_executed) {
-	set_instructions_executed(instr_executed);
+	if (reason == RunEndReason::Crash)
+		m_fault = m_mmu.read<FaultInfo>(info_addr);
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -179,18 +183,16 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::SetFilePointers:
 			do_hc_set_file_pointers(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
+		case Hypercall::SetTimeoutPointers:
+			do_hc_set_timeout_pointers(m_regs->rdi, m_regs->rsi);
+			break;
 		case Hypercall::PrintStacktrace:
 			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
-		case Hypercall::Fault:
-			do_hc_fault(m_regs->rdi, m_regs->rsi);
-			m_running = false;
-			reason = RunEndReason::Crash;
-			break;
 		case Hypercall::EndRun:
-			do_hc_end_run(m_regs->rdi);
+			reason = (RunEndReason)m_regs->rdi;
+			do_hc_end_run(reason, m_regs->rsi, m_regs->rdx);
 			m_running = false;
-			reason = RunEndReason::Exit;
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);

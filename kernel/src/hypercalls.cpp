@@ -12,8 +12,8 @@ enum Hypercall : size_t {
 	GetFileLen,
 	GetFileName,
 	SetFilePointers,
+	SetTimeoutPointers,
 	PrintStacktrace,
-	Fault,
 	EndRun,
 };
 
@@ -98,24 +98,20 @@ void hc_set_file_pointers(size_t n, void* buf, size_t* length_ptr) {
 }
 
 __attribute__((naked))
+void hc_set_timeout_pointers(size_t* timer_ptr, size_t* timeout_ptr) {
+	hypercall(Hypercall::SetTimeoutPointers);
+}
+
+__attribute__((naked))
 void hc_print_stacktrace(uint64_t rsp, uint64_t rip, uint64_t rbp) {
 	hypercall(Hypercall::PrintStacktrace);
 }
 
 __attribute__((naked))
-void _hc_fault(FaultInfo* fault, uint64_t instructions_executed) {
-	hypercall(Hypercall::Fault);
-}
-
-void hc_fault(FaultInfo* fault) {
-	_hc_fault(fault, Perf::instructions_executed());
-}
-
-__attribute__((naked))
-void _hc_end_run(uint64_t instructions_executed) {
+void _hc_end_run(RunEndReason reason, void* info, uint64_t instr_executed) {
 	hypercall(Hypercall::EndRun);
 }
 
-void hc_end_run() {
-	_hc_end_run(Perf::instructions_executed());
+void hc_end_run(RunEndReason reason, void* info) {
+	_hc_end_run(reason, info, Perf::instructions_executed());
 }
