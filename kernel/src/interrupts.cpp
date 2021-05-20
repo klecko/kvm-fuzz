@@ -62,7 +62,7 @@ void handle_general_protection_fault(InterruptFrame* frame, uint64_t error_code)
 	FaultInfo fault = {
 		.type = FaultInfo::Type::GeneralProtectionFault,
 		.rip = frame->rip,
-		.kernel = false, // ?
+		.kernel = !AddressSpace::is_user_address(frame->rip)
 	};
 	hc_end_run(RunEndReason::Crash, &fault);
 }
@@ -73,7 +73,7 @@ void handle_div_by_zero(InterruptFrame* frame) {
 		.type = FaultInfo::Type::DivByZero,
 		.rip = frame->rip,
 		.fault_addr = 0,
-		.kernel = false, // ?
+		.kernel = !AddressSpace::is_user_address(frame->rip)
 	};
 	hc_end_run(RunEndReason::Crash, &fault);
 }
@@ -84,7 +84,7 @@ void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 		.type = FaultInfo::Type::StackSegmentFault,
 		.rip = frame->rip,
 		.fault_addr = 0,
-		.kernel = false, // ?
+		.kernel = !AddressSpace::is_user_address(frame->rip)
 	};
 	hc_end_run(RunEndReason::Crash, &fault);
 }
