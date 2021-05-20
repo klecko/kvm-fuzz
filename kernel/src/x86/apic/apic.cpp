@@ -112,10 +112,10 @@ void init() {
 
 	// Calculate the counter value we'll set.
 	// We want APIC to interrupt us every TIMER_MICROSECS microsecs.
-	// Set counter to UINT32_MAX, sleep that time, stop counter, and calculate
-	// how much it has decreased.
-	PIT::configure_sleep(1000);
+	// Set counter to UINT32_MAX, sleep that time using PIT, stop counter, and
+	// calculate how much it has decreased.
 	write_reg(Register::TimerInitialCount, UINT32_MAX);
+	PIT::configure_sleep(TIMER_MICROSECS);
 	PIT::perform_sleep();
 	write_reg(Register::LvtTimer, APIC_DISABLE);
 	uint32_t curr_counter = read_reg(Register::TimerCurrentCount);

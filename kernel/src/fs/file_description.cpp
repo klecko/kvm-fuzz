@@ -199,7 +199,7 @@ ssize_t FileDescriptionStdin::write(UserPtr<const void*> buf, size_t len) {
 	printf_once("printing to stdin, maybe a bug?\n");
 	ssize_t ret = len;
 #ifdef ENABLE_GUEST_OUTPUT
-	ret = print_user(bug, len);
+	ret = print_user(buf, len);
 #endif
 	return ret;
 }
