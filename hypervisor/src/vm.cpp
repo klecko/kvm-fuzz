@@ -9,6 +9,7 @@
 using namespace std;
 
 int g_kvm_fd = -1;
+const char* Vm::reason_str[] = {"Exit", "Debug", "Crash", "Timeout", "Unknown"};
 
 __attribute__((constructor))
 void init_kvm() {

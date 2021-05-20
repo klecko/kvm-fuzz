@@ -133,7 +133,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			} else if (reason == Vm::RunEndReason::Timeout) {
 				stats.timeouts++;
 			} else if (reason != Vm::RunEndReason::Exit) {
-				die("unexpected RunEndReason: %d\n", reason);
+				die("unexpected RunEndReason: %s\n", Vm::reason_str[reason]);
 			}
 
 			// Report coverage
@@ -180,27 +180,27 @@ int main(int argc, char** argv) {
 		args.binary_argv
 	);
 
-	// Virtual file, whose content will be provided by the corpus and will be
-	// set before each run. We set its size to the maximum input size so kernel
-	// allocs a buffer of that size. Note this is not needed if we are using
-	// input injection in Vm::set_input, instead of memory-loaded files.
-	string file(corpus.max_input_size(), 'a');
-	vm.set_file("input", file);
+	// Set initial file, except if we are doing a single run with no input
+	// file. If we are not doing a single run, the initial file is a dummy
+	// string which will be replaced in the fuzz loop with inputs provided by
+	// the corpus. We set its size to the maximum input size so kernel allocates
+	// a buffer of that size.
+	// Note this is not needed if we are using input injection in Vm::set_input,
+	// instead of memory-loaded files.
+	string file;
+	if (!(args.single_run && args.single_run_input_path.empty())) {
+		if (args.single_run) {
+			file = read_file(args.single_run_input_path);
+		} else {
+			file = string(corpus.max_input_size(), 'a');
+		}
+		vm.set_file("input", file);
+	}
 
 	// Other memory-loaded files should be set here as well
 	for (const string& path : args.memory_files) {
 		read_and_set_file(path, vm);
 	}
-	//read_and_set_file("/usr/lib/locale/locale-archive", vm);
-	//read_and_set_file("/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache", vm);
-
-	// vm.set_breakpoint(vm.resolve_symbol("__free"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_malloc"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_memalign"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_realloc"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_calloc"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_valloc"), Vm::Breakpoint::Hook);
-	// vm.set_breakpoint(vm.resolve_symbol("__libc_pvalloc"), Vm::Breakpoint::Hook);
 
 	// Run until main before forking or running single input
 	// vm.run_until(vm.elf().entry(), stats);
@@ -220,21 +220,18 @@ int main(int argc, char** argv) {
 #endif
 
 	if (args.single_run) {
-		// Just perform a single run, loading input file if specified, and exit
+		// Just perform a single run and exit. If an input file was provided,
+		// it has already been loaded.
 		if (args.single_run_input_path.empty()) {
-			string empty_input;
-			vm.set_input(empty_input); // override virtual file set above
 			printf("Performing single run with no input file\n");
 		} else {
-			string single_input(read_file(args.single_run_input_path));
-			vm.set_input(single_input);
 			printf("Performing single run with input file '%s', length %lu\n",
-				   args.single_run_input_path.c_str(), single_input.size());
+				   args.single_run_input_path.c_str(), file.size());
 		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)
 			cout << vm.fault() << endl;
-		printf("Run ended with reason %d\n", reason);
+		printf("Run ended with reason %s\n", Vm::reason_str[reason]);
 		// vm.dump("libtiff-data");
 		return 0;
 	}
@@ -261,8 +258,8 @@ int main(int argc, char** argv) {
 				printf("Input file '%s' crashed in corpus minimization mode\n",
 				       corpus.seed_filename(i).c_str());
 			} else if (reason != Vm::RunEndReason::Exit) {
-				die("unexpected RunEndReason for input '%s': %d\n",
-				    corpus.seed_filename(i).c_str(), reason);
+				die("unexpected RunEndReason for input '%s': %s\n",
+				    corpus.seed_filename(i).c_str(), Vm::reason_str[reason]);
 			}
 			coverages.push_back(runner.coverage());
 			runner.reset_coverage();

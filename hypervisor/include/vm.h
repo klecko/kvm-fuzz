@@ -23,6 +23,7 @@ struct file_t {
 
 class Vm {
 public:
+	static const char* reason_str[];
 	enum RunEndReason {
 		Exit,
 		Debug,
