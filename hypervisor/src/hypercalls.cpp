@@ -15,8 +15,8 @@ enum Hypercall : size_t {
 	GetInfo,
 	GetFileLen,
 	GetFileName,
-	SetFilePointers,
-	SetTimeoutPointers,
+	SubmitFilePointers,
+	SubmitTimeoutPointers,
 	PrintStacktrace,
 	EndRun,
 };
@@ -115,8 +115,8 @@ void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
 	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size() + 1);
 }
 
-void Vm::do_hc_set_file_pointers(size_t n, vaddr_t data_addr,
-                                 vaddr_t length_addr) {
+void Vm::do_hc_submit_file_pointers(size_t n, vaddr_t data_addr,
+                                    vaddr_t length_addr) {
 	// Save pointers and write the data and the length to them. This will be
 	// repeated each time `set_file` is called
 	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
@@ -131,7 +131,7 @@ void Vm::do_hc_set_file_pointers(size_t n, vaddr_t data_addr,
 	          it->first.c_str(), data_addr, length_addr);
 }
 
-void Vm::do_hc_set_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr) {
+void Vm::do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr) {
 	m_timer_addr   = timer_addr;
 	m_timeout_addr = timeout_addr;
 }
@@ -180,11 +180,11 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::GetFileName:
 			do_hc_get_file_name(m_regs->rdi, m_regs->rsi);
 			break;
-		case Hypercall::SetFilePointers:
-			do_hc_set_file_pointers(m_regs->rdi, m_regs->rsi, m_regs->rdx);
+		case Hypercall::SubmitFilePointers:
+			do_hc_submit_file_pointers(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
-		case Hypercall::SetTimeoutPointers:
-			do_hc_set_timeout_pointers(m_regs->rdi, m_regs->rsi);
+		case Hypercall::SubmitTimeoutPointers:
+			do_hc_submit_timeout_pointers(m_regs->rdi, m_regs->rsi);
 			break;
 		case Hypercall::PrintStacktrace:
 			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi, m_regs->rdx);

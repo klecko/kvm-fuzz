@@ -11,8 +11,8 @@ enum Hypercall : size_t {
 	GetInfo,
 	GetFileLen,
 	GetFileName,
-	SetFilePointers,
-	SetTimeoutPointers,
+	SubmitFilePointers,
+	SubmitTimeoutPointers,
 	PrintStacktrace,
 	EndRun,
 };
@@ -93,13 +93,13 @@ void hc_get_file_name(size_t n, char* buf) {
 }
 
 __attribute__((naked))
-void hc_set_file_pointers(size_t n, void* buf, size_t* length_ptr) {
-	hypercall(Hypercall::SetFilePointers);
+void hc_submit_file_pointers(size_t n, void* buf, size_t* length_ptr) {
+	hypercall(Hypercall::SubmitFilePointers);
 }
 
 __attribute__((naked))
-void hc_set_timeout_pointers(size_t* timer_ptr, size_t* timeout_ptr) {
-	hypercall(Hypercall::SetTimeoutPointers);
+void hc_submit_timeout_pointers(size_t* timer_ptr, size_t* timeout_ptr) {
+	hypercall(Hypercall::SubmitTimeoutPointers);
 }
 
 __attribute__((naked))

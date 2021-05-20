@@ -73,8 +73,8 @@ void* hc_get_kernel_brk();
 void hc_get_info(VmInfo* info);
 size_t hc_get_file_len(size_t n);
 void hc_get_file_name(size_t n, char* buf);
-void hc_set_file_pointers(size_t n, void* buf, size_t* length_ptr);
-void hc_set_timeout_pointers(size_t* timer_ptr, size_t* timeout_ptr);
+void hc_submit_file_pointers(size_t n, void* buf, size_t* length_ptr);
+void hc_submit_timeout_pointers(size_t* timer_ptr, size_t* timeout_ptr);
 void hc_print_stacktrace(uint64_t rsp, uint64_t rip, uint64_t rbp);
 void hc_end_run(RunEndReason reason, void* info);
 

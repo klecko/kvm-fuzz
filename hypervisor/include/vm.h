@@ -179,8 +179,9 @@ private:
 	void do_hc_get_info(vaddr_t info_addr);
 	vsize_t do_hc_get_file_len(size_t n);
 	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
-	void do_hc_set_file_pointers(size_t n, vaddr_t buf_addr, vaddr_t length_addr);
-	void do_hc_set_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
+	void do_hc_submit_file_pointers(size_t n, vaddr_t buf_addr,
+	                                vaddr_t length_addr);
+	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
 	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
 	                   uint64_t instructions_executed);

@@ -21,7 +21,7 @@ void init(size_t num_files) {
 		struct iovec& iov = g_file_contents[string(filename)];
 		iov.iov_base = buf;
 		iov.iov_len  = size;
-		hc_set_file_pointers(i, iov.iov_base, &iov.iov_len);
+		hc_submit_file_pointers(i, iov.iov_base, &iov.iov_len);
 	}
 
 	dbgprintf("Files: %d\n", g_file_contents.size());

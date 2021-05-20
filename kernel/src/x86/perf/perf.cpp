@@ -24,7 +24,7 @@ void init() {
 	wrmsr(MSR_PERF_GLOBAL_CTRL, 1ULL << 32);
 #endif
 
-	hc_set_timeout_pointers(&g_timer, &g_timeout_microsecs);
+	hc_submit_timeout_pointers(&g_timer, &g_timeout_microsecs);
 
 	dbgprintf("Perf initialized\n");
 }
