@@ -40,6 +40,10 @@ class Corpus {
 public:
 	static const int MIN_MUTATIONS = 1;
 	static const int MAX_MUTATIONS = 10;
+	static constexpr const char* CORPUS_DIR      = "corpus";
+	static constexpr const char* CRASHES_DIR     = "crashes";
+	static constexpr const char* MIN_CORPUS_DIR  = "minimized_corpus";
+	static constexpr const char* MIN_CRASHES_DIR = "minimized_crashes";
 
 	Corpus(int nthreads, const std::string& input, const std::string& output);
 

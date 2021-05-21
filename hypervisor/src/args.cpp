@@ -12,6 +12,7 @@
 #include "args.h"
 #include "cxxopts.hpp"
 #include "utils.h"
+#include "corpus.h"
 
 using namespace std;
 
@@ -62,7 +63,7 @@ bool Args::parse(int argc, char** argv) {
 		// Set positional arguments
 		cmd.parse_positional({"binary", "args"});
 
-		// Set custom usage help and with
+		// Set custom usage help and width
 		cmd.custom_help("[ options ]")
 		   .positional_help("-- /path/to/fuzzed_binary [ args ]")
 		   .set_width(80);
@@ -85,7 +86,7 @@ bool Args::parse(int argc, char** argv) {
 			basic_blocks_path = "./basic_blocks_" + md5 + ".txt";
 		}
 		if (input_dir == "-") {
-			input_dir = output_dir + "/corpus";
+			input_dir = output_dir + "/" + Corpus::CORPUS_DIR;
 		}
 		if (options.count("single-run")) {
 			// Option was specified. If there is no input file given, just
