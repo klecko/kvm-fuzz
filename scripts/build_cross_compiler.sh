@@ -15,10 +15,8 @@ then
 	cd compiler/src
 
 	echo "Downloading sources for $BINUTILS and $GCC"
-	# wget http://ftp.gnu.org/gnu/binutils/${BINUTILS}.tar.xz
-	# wget http://ftp.gnu.org/gnu/gcc/${GCC}/${GCC}.tar.xz
-	cp /tmp/${BINUTILS}.tar.xz .
-	cp /tmp/${GCC}.tar.xz .
+	wget http://ftp.gnu.org/gnu/binutils/${BINUTILS}.tar.xz
+	wget http://ftp.gnu.org/gnu/gcc/${GCC}/${GCC}.tar.xz
 
 	echo "Extracting"
 	tar -xf ${BINUTILS}.tar.xz
