@@ -1,5 +1,4 @@
-set(CMAKE_C_COMPILER "x86_64-elf-gcc")
-set(CMAKE_CXX_COMPILER "x86_64-elf-g++")
+set(CMAKE_CXX_COMPILER "../../compiler/bin/x86_64-elf-g++")
 set(CMAKE_ASM_NASM_OBJECT_FORMAT "elf64")
 enable_language(ASM_NASM)
 

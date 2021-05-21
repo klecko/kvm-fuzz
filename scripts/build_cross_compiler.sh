@@ -6,7 +6,7 @@ PREFIX=`pwd`/compiler
 PATH=$PATH:$PREFIX/bin
 BINUTILS_VERSION=2.36
 BINUTILS=binutils-$BINUTILS_VERSION
-GCC_VERSION=11.1.0
+GCC_VERSION=10.3.0
 GCC=gcc-$GCC_VERSION
 
 if [[ ! -d compiler/src ]]

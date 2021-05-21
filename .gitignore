@@ -3,3 +3,4 @@ core
 .vscode
 .gdb_history
 build
+compiler

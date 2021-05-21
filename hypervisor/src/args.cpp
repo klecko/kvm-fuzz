@@ -47,8 +47,9 @@ bool Args::parse(int argc, char** argv) {
 		cmd.add_options("Available")
 			("minimize-corpus", "Set corpus minimization mode", cxxopts::value<bool>(minimize_corpus))
 			("minimize-crashes", "Set crashes minimization mode", cxxopts::value<bool>(minimize_crashes))
-			("j,jobs", "Number of threads to use", cxxopts::value<int>(jobs)->default_value(to_string(DEFAULT_NUM_THREADS)))
+			("j,jobs", "Number of threads to use", cxxopts::value<int>(jobs)->default_value(to_string(DEFAULT_NUM_THREADS)), "n")
 			("m,memory", "Virtual machine memory limit", cxxopts::value<string>()->default_value("8M"))
+			("t,timeout", "Timeout for each in run in milliseconds, or 0 for no timeout", cxxopts::value<size_t>(timeout)->default_value("2"), "ms")
 			("k,kernel", "Kernel path", cxxopts::value<string>(kernel_path)->default_value("./kernel/kernel"), "path")
 			("i,input", "Input folder (initial corpus)", cxxopts::value<string>(input_dir)->default_value("./in"), "dir")
 			("o,output", "Output folder (corpus, crashes, etc)", cxxopts::value<string>(output_dir)->default_value("./out"), "dir")
@@ -80,14 +81,21 @@ bool Args::parse(int argc, char** argv) {
 
 		// Parse special arguments
 		memory = parse_memory(options["memory"].as<string>());
+
+		// Add binary path to argv
 		binary_argv.insert(binary_argv.begin(), binary_path);
+
+		// Set default basic block file
 		if (basic_blocks_path.empty()) {
 			string md5 = md5_file(binary_path);
 			basic_blocks_path = "./basic_blocks_" + md5 + ".txt";
 		}
+
+		// Reuse corpus as input
 		if (input_dir == "-") {
 			input_dir = output_dir + "/" + Corpus::CORPUS_DIR;
 		}
+
 		if (options.count("single-run")) {
 			// Option was specified. If there is no input file given, just
 			// clear that argument
@@ -97,6 +105,12 @@ bool Args::parse(int argc, char** argv) {
 		} else {
 			single_run = false;
 		}
+
+		// Convert timeout to microsecs, or set it to maximum value if it was 0
+		if (timeout == 0)
+			timeout = numeric_limits<size_t>::max();
+		else
+			timeout *= 1000;
 
 	} catch (cxxopts::OptionException& e) {
 		cout << "error: " << e.what() << endl;

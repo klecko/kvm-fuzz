@@ -4,13 +4,15 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
-#include <libxdc.h>
 #include "stats.h"
 #include "mmu.h"
 #include "common.h"
 #include "kvm_aux.h"
 #include "fault.h"
 #include "coverage.h"
+#ifdef ENABLE_COVERAGE_INTEL_PT
+#include <libxdc.h>
+#endif
 
 void init_kvm();
 

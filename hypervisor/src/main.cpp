@@ -207,9 +207,9 @@ int main(int argc, char** argv) {
 	// vm.run_until(vm.elf().load_addr() + 0x7640, stats);
 	vm.run_until(vm.resolve_symbol("main"), stats);
 
-	// Reset timer so it starts counting from 0, and set a timeout of 2ms
+	// Reset timer so it starts counting from 0, and set specified timeout
 	vm.reset_timer();
-	vm.set_timeout(1000*2);
+	vm.set_timeout(args.timeout);
 
 #if defined(ENABLE_COVERAGE_INTEL_PT)
 	vm.setup_coverage();

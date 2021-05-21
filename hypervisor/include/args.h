@@ -7,6 +7,7 @@
 struct Args {
 	int jobs;
 	size_t memory;
+	size_t timeout;
 	std::string kernel_path;
 	std::string input_dir;
 	std::string output_dir;
