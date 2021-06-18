@@ -29,6 +29,7 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	, m_dirty_bitmap(new uint8_t[m_dirty_bits/8])
 #endif
 {
+	ASSERT((m_length % PAGE_SIZE) == 0, "not page-aligned memory length");
 	ERROR_ON(m_memory == MAP_FAILED, "mmap mmu memory");
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
 	ERROR_ON(m_dirty_ring == MAP_FAILED, "mmap dirty log ring");
@@ -95,7 +96,7 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, const Mmu& other)
 Mmu::~Mmu() {
 	munmap(m_memory, m_length);
 #ifdef ENABLE_KVM_DIRTY_LOG_RING
-	TODO
+	munmap(m_dirty_ring, m_dirty_ring_entries * sizeof(kvm_dirty_gfn));
 #else
 	delete[] m_dirty_bitmap;
 #endif
@@ -113,14 +114,16 @@ void Mmu::disable_allocations() {
 	m_can_alloc = false;
 }
 
-__attribute__((always_inline)) inline
+__attribute__((always_inline)) static inline
 void custom_memcpy(void* to, void* from, size_t len) {
 	asm volatile(
 		"rep movsb"
-		:
-		: "D" (to),
-		  "S" (from),
-		  "c" (len)
+		: "=D" (to),
+		  "=S" (from),
+		  "=c" (len)
+		: "0" (to),
+		  "1" (from),
+		  "2" (len)
 		: "memory"
 	);
 }
@@ -148,15 +151,30 @@ size_t Mmu::reset(const Mmu& other) {
 	ioctl_chk(m_vm_fd, KVM_GET_DIRTY_LOG, &dirty);
 
 	// Reset pages and clear bitmap
-	uint8_t byte, bit;
-	paddr_t paddr;
-	for (size_t i = 0; i < m_dirty_bits; i++) {
-		byte = m_dirty_bitmap[i/8];
-		bit  = byte & (1 << (i%8));
-		if (bit) {
-			count++;
-			paddr = i*PAGE_SIZE;
-			memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+	const uint8_t* dirty_bitmap = m_dirty_bitmap;
+	size_t dirty_bytes = m_dirty_bits/8;
+	for (size_t i = 0; i < dirty_bytes; i += sizeof(size_t)) {
+		size_t dirty_word = *(size_t*)(dirty_bitmap + i);
+		if (!dirty_word)
+			continue;
+
+		// There are dirty bits in `dirty_word`. Iterate all its bytes.
+		for (size_t j = 0; j < sizeof(dirty_word); j++) {
+			uint8_t dirty_byte = (dirty_word >> (j*8)) & 0xFF;
+			if (!dirty_byte)
+				continue;
+
+			// There are dirty bits in `dirty_byte`. Iterate all its bits.
+			for (size_t k = 0; k < 8; k++) {
+				uint8_t dirty_bit = dirty_byte & (1 << k);
+				if (!dirty_bit)
+					continue;
+
+				// We found a dirty bit. Restore page.
+				count++;
+				paddr_t paddr = ((i + j)*8 + k)*PAGE_SIZE;
+				memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+			}
 		}
 	}
 	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
