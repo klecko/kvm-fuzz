@@ -36,7 +36,6 @@ bool PageTable::map(uintptr_t virt, uintptr_t phys, uint64_t page_flags,
 
 	pte->set_frame_base(phys & PHYS_MASK);
 	pte->set_flags(page_flags);
-	pte->set_present(true);
 	flush_tlb_entry(virt);
 	// dbgprintf("mapped %p to %p with flags %p", virt, phys, page_flags);
 	return true;

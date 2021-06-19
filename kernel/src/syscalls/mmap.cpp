@@ -93,7 +93,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	          flags, fd, offset);
 
 	int supported_flags = MAP_PRIVATE | MAP_SHARED | MAP_ANONYMOUS |
-	                      MAP_DENYWRITE | MAP_FIXED;
+	                      MAP_FIXED | MAP_DENYWRITE | MAP_STACK;
 	ASSERT((flags & supported_flags) == flags, "unsupported flags 0x%x", flags);
 
 	// Check given file descriptor is valid
@@ -128,15 +128,20 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 		perms |= MemPerms::Write;
 
 	// Note: when MAP_FIXED, a part of the specified range may already be mapped.
+	uint8_t map_flags = 0;
+	if (map_fixed)
+		map_flags |= AddressSpace::MapFlags::DiscardAlreadyMapped;
+	if (map_shared)
+		map_flags |= AddressSpace::MapFlags::Shared;
 
 	// Map range into our address space. If it fails, MAP_FIXED is not set and
 	// the given address is not null, then ignore that address and try to map
 	// it wherever we can. If that fails again, then it's ENOMEM.
 	Range range(addr.flat() & PTL1_MASK, length_upper);
-	bool success = m_space.map_range(range, perms, map_fixed);
+	bool success = m_space.map_range(range, perms, map_flags);
 	if (!success && !map_fixed && !addr.is_null()) {
 		range.set_base(0);
-		success = m_space.map_range(range, perms, map_fixed);
+		success = m_space.map_range(range, perms, map_flags);
 	}
 	if (!success)
 		return -ENOMEM;

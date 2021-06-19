@@ -124,11 +124,14 @@ TEST_CASE("mmap reuse address") {
 	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
 }
 
-TEST_CASE("mmap twice results in contiguous memory") {
-	void* p1 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
-	void* p2 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
-	REQUIRE((uintptr_t)p2 == (uintptr_t)p1 + PAGE_SIZE);
+TEST_CASE("mmap prot none") {
+	// TODO: when multitasking, fork and check child dies when accessing
+	void* p = mmap(nullptr, PAGE_SIZE, PROT_NONE, flags, -1, 0);
+	REQUIRE(p != MAP_FAILED);
+	REQUIRE(munmap(p, PAGE_SIZE) == 0);
 
-	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
-	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
+	p = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p != MAP_FAILED);
+	REQUIRE(mprotect(p, PAGE_SIZE, PROT_NONE) == 0);
+	REQUIRE(munmap(p, PAGE_SIZE) == 0);
 }

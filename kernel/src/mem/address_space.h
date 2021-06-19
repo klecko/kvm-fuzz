@@ -21,11 +21,15 @@ public:
 
 	AddressSpace(uintptr_t ptl4_paddr);
 
+	enum MapFlags {
+		DiscardAlreadyMapped = 0,
+		Shared = (1 << 1),
+	};
+
 	// Allocate physical memory for given range and map it with given perms.
 	// Also sets range base address to the address it was mapped to if it had
 	// no base address.
-	bool map_range(Range& range, uint8_t perms,
-	               bool discard_already_mapped = false);
+	bool map_range(Range& range, uint8_t perms, uint8_t flags = 0);
 
 	// Unmap a range from memory, and also free its memory
 	// TODO: unmapping won't imply freeing when MAP_SHARED

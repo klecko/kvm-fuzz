@@ -34,8 +34,9 @@ bool alloc_pages(void* addr, size_t n) {
 		uintptr_t frame = PMM::alloc_frame();
 		if (!frame)
 			return false;
-		uint64_t page_flags = PageTableEntry::ReadWrite |
-			PageTableEntry::NoExecute | PageTableEntry::Global;
+		uint64_t page_flags =
+			PageTableEntry::ReadWrite | PageTableEntry::Global |
+			PageTableEntry::NoExecute | PageTableEntry::Present;
 		if (!g_kernel_page_table.map(page_base, frame, page_flags))
 			return false;
 	}

@@ -1,8 +1,9 @@
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
 set(SOURCE_FILES
 	brk.cpp
 	dup.cpp
 	files.cpp
+	fork.cpp
 	getcwd.cpp
 	mmap.cpp
 	readlink.cpp

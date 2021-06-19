@@ -187,6 +187,13 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 		case SYS_sendfile:
 			ret = do_sys_sendfile(arg0, arg1, UserPtr<off_t*>(arg2), arg3);
 			break;
+		case SYS_clone:
+			ret = do_sys_clone(arg0, UserPtr<void*>(arg1), UserPtr<int*>(arg2),
+			                   UserPtr<int*>(arg3), arg4);
+			break;
+		case SYS_clone3:
+			ret = do_sys_clone3(UserPtr<struct clone_args*>(arg0), arg1);
+			break;
 		case SYS_shutdown:
 			ret = 0;
 			printf_once("TODO shutdown\n");

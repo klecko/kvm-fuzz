@@ -50,6 +50,8 @@ public:
 		Dirty     = (1 << 6),
 		Huge      = (1 << 7),
 		Global    = (1 << 8),
+		ProtNone  = (1 << 8),
+		Shared    = (1 << 9),
 		NoExecute = (1UL << 63)
 	};
 
@@ -76,7 +78,10 @@ public:
 
 	void clear() { m_raw = 0; }
 
-	bool is_present() const { return get_flag(Flags::Present); }
+	bool is_present() const {
+		// Frames without Present but with ProtNone are actually present
+		return get_flag(Flags::Present) || get_flag(Flags::ProtNone);
+	}
 	void set_present(bool b) { set_flag(Flags::Present, b); }
 
 	bool is_writable() const { return get_flag(Flags::ReadWrite); }
@@ -90,6 +95,17 @@ public:
 
 	bool is_global() const { return get_flag(Flags::Global); }
 	void set_global(bool b) { set_flag(Flags::Global, b); }
+
+	bool is_prot_none() const {
+		return !get_flag(Flags::Present) && get_flag(Flags::ProtNone);
+	}
+	void set_prot_none(bool b) {
+		set_flag(Flags::Present, !b);
+		set_flag(Flags::ProtNone, b);
+	}
+
+	bool is_shared() const { return get_flag(Flags::Shared); }
+	void set_shared(bool b) { set_flag(Flags::Shared, b); }
 
 	bool is_execute_disabled() const { return get_flag(Flags::NoExecute); }
 	void set_execute_disabled(bool b) { set_flag(Flags::NoExecute, b); }

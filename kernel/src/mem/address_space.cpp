@@ -45,9 +45,7 @@ uintptr_t AddressSpace::find_free_memory_region_for_range(const Range& range) {
 	return 0;
 }
 
-bool AddressSpace::map_range(Range& range, uint8_t perms,
-                             bool discard_already_mapped)
-{
+bool AddressSpace::map_range(Range& range, uint8_t perms, uint8_t flags) {
 	// Assign a base address to the range in case it doesn't have one
 	if (!range.base()) {
 		uintptr_t base = find_free_memory_region_for_range(range);
@@ -60,24 +58,32 @@ bool AddressSpace::map_range(Range& range, uint8_t perms,
 	if (!is_user_range(range))
 		return false;
 
-	if (perms == MemPerms::None) TODO
-
 	// Attempt to allocate physical memory for the range
 	vector<uintptr_t> frames;
 	size_t num_frames = PAGE_CEIL(range.size()) / PAGE_SIZE;
 	if (!PMM::alloc_frames(num_frames, frames))
 		return false;
 
-	// Map every page
+	// Compute page flags according to memory permissions and mapping flags
 	uint64_t page_flags = PageTableEntry::User;
-	if (perms & MemPerms::Write)
-		page_flags |= PageTableEntry::ReadWrite;
-	if (!(perms & MemPerms::Exec))
-		page_flags |= PageTableEntry::NoExecute;
+	if (perms == MemPerms::None) {
+		// ProtNone (which is the same as Global) without Present
+		page_flags |= PageTableEntry::ProtNone;
+	} else {
+		page_flags |= PageTableEntry::Present;
+		if (perms & MemPerms::Write)
+			page_flags |= PageTableEntry::ReadWrite;
+		if (!(perms & MemPerms::Exec))
+			page_flags |= PageTableEntry::NoExecute;
+	}
+	if (flags & MapFlags::Shared)
+		page_flags |= PageTableEntry::Shared;
+
+	// Map every page
 	for (size_t i = 0; i < frames.size(); i++) {
 		uintptr_t page_base = range.base() + i*PAGE_SIZE;
 		if (!m_page_table.map(page_base, frames[i], page_flags,
-		                      discard_already_mapped))
+		                      flags & MapFlags::Shared))
 			return false;
 	}
 	return true;
@@ -117,6 +123,7 @@ bool AddressSpace::set_range_perms(const Range& range, uint8_t perms) {
 		if (!pte->is_present()) {
 			return false;
 		}
+		pte->set_prot_none(perms == MemPerms::None);
 		pte->set_writable(perms & MemPerms::Write);
 		pte->set_execute_disabled(!(perms & MemPerms::Exec));
 		flush_tlb_entry(page_base);

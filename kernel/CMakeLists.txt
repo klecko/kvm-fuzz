@@ -39,6 +39,7 @@ set(SOURCE_FILES
 	src/scheduler.cpp
 	src/syscalls/access.cpp
 	src/syscalls/brk.cpp
+	src/syscalls/clone.cpp
 	src/syscalls/dup.cpp
 	src/syscalls/fcntl.cpp
 	src/syscalls/getcwd.cpp
@@ -51,8 +52,8 @@ set(SOURCE_FILES
 	src/syscalls/prlimit.cpp
 	src/syscalls/read.cpp
 	src/syscalls/readlink.cpp
-	src/syscalls/stat.cpp
 	src/syscalls/socket.cpp
+	src/syscalls/stat.cpp
 	src/syscalls/sysinfo.cpp
 	src/syscalls/time.cpp
 	src/syscalls/uname.cpp

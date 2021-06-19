@@ -87,6 +87,9 @@ private:
 	ssize_t do_sys_sendto(int, UserPtr<void*>, size_t, int,
 	                      UserPtr<const struct sockaddr*>, socklen_t);
 	ssize_t do_sys_sendfile(int, int, UserPtr<off_t*>, ssize_t);
+	int do_sys_clone(unsigned long, UserPtr<void*>, UserPtr<int*>,
+	                 UserPtr<int*>, unsigned long);
+	int do_sys_clone3(UserPtr<struct clone_args*>, size_t size);
 };
 
 #endif
