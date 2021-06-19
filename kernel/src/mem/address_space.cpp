@@ -23,49 +23,50 @@ AddressSpace::AddressSpace(uintptr_t ptl4_paddr)
 {
 }
 
-bool AddressSpace::alloc_range(Range& range) {
-	// Try to allocate physical memory
-	vector<uintptr_t> frames;
-	size_t num_frames = PAGE_CEIL(range.size()) / PAGE_SIZE;
-	if (!PMM::alloc_frames(num_frames, frames))
-		return false;
+uintptr_t AddressSpace::find_free_memory_region_for_range(const Range& range) {
+	ASSERT(range.base() == 0, "range already has base address");
+	uintptr_t base = USER_MAPPINGS_START_ADDR;
+	while (is_user_address(base)) {
+		uintptr_t length;
+		for (length = 0; length < range.length(); length += PAGE_SIZE) {
+			PageTableEntry* pte = m_page_table.ensure_pte(base + length);
+			if (!pte)
+				return 0;
+			if (pte->is_present())
+				break;
+		}
 
-	range.m_frames = move(frames);
-	return true;
-}
+		// If the loop got to the end, we found our desired region
+		if (length == range.length())
+			return base;
 
-bool AddressSpace::free_range(Range& range) {
-	if (!range.is_allocated())
-		return false;
-
-	for (uintptr_t frame : range.m_frames)
-		PMM::free_frame(frame);
-	range.m_frames.clear();
-	return true;
+		base += length + PAGE_SIZE;
+	}
+	return 0;
 }
 
 bool AddressSpace::map_range(Range& range, uint8_t perms,
                              bool discard_already_mapped)
 {
+	// Assign a base address to the range in case it doesn't have one
+	if (!range.base()) {
+		uintptr_t base = find_free_memory_region_for_range(range);
+		if (!base)
+			return false;
+		range.set_base(base);
+	}
+
 	// Check the range is in user range
 	if (!is_user_range(range))
 		return false;
 
 	if (perms == MemPerms::None) TODO
 
-	// Check range has already been allocated
-	ASSERT(range.is_allocated(), "not allocated range: %p %p",
-	       range.base(), range.size());
+	// Attempt to allocate physical memory for the range
+	vector<uintptr_t> frames;
 	size_t num_frames = PAGE_CEIL(range.size()) / PAGE_SIZE;
-	size_t real_num_frames = range.m_frames.size();
-	ASSERT(real_num_frames == num_frames, "number of frames doesnt match,"
-	       " should be %lu but it's %lu", num_frames, real_num_frames);
-
-	// Assign a base address to the range in case it doesn't have one
-	if (!range.base()) {
-		range.set_base(m_next_user_mapping);
-		m_next_user_mapping += range.size();
-	}
+	if (!PMM::alloc_frames(num_frames, frames))
+		return false;
 
 	// Map every page
 	uint64_t page_flags = PageTableEntry::User;
@@ -73,9 +74,9 @@ bool AddressSpace::map_range(Range& range, uint8_t perms,
 		page_flags |= PageTableEntry::ReadWrite;
 	if (!(perms & MemPerms::Exec))
 		page_flags |= PageTableEntry::NoExecute;
-	for (size_t i = 0; i < num_frames; i++) {
+	for (size_t i = 0; i < frames.size(); i++) {
 		uintptr_t page_base = range.base() + i*PAGE_SIZE;
-		if (!m_page_table.map(page_base, range.m_frames[i], page_flags,
+		if (!m_page_table.map(page_base, frames[i], page_flags,
 		                      discard_already_mapped))
 			return false;
 	}

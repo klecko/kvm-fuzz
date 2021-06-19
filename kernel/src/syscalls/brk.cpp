@@ -13,8 +13,6 @@ uintptr_t Process::do_sys_brk(uintptr_t addr) {
 		if (next_page + sz < next_page)
 			return m_brk;
 		Range range(next_page, sz);
-		if (!m_space.alloc_range(range))
-			return m_brk;
 		if (!m_space.map_range(range, MemPerms::Read | MemPerms::Write))
 			return m_brk;
 

@@ -87,9 +87,48 @@ TEST_CASE("mmap kernel") {
 	REQUIRE(p == MAP_FAILED);
 	REQUIRE(errno == ENOMEM);
 
-	REQUIRE(mprotect(kernel_addr, 0x1000, PROT_NONE) == -1);
+	REQUIRE(mprotect(kernel_addr, PAGE_SIZE, PROT_NONE) == -1);
 	REQUIRE(errno == ENOMEM);
 
-	REQUIRE(munmap(kernel_addr, 0x1000) == -1);
+	REQUIRE(munmap(kernel_addr, PAGE_SIZE) == -1);
 	REQUIRE(errno == EINVAL);
+}
+
+TEST_CASE("mmap not open file") {
+	void* p = mmap(nullptr, PAGE_SIZE, prot, MAP_PRIVATE, 1234, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == EBADF);
+}
+
+TEST_CASE("mmap shared and private") {
+	// Both shared and private
+	void* p = mmap(nullptr, PAGE_SIZE, prot, flags | MAP_SHARED, -1, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == EINVAL);
+
+	// Not shared and not private
+	p = mmap(nullptr, PAGE_SIZE, prot, MAP_ANONYMOUS, -1, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == EINVAL);
+}
+
+TEST_CASE("mmap reuse address") {
+	void* p1 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+
+	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
+
+	void* p2 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p2 == p1);
+
+	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
+}
+
+TEST_CASE("mmap twice results in contiguous memory") {
+	void* p1 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	void* p2 = mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE((uintptr_t)p2 == (uintptr_t)p1 + PAGE_SIZE);
+
+	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
 }

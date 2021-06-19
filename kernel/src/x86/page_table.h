@@ -68,7 +68,7 @@ public:
 	}
 
 	void set_flags(uint64_t page_flags) {
-		ASSERT((page_flags & ~PHYS_MASK) == page_flags, "invalig page flags: %p",
+		ASSERT((page_flags & ~PHYS_MASK) == page_flags, "invalid page flags: %p",
 		       page_flags);
 		m_raw &= PHYS_MASK;
 		m_raw |= page_flags;
@@ -76,31 +76,34 @@ public:
 
 	void clear() { m_raw = 0; }
 
-	bool is_present() const { return m_raw & Flags::Present; }
-	void set_present(bool b) { set_bit(Flags::Present, b); }
+	bool is_present() const { return get_flag(Flags::Present); }
+	void set_present(bool b) { set_flag(Flags::Present, b); }
 
-	bool is_writable() const { return m_raw & Flags::ReadWrite; }
-	void set_writable(bool b) { set_bit(Flags::ReadWrite, b); }
+	bool is_writable() const { return get_flag(Flags::ReadWrite); }
+	void set_writable(bool b) { set_flag(Flags::ReadWrite, b); }
 
-	bool is_user() const { return m_raw & Flags::User; }
-	void set_user(bool b) { set_bit(Flags::User, b); }
+	bool is_user() const { return get_flag(Flags::User); }
+	void set_user(bool b) { set_flag(Flags::User, b); }
 
-	bool is_huge() const { return m_raw & Flags::Huge; }
-	void set_huge(bool b) { set_bit(Flags::Huge, b); }
+	bool is_huge() const { return get_flag(Flags::Huge); }
+	void set_huge(bool b) { set_flag(Flags::Huge, b); }
 
-	bool is_global() const { return m_raw & Flags::Global; }
-	void set_global(bool b) { set_bit(Flags::Global, b); }
+	bool is_global() const { return get_flag(Flags::Global); }
+	void set_global(bool b) { set_flag(Flags::Global, b); }
 
-	bool is_execute_disabled() const { return m_raw & Flags::NoExecute; }
-	void set_execute_disabled(bool b) { set_bit(Flags::NoExecute, b); }
+	bool is_execute_disabled() const { return get_flag(Flags::NoExecute); }
+	void set_execute_disabled(bool b) { set_flag(Flags::NoExecute, b); }
 
 private:
-
-	void set_bit(uint64_t bit, bool value) {
+	void set_flag(Flags flag, bool value) {
 		if (value)
-			m_raw |= bit;
+			m_raw |= flag;
 		else
-			m_raw &= ~bit;
+			m_raw &= ~flag;
+	}
+
+	bool get_flag(Flags flag) const {
+		return m_raw & flag;
 	}
 
 	uintptr_t m_raw;

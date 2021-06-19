@@ -5,8 +5,6 @@
 #include "x86/page_table.h"
 
 class Range {
-	friend class AddressSpace;
-
 public:
 	Range(uintptr_t base, size_t size)
 		: m_base(base)
@@ -35,18 +33,12 @@ public:
 	}
 
 	void set_size(size_t size) {
-		ASSERT(!is_allocated(), "modifying size of allocated range: %p", size);
 		m_size = size;
-	}
-
-	bool is_allocated() const {
-		return !m_frames.empty();
 	}
 
 private:
 	uintptr_t m_base;
 	size_t m_size;
-	vector<uintptr_t> m_frames;
 };
 
 #endif

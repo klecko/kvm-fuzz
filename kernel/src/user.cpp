@@ -156,9 +156,7 @@ void Process::start_user(int argc, char** argv, const VmInfo& info) {
 	static const uintptr_t USER_STACK_ADDR = 0x800000000000;
 	static const size_t    USER_STACK_SIZE = 0x10000;
 	Range range(USER_STACK_ADDR - USER_STACK_SIZE, USER_STACK_SIZE);
-	bool success = m_space.alloc_range(range);
-	ASSERT(success, "OOM allocating user stack");
-	success = m_space.map_range(range, MemPerms::Read | MemPerms::Write);
+	bool success = m_space.map_range(range, MemPerms::Read | MemPerms::Write);
 	ASSERT(success, "error mapping user stack");
 
 	// Set it up

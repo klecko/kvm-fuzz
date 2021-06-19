@@ -21,15 +21,9 @@ public:
 
 	AddressSpace(uintptr_t ptl4_paddr);
 
-	// Given a range, attempt to allocate physical memory for it
-	bool alloc_range(Range& range);
-
-	// Free the physical memory allocated for given range, which must have been
-	// allocated with `alloc_range`
-	bool free_range(Range& range);
-
-	// Map an allocated range into memory with given perms. Also sets range base
-	// address to the address it was mapped to if it had no base address.
+	// Allocate physical memory for given range and map it with given perms.
+	// Also sets range base address to the address it was mapped to if it had
+	// no base address.
 	bool map_range(Range& range, uint8_t perms,
 	               bool discard_already_mapped = false);
 
@@ -48,6 +42,7 @@ private:
 	// vector<Range> m_free_ranges;
 	// vector<Range> m_allocated_ranges;
 
+	uintptr_t find_free_memory_region_for_range(const Range& range);
 };
 
 #endif

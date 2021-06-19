@@ -91,12 +91,14 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "prot: %d", prot);
 	dbgprintf("mmap(%p, %lu, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
+
+	int supported_flags = MAP_PRIVATE | MAP_SHARED | MAP_ANONYMOUS |
+	                      MAP_DENYWRITE | MAP_FIXED;
+	ASSERT((flags & supported_flags) == flags, "unsupported flags 0x%x", flags);
+
+	// Check given file descriptor is valid
 	if (fd != -1 && !m_open_files.count(fd))
 		return -EBADF;
-
-	flags &= ~MAP_SHARED; // TOOD
-	int supported_flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_DENYWRITE | MAP_FIXED;
-	ASSERT((flags & supported_flags) == flags, "unsupported flags 0x%x", flags);
 
 	// We must return EINVAL if no length, and ENOMEM if length wraps
 	if (!length)
@@ -105,17 +107,20 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	if (!length_upper)
 		return -ENOMEM;
 
+	bool map_private = flags & MAP_PRIVATE;
+	bool map_shared = flags & MAP_SHARED;
+	bool map_anonymous = flags & MAP_ANONYMOUS;
 	bool map_fixed = flags & MAP_FIXED;
+
+	// Shared and private: choose one
+	if (map_shared && map_private)
+		return -EINVAL;
+	if (!map_shared && !map_private)
+		return -EINVAL;
 
 	// If MAP_FIXED, addr can't be null or not aligned
 	if (map_fixed && (addr.is_null() || !IS_PAGE_ALIGNED(addr.flat())))
 		return -EINVAL;
-
-	// Try to allocate range. This will fail if there isn't enough memory.
-	Range range(addr.flat() & PTL1_MASK, length_upper);
-	if (!m_space.alloc_range(range))
-		return -ENOMEM;
-	ASSERT(range.is_allocated(), "woops");
 
 	// If it's a read only file, map it as writable first
 	uint8_t perms = prot_to_mem_perms(prot);
@@ -127,6 +132,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	// Map range into our address space. If it fails, MAP_FIXED is not set and
 	// the given address is not null, then ignore that address and try to map
 	// it wherever we can. If that fails again, then it's ENOMEM.
+	Range range(addr.flat() & PTL1_MASK, length_upper);
 	bool success = m_space.map_range(range, perms, map_fixed);
 	if (!success && !map_fixed && !addr.is_null()) {
 		range.set_base(0);

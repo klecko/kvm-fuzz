@@ -47,9 +47,10 @@ bool PageTable::unmap(uintptr_t virt, bool ignore_not_mapped) {
 	if (!pte)
 		return false;
 
-	if (!pte->is_present()) {
+	// If the page was not mapped, that's a fail only if `ignore_not_mapped` was
+	// not set
+	if (!pte->is_present())
 		return ignore_not_mapped;
-	}
 
 	PMM::free_frame(pte->frame_base());
 	pte->clear();
