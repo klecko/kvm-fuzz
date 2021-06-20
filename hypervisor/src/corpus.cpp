@@ -21,6 +21,10 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	, m_mutated_inputs_indexes(nthreads)
 	, m_mode(Mode::Unknown)
 {
+	// Reuse corpus as input
+	if (m_input_dir == "-")
+		m_input_dir = m_output_dir_corpus;
+
 	// Try to open input directory
 	DIR* dir = opendir(input_dir.c_str());
 	ERROR_ON(!dir, "opening input directory %s", input_dir.c_str());

@@ -12,7 +12,6 @@
 #include "args.h"
 #include "cxxopts.hpp"
 #include "utils.h"
-#include "corpus.h"
 
 using namespace std;
 
@@ -89,11 +88,6 @@ bool Args::parse(int argc, char** argv) {
 		if (basic_blocks_path.empty()) {
 			string md5 = md5_file(binary_path);
 			basic_blocks_path = "./basic_blocks_" + md5 + ".txt";
-		}
-
-		// Reuse corpus as input
-		if (input_dir == "-") {
-			input_dir = output_dir + "/" + Corpus::CORPUS_DIR;
 		}
 
 		if (options.count("single-run")) {

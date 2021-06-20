@@ -7,4 +7,4 @@ project(kvm-fuzz)
 
 add_subdirectory(kernel)
 add_subdirectory(hypervisor)
-add_subdirectory(tests)
+add_subdirectory(tests EXCLUDE_FROM_ALL)
