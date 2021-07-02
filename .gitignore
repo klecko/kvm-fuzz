@@ -4,3 +4,5 @@ core
 .gdb_history
 build
 compiler
+zig-out
+zig-cache
