@@ -15,12 +15,13 @@ pub fn print(
     std.fmt.format(writer, format, args) catch unreachable;
 }
 
-pub fn log(
+pub fn log_root(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,
     args: anytype,
 ) void {
     const level_txt = "[" ++ @tagName(level) ++ "] ";
+    // const scope_txt = "[" ++ @tagName(scope) ++ "] ";
     print(level_txt ++ format, args);
 }
