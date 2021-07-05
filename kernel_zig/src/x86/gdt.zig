@@ -1,5 +1,5 @@
 usingnamespace @import("../common.zig");
-const assembly = @import("asm.zig");
+const x86 = @import("x86.zig");
 const log = std.log.scoped(.gdt);
 
 // https://wiki.osdev.org/Global_Descriptor_Table
@@ -136,7 +136,7 @@ const TaskStateSegmentDescriptor = packed struct {
 
 /// Stack used when an interrupt causes a change to ring zero. Set in the TSS.
 /// TODO: no me acuerdo para que era esto xd
-pub var stack_rsp0: [0x2000]u8 = undefined;
+var stack_rsp0: [0x2000]u8 = undefined;
 
 /// Stack used when handling interrupts like double faults, where the kernel
 /// stack may be corrupted. Set in the TSS, and referenced by the `ist` field
@@ -249,10 +249,10 @@ pub fn init() void {
         .size = @sizeOf(@TypeOf(gdt)) - 1,
         .offset = @ptrToInt(&gdt),
     };
-    assembly.lgdt(&gdt_ptr);
+    x86.lgdt(&gdt_ptr);
 
     // Load the Task Register.
-    assembly.ltr(.TaskStateSegment);
+    x86.ltr(.TaskStateSegment);
 
     log.debug("GDT initialized\n", .{});
 }

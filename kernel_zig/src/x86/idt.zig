@@ -1,12 +1,11 @@
 usingnamespace @import("../common.zig");
-const gdt = @import("gdt.zig");
+const x86 = @import("x86.zig");
 const interrupts = @import("../interrupts.zig");
-const assembly = @import("asm.zig");
 const log = std.log.scoped(.idt);
 
 const InterruptDescriptor = packed struct {
     offset_low: u16,
-    selector: gdt.SegmentSelector,
+    selector: x86.gdt.SegmentSelector,
     ist: u3,
     zero0: u5 = 0,
     gate_type: GateType,
@@ -102,7 +101,7 @@ pub fn init() void {
         .size = @sizeOf(@TypeOf(idt)) - 1,
         .offset = @ptrToInt(&idt),
     };
-    assembly.lidt(&idt_ptr);
+    x86.lidt(&idt_ptr);
 
     log.debug("IDT initialized\n", .{});
 }

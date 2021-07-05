@@ -1,5 +1,4 @@
-const gdt = @import("gdt.zig");
-const idt = @import("idt.zig");
+const x86 = @import("x86.zig");
 
 pub const MSR = enum {
     /// physical address of APIC
@@ -40,7 +39,8 @@ pub const MSR = enum {
 };
 
 pub fn wrmsr(msr: MSR, value: u64) void {
-    asm volatile ("wrmsr"
+    asm volatile (
+        \\wrmsr
         :
         : [msr] "{rcx}" (msr),
           [value_low] "{rax}" (value & 0xFFFFFFFF),
@@ -49,29 +49,56 @@ pub fn wrmsr(msr: MSR, value: u64) void {
     );
 }
 
-pub fn lgdt(gdt_ptr: *const gdt.GDTPtr) void {
-    asm volatile ("lgdt (%[gdt_ptr])"
+pub fn lgdt(gdt_ptr: *const x86.gdt.GDTPtr) void {
+    asm volatile (
+        \\lgdt (%[gdt_ptr])
         :
         : [gdt_ptr] "r" (gdt_ptr)
     );
 }
 
-pub fn ltr(tss_segment_selector: gdt.SegmentSelector) void {
-    asm volatile ("ltr %[tss_segment_selector]"
+pub fn ltr(tss_segment_selector: x86.gdt.SegmentSelector) void {
+    asm volatile (
+        \\ltr %[tss_segment_selector]
         :
         : [tss_segment_selector] "r" (@enumToInt(tss_segment_selector))
     );
 }
 
-pub fn lidt(idt_ptr: *const idt.IDTPtr) void {
-    asm volatile ("lidt (%[idt_ptr])"
+pub fn lidt(idt_ptr: *const x86.idt.IDTPtr) void {
+    asm volatile (
+        \\lidt (%[idt_ptr])
         :
         : [idt_ptr] "r" (idt_ptr)
     );
 }
 
 pub fn rdcr2() u64 {
-    return asm volatile ("mov %%cr2, %[ret]"
+    return asm volatile (
+        \\mov %%cr2, %[ret]
         : [ret] "=r" (-> u64)
+    );
+}
+
+pub fn rdcr3() u64 {
+    return asm volatile (
+        \\mov %%cr3, %[ret]
+        : [ret] "=r" (-> u64)
+    );
+}
+
+pub fn flush_tlb() void {
+    asm volatile (
+        \\mov %%cr3, %%rax
+        \\mov %%rax, %%cr3
+        ::: "memory", "rax");
+}
+
+pub fn flush_tlb_entry(page_vaddr: usize) void {
+    asm volatile (
+        \\invlpg (%[page])
+        :
+        : [page] "r" (page_vaddr)
+        : "memory"
     );
 }

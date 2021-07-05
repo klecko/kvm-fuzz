@@ -22,6 +22,7 @@ pub fn log_root(
     args: anytype,
 ) void {
     const level_txt = "[" ++ @tagName(level) ++ "] ";
+    _ = scope;
     // const scope_txt = "[" ++ @tagName(scope) ++ "] ";
     print(level_txt ++ format, args);
 }

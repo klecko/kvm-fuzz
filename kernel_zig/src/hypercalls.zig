@@ -1,5 +1,3 @@
-const builtin = @import("builtin");
-
 pub const Hypercall = enum {
     Test,
     Print,
@@ -12,6 +10,41 @@ pub const Hypercall = enum {
     SubmitTimeoutPointers,
     PrintStacktrace,
     EndRun,
+};
+
+// Keep this the same as in the hypervisor
+pub const MemInfo = struct {
+    mem_start: usize,
+    mem_length: usize,
+    physmap_vaddr: usize,
+};
+
+pub const FaultInfo = extern struct {
+    fault_type: Type,
+    rip: usize,
+    fault_addr: usize,
+    kernel: bool,
+
+    pub const Type = enum(c_int) {
+        Read,
+        Write,
+        Exec,
+        OutOfBoundsRead,
+        OutOfBoundsWrite,
+        OutOfBoundsExec,
+        AssertionFailed,
+        DivByZero,
+        GeneralProtectionFault,
+        StackSegmentFault,
+    };
+};
+
+const RunEndReason = enum(c_int) {
+    Exit,
+    Debug,
+    Crash,
+    Timeout,
+    Unknown = -1,
 };
 
 fn check_equals(comptime hc: Hypercall, comptime n: u8) void {
@@ -36,12 +69,26 @@ comptime {
         \\_print:
         \\	mov $1, %rax;
         \\	jmp hypercall
+        \\
+        \\.global getMemInfo
+        \\getMemInfo:
+        \\	mov $2, %rax;
+        \\	jmp hypercall
+        \\
+        \\.global endRun
+        \\endRun:
+        \\	mov $10, %rax;
+        \\	jmp hypercall
     );
     check_equals(.Print, 1);
+    check_equals(.GetMemInfo, 2);
+    check_equals(.EndRun, 10);
 }
 
 // pub extern fn test(arg: usize) void;
 extern fn _print(s: [*]const u8) void;
+pub extern fn getMemInfo(info: *MemInfo) void;
+pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
 
 pub fn print(s: []const u8) void {
     for (s) |c| {
@@ -63,6 +110,31 @@ fn print_char(c: u8) void {
 }
 
 // TODO: try and do this better
+
+// In this case, it seems like @ptrCast in getHypercall is not working as expected,
+// and says hypercall() has 0 arguments.
+// fn hypercallFunctionType(hc: Hypercall) type {
+//     return switch (hc) {
+//         .Print => fn ([*]const u8) void,
+//         else => fn () void,
+//     };
+// }
+
+// fn getHypercall(comptime hc: Hypercall) hypercallFunctionType(hc) {
+//     const ret = struct {
+//         fn hypercall() void {
+//             asm volatile (
+//                 \\mov %[hc_num], %%rax
+//                 \\jmp hypercall
+//                 :
+//                 : [hc_num] "im" (@enumToInt(hc))
+//             );
+//         }
+//     }.hypercall;
+//     return @ptrCast(hypercallFunctionType(hc), ret);
+// }
+// const _print = getHypercall(.Print);
+
 // extern fn hypercall() void;
 
 // fn hypercall2(comptime n: Hypercall) type {

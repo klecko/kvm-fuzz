@@ -1,6 +1,6 @@
 usingnamespace @import("common.zig");
-const idt = @import("x86/idt.zig");
-const assembly = @import("x86/asm.zig");
+const x86 = @import("x86/x86.zig");
+const hypercalls = @import("hypercalls.zig");
 
 /// The type of each interrupt handler entry point, which will end up jumping
 /// to the actual interrupt handler.
@@ -45,18 +45,18 @@ const InterruptFrame = struct {
 
 /// Array of interrupt handlers.
 const handlers = blk: {
-    var handlers_tmp: [idt.N_IDT_ENTRIES]InterruptHandler = undefined;
+    var handlers_tmp: [x86.idt.N_IDT_ENTRIES]InterruptHandler = undefined;
     var i = 0;
-    while (i < idt.N_IDT_ENTRIES) : (i += 1) {
+    while (i < x86.idt.N_IDT_ENTRIES) : (i += 1) {
         handlers_tmp[i] = defaultInterruptHandler;
     }
 
-    handlers_tmp[idt.ExceptionNumber.PageFault] = handlePageFault;
-    handlers_tmp[idt.ExceptionNumber.Breakpoint] = handleBreakpoint;
-    handlers_tmp[idt.ExceptionNumber.GeneralProtectionFault] = handleGeneralProtectionFault;
-    handlers_tmp[idt.ExceptionNumber.DivByZero] = handleDivByZero;
-    handlers_tmp[idt.ExceptionNumber.StackSegmentFault] = handleStackSegmentFault;
-    handlers_tmp[idt.IRQNumber.APICTimer] = handleApicTimer;
+    handlers_tmp[x86.idt.ExceptionNumber.PageFault] = handlePageFault;
+    handlers_tmp[x86.idt.ExceptionNumber.Breakpoint] = handleBreakpoint;
+    handlers_tmp[x86.idt.ExceptionNumber.GeneralProtectionFault] = handleGeneralProtectionFault;
+    handlers_tmp[x86.idt.ExceptionNumber.DivByZero] = handleDivByZero;
+    handlers_tmp[x86.idt.ExceptionNumber.StackSegmentFault] = handleStackSegmentFault;
+    handlers_tmp[x86.idt.IRQNumber.APICTimer] = handleApicTimer;
     break :blk handlers_tmp;
 };
 
@@ -150,7 +150,7 @@ export fn interruptHandler(frame: *InterruptFrame) void {
 }
 
 fn defaultInterruptHandler(frame: *InterruptFrame) void {
-    panic("unhandled interrupt: {}\n", .{frame.interrupt_number});
+    panic("unhandled interrupt at 0x{x}: {} {}\n", .{ frame.rip, frame.interrupt_number, frame });
 }
 
 fn handlePageFault(frame: *InterruptFrame) void {
@@ -158,9 +158,53 @@ fn handlePageFault(frame: *InterruptFrame) void {
     const write = (frame.error_code & (1 << 1)) != 0;
     const user = (frame.error_code & (1 << 2)) != 0;
     const execute = (frame.error_code & (1 << 4)) != 0;
-    const fault_addr = assembly.rdcr2();
+    const fault_addr = x86.rdcr2();
+    if (!user) {
+        print("woops, kernel PF at 0x{x}. addr: 0x{x}, present: {}, write: {}" ++
+            "ex: {}", .{ frame.rip, fault_addr, present, write, execute });
+    }
 
-    panic("page fault at {x}, fault addr {x}\n", .{ frame.rip, fault_addr });
+    // Determine the fault type
+    var fault_type: hypercalls.FaultInfo.Type = undefined;
+    if (present) {
+        if (execute) {
+            fault_type = .Exec;
+        } else if (write) {
+            fault_type = .Write;
+        } else fault_type = .Read;
+    } else {
+        if (execute) {
+            fault_type = .OutOfBoundsExec;
+        } else if (write) {
+            fault_type = .OutOfBoundsWrite;
+        } else fault_type = .OutOfBoundsRead;
+    }
+
+    // Create the fault and send it to the hypervisor
+    const fault = hypercalls.FaultInfo{
+        .rip = frame.rip,
+        .fault_addr = fault_addr,
+        .fault_type = fault_type,
+        .kernel = !user,
+    };
+    // zig fmt: off
+    // const fault_type: hypercalls.FaultInfo.Type =
+    //     if (present)
+    //         if (execute)
+    //             .Exec
+    //         else if (write)
+    //             .Write
+    //         else .Read
+    //     else
+    //         if (execute)
+    //             .OutOfBoundsExec
+    //         else if (write)
+    //             .OutOfBoundsWrite
+    //         else .OutOfBoundsRead;
+    // zig fmt: on
+
+    // This won't return
+    hypercalls.endRun(.Crash, &fault);
 }
 
 fn handleBreakpoint(frame: *InterruptFrame) void {
