@@ -79,6 +79,7 @@ fn pushesErrorCode(interrupt_number: usize) bool {
 /// push a 0 as error code if the CPU didn't push one, push the interrupt number,
 /// and jump to interruptHandlerCommon.
 pub fn getInterruptHandlerEntryPoint(comptime interrupt_number: usize) InterruptHandlerEntryPoint {
+    // FIXME: when functions become expressions we won't need to use the struct
     return struct {
         fn handler() callconv(.Naked) void {
             if (comptime !pushesErrorCode(interrupt_number)) {
@@ -139,6 +140,9 @@ export fn interruptHandlerCommon() callconv(.Naked) void {
         \\pop %%r14
         \\pop %%r15
 
+        // Skip the error code and the interrupt number
+        \\add $16, %%rsp
+
         // Return from the interrupt
         \\iretq
     );
@@ -187,42 +191,28 @@ fn handlePageFault(frame: *InterruptFrame) void {
         .fault_type = fault_type,
         .kernel = !user,
     };
-    // zig fmt: off
-    // const fault_type: hypercalls.FaultInfo.Type =
-    //     if (present)
-    //         if (execute)
-    //             .Exec
-    //         else if (write)
-    //             .Write
-    //         else .Read
-    //     else
-    //         if (execute)
-    //             .OutOfBoundsExec
-    //         else if (write)
-    //             .OutOfBoundsWrite
-    //         else .OutOfBoundsRead;
-    // zig fmt: on
 
     // This won't return
     hypercalls.endRun(.Crash, &fault);
 }
 
 fn handleBreakpoint(frame: *InterruptFrame) void {
-    @panic("breakpoint\n");
+    panic("breakpoint at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
 }
 
 fn handleGeneralProtectionFault(frame: *InterruptFrame) void {
-    @panic("gpf\n");
+    panic("gpf at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
 }
 
 fn handleDivByZero(frame: *InterruptFrame) void {
-    @panic("div by zero\n");
+    panic("div by zero at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
 }
 
 fn handleStackSegmentFault(frame: *InterruptFrame) void {
-    @panic("stack segment fault\n");
+    panic("stack segment fault at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
 }
 
 fn handleApicTimer(frame: *InterruptFrame) void {
-    @panic("apic timer\n");
+    // print("apic timer\n", .{});
+    x86.apic.resetTimer();
 }

@@ -33,12 +33,13 @@ pub fn PTL1_INDEX(addr: usize) usize {
 pub const PAGE_SIZE = 1 << PTL1_SHIFT;
 pub const PAGE_MASK: usize = ~(PAGE_SIZE - 1);
 pub const PHYS_MASK: usize = 0x000FFFFFFFFFF000;
+pub const LAST_PTL4_ENTRY_ADDR: usize = 0xFFFFFF8000000000;
 
 pub const PageTableEntry = struct {
     raw: usize,
 
     // zig fmt: off
-    const Flags = enum(usize) {
+    pub const Flags = enum(usize) {
         Present   = (1 << 0),
         ReadWrite = (1 << 1),
         User      = (1 << 2),
@@ -219,5 +220,20 @@ pub const PageTable = struct {
             entry.setUser(true);
             x86.flush_tlb_entry(pmm.physToVirt(usize, frame));
         }
+    }
+};
+
+pub const KernelPageTable = struct {
+    page_table: PageTable,
+
+    pub fn init() KernelPageTable {
+        return KernelPageTable{
+            .page_table = PageTable.init(x86.rdcr3()),
+        };
+    }
+
+    pub fn ensurePTE(self: *KernelPageTable, page_vaddr: usize) !*PageTableEntry {
+        assert(page_vaddr >= LAST_PTL4_ENTRY_ADDR);
+        return self.page_table.ensurePTE(page_vaddr);
     }
 };

@@ -1,6 +1,6 @@
 const x86 = @import("x86.zig");
 
-pub const MSR = enum {
+pub const MSR = enum(usize) {
     /// physical address of APIC
     APIC_BASE = 0x0000001B,
 
@@ -47,6 +47,19 @@ pub fn wrmsr(msr: MSR, value: u64) void {
           [value_high] "{rdi}" (value >> 32)
         : "memory"
     );
+}
+
+pub fn rdmsr(msr: MSR) usize {
+    var high: u32 = undefined;
+    var low: u32 = undefined;
+    asm volatile (
+        \\rdmsr
+        : [high] "={edx}" (high),
+          [low] "={eax}" (low)
+        : [msr] "{rcx}" (msr)
+        : "memory"
+    );
+    return (@intCast(u64, high) << 32) | low;
 }
 
 pub fn lgdt(gdt_ptr: *const x86.gdt.GDTPtr) void {
@@ -101,4 +114,25 @@ pub fn flush_tlb_entry(page_vaddr: usize) void {
         : [page] "r" (page_vaddr)
         : "memory"
     );
+}
+
+pub fn outb(comptime port: u16, value: u8) void {
+    asm volatile (
+        \\outb %[value], %[port]
+        :
+        : [port] "im" (port),
+          [value] "{al}" (value)
+    );
+}
+
+pub fn inb(comptime port: u16) u8 {
+    return asm volatile (
+        \\inb %[port], %[value]
+        : [value] "={al}" (-> u8)
+        : [port] "im" (port)
+    );
+}
+
+pub fn enable_interrupts() void {
+    asm volatile ("sti");
 }
