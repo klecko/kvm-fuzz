@@ -44,7 +44,7 @@ pub fn wrmsr(msr: MSR, value: u64) void {
         :
         : [msr] "{rcx}" (msr),
           [value_low] "{rax}" (value & 0xFFFFFFFF),
-          [value_high] "{rdi}" (value >> 32)
+          [value_high] "{rdx}" (value >> 32)
         : "memory"
     );
 }

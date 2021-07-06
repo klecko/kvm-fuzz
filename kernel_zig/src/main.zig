@@ -16,6 +16,7 @@ export fn kmain() noreturn {
     x86.idt.init();
     pmm.init();
     vmm.init();
+    x86.perf.init();
     x86.apic.init();
 
     print("Done!\n", .{});

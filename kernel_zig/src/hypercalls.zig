@@ -1,3 +1,5 @@
+const x86 = @import("x86/x86.zig");
+
 pub const Hypercall = enum {
     Test,
     Print,
@@ -67,33 +69,44 @@ comptime {
         \\
         \\.global _print
         \\_print:
-        \\	mov $1, %rax;
+        \\	mov $1, %rax
         \\	jmp hypercall
         \\
         \\.global getMemInfo
         \\getMemInfo:
-        \\	mov $2, %rax;
+        \\	mov $2, %rax
         \\	jmp hypercall
         \\
-        \\.global endRun
-        \\endRun:
-        \\	mov $10, %rax;
+        \\.global submitTimeoutPointers
+        \\submitTimeoutPointers:
+        \\  mov $8, %rax
+        \\  jmp hypercall
+        \\
+        \\.global _endRun
+        \\_endRun:
+        \\	mov $10, %rax
         \\	jmp hypercall
     );
     check_equals(.Print, 1);
     check_equals(.GetMemInfo, 2);
+    check_equals(.SubmitTimeoutPointers, 8);
     check_equals(.EndRun, 10);
 }
 
 // pub extern fn test(arg: usize) void;
 extern fn _print(s: [*]const u8) void;
 pub extern fn getMemInfo(info: *MemInfo) void;
-pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
+pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
+extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
 
 pub fn print(s: []const u8) void {
     for (s) |c| {
         print_char(c);
     }
+}
+
+pub fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn {
+    _endRun(reason, info, x86.perf.instructionsExecuted());
 }
 
 const buf_len = 1024;

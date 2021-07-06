@@ -214,5 +214,7 @@ fn handleStackSegmentFault(frame: *InterruptFrame) void {
 
 fn handleApicTimer(frame: *InterruptFrame) void {
     // print("apic timer\n", .{});
+    x86.perf.tick();
+
     x86.apic.resetTimer();
 }
