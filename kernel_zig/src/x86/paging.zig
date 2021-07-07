@@ -1,6 +1,7 @@
 usingnamespace @import("../common.zig");
 const pmm = @import("../mem/pmm.zig");
 const x86 = @import("x86.zig");
+const log = std.log.scoped(.paging);
 
 pub const PTL4_SHIFT = 39;
 pub const PTL4_BITS = 9;
@@ -30,10 +31,14 @@ pub fn PTL1_INDEX(addr: usize) usize {
     return (addr >> PTL1_SHIFT) & (PTL1_ENTRIES - 1);
 }
 
-pub const PAGE_SIZE = 1 << PTL1_SHIFT;
+pub const PAGE_SIZE: usize = 1 << PTL1_SHIFT;
 pub const PAGE_MASK: usize = ~(PAGE_SIZE - 1);
 pub const PHYS_MASK: usize = 0x000FFFFFFFFFF000;
 pub const LAST_PTL4_ENTRY_ADDR: usize = 0xFFFFFF8000000000;
+
+pub fn isPageAligned(addr: usize) bool {
+    return (addr & PAGE_MASK) == addr;
+}
 
 pub const PageTableEntry = struct {
     raw: usize,
@@ -182,7 +187,55 @@ pub const PageTable = struct {
         };
     }
 
-    pub fn ensurePTE(self: *PageTable, page_vaddr: usize) !*PageTableEntry {
+    pub const MappingOptions = struct {
+        writable: bool = false,
+        user: bool = false,
+        huge: bool = false,
+        global: bool = false,
+        protNone: bool = false,
+        shared: bool = false,
+        noExecute: bool = false,
+    };
+
+    pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) !void {
+        // Make sure we don't ask for global and protNone at the same time, as
+        // protNone uses the global bit. Also make sure addresses are aligned.
+        assert(!(options.global and options.protNone));
+        assert(isPageAligned(virt));
+        assert(isPageAligned(phys));
+
+        log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
+
+        // Ensure the PTE
+        var pte = try self.ensurePTE(virt);
+
+        // Set the given frame and set each flag. Don't set present if protNone.
+        pte.setFrameBase(phys);
+        pte.setPresent(options.protNone);
+        pte.setWritable(options.writable);
+        pte.setUser(options.user);
+        pte.setHuge(options.huge);
+        pte.setGlobal(options.global);
+        pte.setProtNone(options.protNone);
+        pte.setShared(options.protNone);
+        pte.setNoExecute(options.noExecute);
+
+        // Flush the TLB entry associated with given page
+        x86.flush_tlb_entry(virt);
+    }
+
+    pub fn unmapPage(self: *PageTable, virt: usize) !void {
+        assert(isPageAligned(virt));
+
+        var pte = try self.ensurePTE(virt);
+        assert(pte.isPresent());
+        pmm.freeFrame(pte.frameBase());
+        pte.clear();
+        x86.flush_tlb_entry(virt);
+        log.debug("unmapped 0x{x}\n", .{virt});
+    }
+
+    fn ensurePTE(self: *PageTable, page_vaddr: usize) !*PageTableEntry {
         const ptl4_i = PTL4_INDEX(page_vaddr);
         const ptl3_i = PTL3_INDEX(page_vaddr);
         const ptl2_i = PTL2_INDEX(page_vaddr);
@@ -204,8 +257,6 @@ pub const PageTable = struct {
         const ptl1_entry = &ptl1[ptl1_i];
         return ptl1_entry;
     }
-
-    // pub fn map(virt: usize, phys: usize, )
 
     fn pageTablePointedBy(entry: *PageTableEntry) RawType {
         return pmm.physToVirt(RawType, entry.frameBase());
@@ -232,8 +283,18 @@ pub const KernelPageTable = struct {
         };
     }
 
-    pub fn ensurePTE(self: *KernelPageTable, page_vaddr: usize) !*PageTableEntry {
-        assert(page_vaddr >= LAST_PTL4_ENTRY_ADDR);
-        return self.page_table.ensurePTE(page_vaddr);
+    pub fn mapPage(self: *KernelPageTable, virt: usize, phys: usize, options: PageTable.MappingOptions) !void {
+        // assert(virt >= LAST_PTL4_ENTRY_ADDR);
+        return self.page_table.mapPage(virt, phys, options);
     }
+
+    pub fn unmapPage(self: *KernelPageTable, virt: usize) !void {
+        // assert(virt >= LAST_PTL4_ENTRY_ADDR);
+        return self.page_table.unmapPage(virt);
+    }
+
+    // pub fn ensurePTE(self: *KernelPageTable, page_vaddr: usize) !*PageTableEntry {
+    //     assert(page_vaddr >= LAST_PTL4_ENTRY_ADDR);
+    //     return self.page_table.ensurePTE(page_vaddr);
+    // }
 };

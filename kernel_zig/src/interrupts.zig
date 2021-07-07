@@ -163,10 +163,6 @@ fn handlePageFault(frame: *InterruptFrame) void {
     const user = (frame.error_code & (1 << 2)) != 0;
     const execute = (frame.error_code & (1 << 4)) != 0;
     const fault_addr = x86.rdcr2();
-    if (!user) {
-        print("woops, kernel PF at 0x{x}. addr: 0x{x}, present: {}, write: {}" ++
-            "ex: {}", .{ frame.rip, fault_addr, present, write, execute });
-    }
 
     // Determine the fault type
     var fault_type: hypercalls.FaultInfo.Type = undefined;
@@ -191,6 +187,9 @@ fn handlePageFault(frame: *InterruptFrame) void {
         .fault_type = fault_type,
         .kernel = !user,
     };
+    if (fault.kernel) {
+        panic("kernel PF at 0x{x}. addr: 0x{x}, type: {}\n", .{ frame.rip, fault_addr, fault.fault_type });
+    }
 
     // This won't return
     hypercalls.endRun(.Crash, &fault);

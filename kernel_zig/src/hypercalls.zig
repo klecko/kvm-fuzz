@@ -77,6 +77,11 @@ comptime {
         \\	mov $2, %rax
         \\	jmp hypercall
         \\
+        \\.global getKernelBrk
+        \\getKernelBrk:
+        \\  mov $3, %rax
+        \\  jmp hypercall
+        \\
         \\.global submitTimeoutPointers
         \\submitTimeoutPointers:
         \\  mov $8, %rax
@@ -89,6 +94,7 @@ comptime {
     );
     check_equals(.Print, 1);
     check_equals(.GetMemInfo, 2);
+    check_equals(.GetKernelBrk, 3);
     check_equals(.SubmitTimeoutPointers, 8);
     check_equals(.EndRun, 10);
 }
@@ -96,6 +102,7 @@ comptime {
 // pub extern fn test(arg: usize) void;
 extern fn _print(s: [*]const u8) void;
 pub extern fn getMemInfo(info: *MemInfo) void;
+pub extern fn getKernelBrk() usize;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
 

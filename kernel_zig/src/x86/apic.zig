@@ -93,13 +93,11 @@ pub fn init() void {
     // https://wiki.osdev.org/APIC_timer
     // Get APIC phys address
     var apic_phys_addr: usize = x86.rdmsr(.APIC_BASE);
+    const apic_frame = apic_phys_addr & x86.paging.PHYS_MASK;
 
     // Map it at the end of the phymap
     apic.apic_vaddr = pmm.physToVirt(usize, pmm.memoryLength());
-    var pte = vmm.kernel_page_table.ensurePTE(apic.apic_vaddr) catch unreachable;
-    pte.setFrameBase(apic_phys_addr & x86.paging.PHYS_MASK);
-    pte.setPresent(true);
-    pte.setWritable(true);
+    vmm.kernel_page_table.mapPage(apic.apic_vaddr, apic_frame, .{ .writable = true }) catch unreachable;
 
     // Initialize APIC
     apic.writeReg(.DESTINATION_FORMAT, 0x0FFFFFFFF);

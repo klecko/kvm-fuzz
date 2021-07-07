@@ -20,7 +20,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.setBuildMode(mode);
     exe.setLinkerScriptPath("./linker.ld");
     exe.code_model = .kernel;
-    exe.emit_docs = true;
+    exe.single_threaded = true;
 
     // Build options
     exe.addBuildOption(bool, "enable_instruction_count", true);
