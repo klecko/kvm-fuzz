@@ -1,5 +1,5 @@
 usingnamespace @import("../common.zig");
-const pmm = @import("../mem/mem.zig").pmm;
+const mem = @import("../mem/mem.zig");
 const x86 = @import("x86.zig");
 const log = std.log.scoped(.paging);
 
@@ -34,7 +34,6 @@ pub fn PTL1_INDEX(addr: usize) usize {
 pub const PAGE_SIZE: usize = 1 << PTL1_SHIFT;
 pub const PAGE_MASK: usize = ~(PAGE_SIZE - 1);
 pub const PHYS_MASK: usize = 0x000FFFFFFFFFF000;
-pub const LAST_PTL4_ENTRY_ADDR: usize = 0xFFFFFF8000000000;
 
 pub fn isPageAligned(addr: usize) bool {
     return (addr & PAGE_MASK) == addr;
@@ -182,8 +181,7 @@ pub const PageTable = struct {
 
     pub fn init(ptl4_paddr: usize) PageTable {
         return PageTable{
-            .ptl4 = pmm.physToVirt(RawType, ptl4_paddr),
-            // .ptl4 = pmm.physToVirt(@typeInfo(PageTable).Struct.fields[0].field_type, ptl4_paddr),
+            .ptl4 = mem.pmm.physToVirt(RawType, ptl4_paddr),
         };
     }
 
@@ -195,23 +193,35 @@ pub const PageTable = struct {
         protNone: bool = false,
         shared: bool = false,
         noExecute: bool = false,
+        discardAlreadyMapped: bool = false,
     };
 
-    pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) !void {
+    pub const MappingError = mem.pmm.Error || error{AlreadyMapped};
+
+    /// Map a virtual address to a physical address with given options.
+    pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
         // Make sure we don't ask for global and protNone at the same time, as
         // protNone uses the global bit. Also make sure addresses are aligned.
         assert(!(options.global and options.protNone));
         assert(isPageAligned(virt));
         assert(isPageAligned(phys));
 
-        log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
-
         // Ensure the PTE
         var pte = try self.ensurePTE(virt);
 
+        // If PTE is already present, free it if we are said to. Otherwise
+        // return error.
+        if (pte.isPresent()) {
+            if (options.discardAlreadyMapped) {
+                mem.pmm.freeFrame(pte.frameBase());
+            } else {
+                return MappingError.AlreadyMapped;
+            }
+        }
+
         // Set the given frame and set each flag. Don't set present if protNone.
         pte.setFrameBase(phys);
-        pte.setPresent(options.protNone);
+        pte.setPresent(!options.protNone);
         pte.setWritable(options.writable);
         pte.setUser(options.user);
         pte.setHuge(options.huge);
@@ -222,20 +232,36 @@ pub const PageTable = struct {
 
         // Flush the TLB entry associated with given page
         x86.flush_tlb_entry(virt);
+
+        log.debug("mapped 0x{x} to 0x{x}\n", .{ virt, phys });
     }
 
-    pub fn unmapPage(self: *PageTable, virt: usize) !void {
+    pub const UnmappingError = error{NotMapped};
+
+    /// Unmap a virtual address.
+    pub fn unmapPage(self: *PageTable, virt: usize) UnmappingError!void {
         assert(isPageAligned(virt));
 
-        var pte = try self.ensurePTE(virt);
-        assert(pte.isPresent());
-        pmm.freeFrame(pte.frameBase());
-        pte.clear();
-        x86.flush_tlb_entry(virt);
-        log.debug("unmapped 0x{x}\n", .{virt});
+        // Attempt to get the PTE
+        if (self.getPTE(virt)) |pte| {
+            // If it's not present, return an error
+            if (!pte.isPresent())
+                return UnmappingError.NotMapped;
+
+            // TODO: should we be freeing here?
+            // Free frame and clear PTE
+            mem.pmm.freeFrame(pte.frameBase());
+            pte.clear();
+            x86.flush_tlb_entry(virt);
+            log.debug("unmapped 0x{x}\n", .{virt});
+        } else {
+            // Some page table which contains the PTE is not present, same error
+            return UnmappingError.NotMapped;
+        }
     }
 
-    fn ensurePTE(self: *PageTable, page_vaddr: usize) !*PageTableEntry {
+    /// Get the PTE of a given page, allocating and mapping entries along the way.
+    fn ensurePTE(self: *PageTable, page_vaddr: usize) mem.pmm.Error!*PageTableEntry {
         const ptl4_i = PTL4_INDEX(page_vaddr);
         const ptl3_i = PTL3_INDEX(page_vaddr);
         const ptl2_i = PTL2_INDEX(page_vaddr);
@@ -258,18 +284,48 @@ pub const PageTable = struct {
         return ptl1_entry;
     }
 
-    fn pageTablePointedBy(entry: *PageTableEntry) RawType {
-        return pmm.physToVirt(RawType, entry.frameBase());
+    /// Get the PTE of a given page, or null if any entry along the way was
+    /// not present.
+    fn getPTE(self: *PageTable, page_vaddr: usize) ?*PageTableEntry {
+        const ptl4_i = PTL4_INDEX(page_vaddr);
+        const ptl3_i = PTL3_INDEX(page_vaddr);
+        const ptl2_i = PTL2_INDEX(page_vaddr);
+        const ptl1_i = PTL1_INDEX(page_vaddr);
+
+        const ptl4 = self.ptl4;
+        const ptl4_entry = &ptl4[ptl4_i];
+        if (!ptl4_entry.isPresent())
+            return null;
+
+        const ptl3 = pageTablePointedBy(ptl4_entry);
+        const ptl3_entry = &ptl3[ptl3_i];
+        if (!ptl3_entry.isPresent())
+            return null;
+
+        const ptl2 = pageTablePointedBy(ptl3_entry);
+        const ptl2_entry = &ptl2[ptl2_i];
+        if (!ptl2_entry.isPresent())
+            return null;
+
+        const ptl1 = pageTablePointedBy(ptl2_entry);
+        const ptl1_entry = &ptl1[ptl1_i];
+        return ptl1_entry;
     }
 
-    fn ensureEntryPresent(entry: *PageTableEntry) !void {
+    /// Get the page table pointed by a PTE.
+    fn pageTablePointedBy(entry: *PageTableEntry) RawType {
+        return mem.pmm.physToVirt(RawType, entry.frameBase());
+    }
+
+    /// Allocate and map a PTE if it's not present.
+    fn ensureEntryPresent(entry: *PageTableEntry) mem.pmm.Error!void {
         if (!entry.isPresent()) {
-            const frame = try pmm.allocFrame();
+            const frame = try mem.pmm.allocFrame();
             entry.setFrameBase(frame);
             entry.setPresent(true);
             entry.setWritable(true);
-            entry.setUser(true);
-            x86.flush_tlb_entry(pmm.physToVirt(usize, frame));
+            entry.setUser(true); // TODO: remove me and see what happens
+            x86.flush_tlb_entry(mem.pmm.physToVirt(usize, frame));
         }
     }
 };
@@ -283,13 +339,13 @@ pub const KernelPageTable = struct {
         };
     }
 
-    pub fn mapPage(self: *KernelPageTable, virt: usize, phys: usize, options: PageTable.MappingOptions) !void {
-        // assert(virt >= LAST_PTL4_ENTRY_ADDR);
+    pub fn mapPage(self: *KernelPageTable, virt: usize, phys: usize, options: PageTable.MappingOptions) PageTable.MappingError!void {
+        assert(mem.safe.isAddressInKernelRange(virt));
         return self.page_table.mapPage(virt, phys, options);
     }
 
-    pub fn unmapPage(self: *KernelPageTable, virt: usize) !void {
-        // assert(virt >= LAST_PTL4_ENTRY_ADDR);
+    pub fn unmapPage(self: *KernelPageTable, virt: usize) PageTable.UnmappingError!void {
+        assert(mem.safe.isAddressInKernelRange(virt));
         return self.page_table.unmapPage(virt);
     }
 

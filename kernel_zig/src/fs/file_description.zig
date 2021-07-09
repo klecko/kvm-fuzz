@@ -34,17 +34,16 @@ pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux
         },
     };
     // zig fmt: on
+
     var st = regular_st_base;
     st.ino = inode;
     st.size = @intCast(i64, fileSize);
     st.blocks = @intCast(i64, fileSize / 512 + 1);
-    return if (mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st))
-        0
-    else
-        -linux.EFAULT;
+    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st) catch return -linux.EFAULT;
+    return 0;
 }
 
-pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) i32 {
+pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) isize {
     // Here it's just the call to copyToUserSingle.
     // zig fmt: off
     comptime const stdin_stat = linux.stat{
@@ -72,13 +71,12 @@ pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) i32 {
         },
     };
     // zig fmt: on
-    return if (mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat))
-        0
-    else
-        -linux.EFAULT;
+
+    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat) catch return -linux.EFAULT;
+    return 0;
 }
 
-pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) i32 {
+pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) isize {
     // zig fmt: off
     comptime const stdout_stat = linux.stat{
         .dev         = 22,
@@ -105,10 +103,9 @@ pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) i32 {
         },
     };
     // zig fmt: on
-    return if (mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdout_stat))
-        0
-    else
-        -linux.EFAULT;
+
+    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdout_stat) catch return -linux.EFAULT;
+    return 0;
 }
 
 pub const FileDescription = struct {
@@ -192,14 +189,53 @@ pub const FileDescriptionRegular = struct {
 
         const prev_offset = desc.offset;
         const length_moved = desc.moveOffset(buf.len());
-        const slice = desc.buf[prev_offset .. prev_offset + length_moved];
-        return if (safe_mem.copyToUser(u8, buf, slice))
-            length_moved
-        else
-            -EFAULT;
+        const src_slice = desc.buf[prev_offset .. prev_offset + length_moved];
+        mem.safe.copyToUser(u8, buf, src_slice) catch return -EFAULT;
+        return length_moved;
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
         unreachable;
     }
 };
+
+pub const FileDescriptionStdin = struct {
+    desc: FileDescription,
+    input_opened: bool,
+
+    pub fn init() FileDescriptionRegular {
+        return FileDescriptionRegular{
+            .desc = FileDescription{
+                .buf = {},
+                .flags = linux.O_RDWR,
+                .stat = stat,
+                .read = read,
+                .write = write,
+            },
+            .input_opened = true,
+        };
+    }
+
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
+        return statStdin(stat_ptr);
+    }
+
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
+        // Guest is trying to read from stdin. Let's do a little hack here.
+        // Assuming it's expecting to read from input file, let's set that input
+        // file as our buffer, and read from there as a regular file.
+        // We can't do this at the beginning, as we wouldn't get the real size from
+        // the hypervisor when it updated the input file.
+        const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
+        if (!self.input_opened) {
+            self.input_opened = true;
+        }
+        // TODO
+    }
+
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
+        // TODO
+    }
+};
+
+pub const FileDescriptionStdout = struct {};

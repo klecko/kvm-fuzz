@@ -13,7 +13,7 @@ const linux = @import("linux.zig");
 const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 
-pub const log_level: std.log.Level = .debug;
+pub const log_level: std.log.Level = .info;
 
 export fn kmain() noreturn {
     print("hello from zig\n", .{});
@@ -29,11 +29,15 @@ export fn kmain() noreturn {
     x86.apic.init();
     fs.file_manager.init(info.num_files);
 
-    var p1 = @intToPtr(*[5]u8, 7);
-    var p2 = @intToPtr(*[5]u8, 6);
-    const user_slice = UserSlice([]u8).fromSlice(p1);
-    const h = mem.safe.copyFromUser(u8, p1, user_slice.toConst());
-    print("{}\n", .{h});
+    print("memory before first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    const p = mem.vmm.page_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
+    print("memory after first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    std.debug.assert(p == null);
+    const p2 = mem.vmm.page_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
+    print("second attempt returned: {*}\n", .{p2});
+    print("memory after second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    mem.vmm.page_allocator.free(p2);
+    print("memory after freeing second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
 
     print("Done!\n", .{});
     hypercalls.endRun(.Exit, null);

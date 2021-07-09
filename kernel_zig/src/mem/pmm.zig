@@ -2,16 +2,13 @@ usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");
 const heap = @import("heap.zig");
-const vmm = @import("vmm.zig");
+const mem = @import("mem.zig");
 const log = std.log.scoped(.pmm);
-
-/// Virtual address of the physmap (a virtual mapping of all the physical memory).
-var physmap_vaddr: usize = 0;
 
 /// Bitset of free frames.
 var free_bitset = std.StaticBitSet(bitset_size).initFull();
 
-// This allows for 4096*8 pages, which is 128MB of memory
+// This allows for 4096*8 pages, which is 128MB of memory. Same as in VMM.
 const bitset_size_bytes = std.mem.page_size;
 const bitset_size = bitset_size_bytes * std.mem.byte_size_in_bits;
 
@@ -41,7 +38,9 @@ fn findFirstFree() ?usize {
 pub fn init() void {
     var info: hypercalls.MemInfo = undefined;
     hypercalls.getMemInfo(&info);
-    physmap_vaddr = info.physmap_vaddr;
+
+    // TODO: remove physmap_vaddr from meminfo
+    assert(info.physmap_vaddr == mem.layout.physmap);
 
     // Set every frame from frame 0 to the one corresponding to info.mem_start
     // as not free.
@@ -89,8 +88,7 @@ pub fn freeFrame(frame: usize) void {
 }
 
 pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
-    assert(physmap_vaddr != 0);
-    const ret = physmap_vaddr + phys;
+    const ret = mem.layout.physmap + phys;
     if (@typeInfo(ptr_type) == .Pointer) {
         return @intToPtr(ptr_type, ret);
     } else if (@typeInfo(ptr_type) == .Int) {
@@ -103,8 +101,9 @@ pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
 pub fn virtToPhys(comptime ptr_type: type, virt: ptr_type) usize {
     assert(@typeInfo(ptr_type) == .Pointer);
     const virt_flat = @ptrToInt(virt);
-    assert(physmap_vaddr <= virt_flat and virt_flat < physmap_vaddr + memory_length);
-    return virt_flat - physmap_vaddr;
+    const physmap = mem.layout.physmap;
+    assert(physmap <= virt_flat and virt_flat < physmap + memory_length);
+    return virt_flat - physmap;
 }
 
 pub fn amountFreeFrames() usize {
