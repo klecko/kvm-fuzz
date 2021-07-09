@@ -1,5 +1,5 @@
 usingnamespace @import("../common.zig");
-const pmm = @import("../mem/pmm.zig");
+const pmm = @import("../mem/mem.zig").pmm;
 const x86 = @import("x86.zig");
 const log = std.log.scoped(.paging);
 

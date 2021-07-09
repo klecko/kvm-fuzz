@@ -7,3 +7,5 @@ compiler
 zig-out
 zig-cache
 docs
+in
+out

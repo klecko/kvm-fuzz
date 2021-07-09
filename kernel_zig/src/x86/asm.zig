@@ -133,6 +133,6 @@ pub fn inb(comptime port: u16) u8 {
     );
 }
 
-pub fn enable_interrupts() void {
+pub fn enableInterrupts() void {
     asm volatile ("sti");
 }

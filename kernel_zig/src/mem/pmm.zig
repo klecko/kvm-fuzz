@@ -52,7 +52,10 @@ pub fn init() void {
         setAllocated(i);
     }
 
-    // Set the index corresponding the limit of our physical memory according
+    // Check the bitset is big enough for the physical memory we have
+    assert(info.mem_length < bitset_size * std.mem.page_size);
+
+    // Set the index corresponding to the limit of our physical memory according
     // to the hypervisor.
     assert(x86.paging.isPageAligned(info.mem_length));
     limit_frame_i = info.mem_length / std.mem.page_size;

@@ -1,4 +1,6 @@
+// usingnamespace @import("common.zig");
 const x86 = @import("x86/x86.zig");
+const linux = @import("linux.zig");
 
 pub const Hypercall = enum {
     Test,
@@ -15,12 +17,34 @@ pub const Hypercall = enum {
 };
 
 // Keep this the same as in the hypervisor
+const phinfo_t = extern struct {
+    e_phoff: u64,
+    e_phentsize: u16,
+    e_phnum: u16,
+};
+
+// Keep this the same as in the hypervisor
+pub const VmInfo = struct {
+    elf_path: [linux.PATH_MAX]u8,
+    brk: usize,
+    num_files: usize,
+    unused: usize,
+    user_entry: usize,
+    elf_entry: usize,
+    elf_load_addr: usize,
+    interp_base: usize,
+    phinfo: phinfo_t,
+    term: linux.termios,
+};
+
+// Keep this the same as in the hypervisor
 pub const MemInfo = struct {
     mem_start: usize,
     mem_length: usize,
     physmap_vaddr: usize,
 };
 
+// Keep this the same as in the hypervisor
 pub const FaultInfo = extern struct {
     fault_type: Type,
     rip: usize,
@@ -49,7 +73,7 @@ const RunEndReason = enum(c_int) {
     Unknown = -1,
 };
 
-fn check_equals(comptime hc: Hypercall, comptime n: u8) void {
+fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
     if (@enumToInt(hc) != n) {
         @compileError("woops, hypercall " ++ @tagName(hc) ++
             " has wrong value");
@@ -82,6 +106,26 @@ comptime {
         \\  mov $3, %rax
         \\  jmp hypercall
         \\
+        \\.global getInfo
+        \\getInfo:
+        \\  mov $4, %rax
+        \\  jmp hypercall
+        \\
+        \\.global getFileLen
+        \\getFileLen:
+        \\  mov $5, %rax
+        \\  jmp hypercall
+        \\
+        \\.global getFileName
+        \\getFileName:
+        \\  mov $6, %rax
+        \\  jmp hypercall
+        \\
+        \\.global submitFilePointers
+        \\submitFilePointers:
+        \\  mov $7, %rax
+        \\  jmp hypercall
+        \\
         \\.global submitTimeoutPointers
         \\submitTimeoutPointers:
         \\  mov $8, %rax
@@ -92,23 +136,31 @@ comptime {
         \\	mov $10, %rax
         \\	jmp hypercall
     );
-    check_equals(.Print, 1);
-    check_equals(.GetMemInfo, 2);
-    check_equals(.GetKernelBrk, 3);
-    check_equals(.SubmitTimeoutPointers, 8);
-    check_equals(.EndRun, 10);
+    checkEquals(.Print, 1);
+    checkEquals(.GetMemInfo, 2);
+    checkEquals(.GetKernelBrk, 3);
+    checkEquals(.GetInfo, 4);
+    checkEquals(.GetFileLen, 5);
+    checkEquals(.GetFileName, 6);
+    checkEquals(.SubmitFilePointers, 7);
+    checkEquals(.SubmitTimeoutPointers, 8);
+    checkEquals(.EndRun, 10);
 }
 
 // pub extern fn test(arg: usize) void;
 extern fn _print(s: [*]const u8) void;
 pub extern fn getMemInfo(info: *MemInfo) void;
 pub extern fn getKernelBrk() usize;
+pub extern fn getInfo(info: *VmInfo) void;
+pub extern fn getFileLen(n: usize) usize;
+pub extern fn getFileName(n: usize, buf: [*]u8) void;
+pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
 
 pub fn print(s: []const u8) void {
     for (s) |c| {
-        print_char(c);
+        printChar(c);
     }
 }
 
@@ -119,7 +171,7 @@ pub fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn {
 const buf_len = 1024;
 var out_buf: [buf_len]u8 = undefined;
 var used: usize = 0;
-fn print_char(c: u8) void {
+fn printChar(c: u8) void {
     out_buf[used] = c;
     used += 1;
     if (c == '\n' or used == buf_len - 1) {

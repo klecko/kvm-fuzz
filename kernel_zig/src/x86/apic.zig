@@ -1,7 +1,6 @@
 usingnamespace @import("../common.zig");
 const x86 = @import("x86.zig");
-const pmm = @import("../mem/pmm.zig");
-const vmm = @import("../mem/vmm.zig");
+const mem = @import("../mem/mem.zig");
 const log = std.log.scoped(.apic);
 
 pub const TIMER_MICROSECS = 1000;
@@ -96,8 +95,8 @@ pub fn init() void {
     const apic_frame = apic_phys_addr & x86.paging.PHYS_MASK;
 
     // Map it at the end of the phymap
-    apic.apic_vaddr = pmm.physToVirt(usize, pmm.memoryLength());
-    vmm.kernel_page_table.mapPage(apic.apic_vaddr, apic_frame, .{ .writable = true }) catch unreachable;
+    apic.apic_vaddr = mem.pmm.physToVirt(usize, mem.pmm.memoryLength());
+    mem.vmm.kernel_page_table.mapPage(apic.apic_vaddr, apic_frame, .{ .writable = true }) catch unreachable;
 
     // Initialize APIC
     apic.writeReg(.DESTINATION_FORMAT, 0x0FFFFFFFF);
@@ -130,7 +129,7 @@ pub fn init() void {
 
     // Enable interrupts, set counter to the value we just calculated and
     // re-enable timer, this time in periodic mode.
-    x86.enable_interrupts();
+    x86.enableInterrupts();
     apic.writeReg(.TIMER_INITIAL_COUNT, counter_value);
     apic.writeReg(.LVT_TIMER, x86.idt.IRQNumber.APICTimer | TimerMode.Periodic);
 

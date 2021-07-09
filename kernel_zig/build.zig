@@ -12,18 +12,39 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const fmt_step = b.addFmt(&.{"src"});
-    b.default_step.dependOn(&fmt_step.step);
-
+    // Kernel executable build step
     const exe = b.addExecutable("kernel_zig", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    exe.setOutputDir(b.fmt("{s}/bin", .{b.install_path}));
     exe.setLinkerScriptPath("./linker.ld");
+    exe.addPackage(.{
+        .name = "linux_std",
+        .path = "/home/klecko/zig/lib/std/os/bits/linux.zig"
+    });
     exe.code_model = .kernel;
     exe.single_threaded = true;
 
-    // Build options
+    // Kernel uild options
     exe.addBuildOption(bool, "enable_instruction_count", true);
 
     exe.install();
+
+    // Format step
+    const fmt_step = b.addFmt(&.{"src"});
+    exe.step.dependOn(&fmt_step.step);
+
+    // Run step
+    const run_option = b.step("run", "Run the kernel in the hypervisor with a test binary");
+    const run = b.addSystemCommand(&.{
+        "../build/hypervisor/kvm-fuzz",
+        "-k",
+        exe.getOutputPath(),
+        "--",
+        "../test_bins/readelf-static",
+        "-a",
+        "input"
+    });
+    run.step.dependOn(&exe.step);
+    run_option.dependOn(&run.step);
 }

@@ -6,43 +6,34 @@ pub const panic = @import("panic.zig").panicRoot;
 const std = @import("std");
 const print = @import("log.zig").print;
 const x86 = @import("x86/x86.zig");
-const pmm = @import("mem/pmm.zig");
-const vmm = @import("mem/vmm.zig");
+const mem = @import("mem/mem.zig");
 const hypercalls = @import("hypercalls.zig");
-const heap = @import("mem/heap.zig");
+const fs = @import("fs/fs.zig");
+const linux = @import("linux.zig");
+const UserPtr = mem.safe.UserPtr;
+const UserSlice = mem.safe.UserSlice;
 
-pub const log_level: std.log.Level = .info;
-
-fn foo1() void {
-    foo2();
-}
-
-fn foo2() void {
-    foo3();
-}
-
-fn foo3() void {
-    var n: u8 = 255;
-    n += 1;
-}
+pub const log_level: std.log.Level = .debug;
 
 export fn kmain() noreturn {
     print("hello from zig\n", .{});
 
+    var info: hypercalls.VmInfo = undefined;
+    hypercalls.getInfo(&info);
+
     x86.gdt.init();
     x86.idt.init();
-    pmm.init();
-    vmm.init();
+    mem.pmm.init();
+    mem.vmm.init();
     x86.perf.init();
     x86.apic.init();
+    fs.file_manager.init(info.num_files);
 
-    const p = vmm.page_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
-    print("memory: {}\nsecond attempt\n", .{pmm.amountFreeMemory()});
-    std.debug.assert(p == null);
-    const p2 = vmm.page_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
-    print("{*}\n", .{p2});
-
-    // foo3();
+    var p1 = @intToPtr(*[5]u8, 7);
+    var p2 = @intToPtr(*[5]u8, 6);
+    const user_slice = UserSlice([]u8).fromSlice(p1);
+    const h = mem.safe.copyFromUser(u8, p1, user_slice.toConst());
+    print("{}\n", .{h});
 
     print("Done!\n", .{});
     hypercalls.endRun(.Exit, null);

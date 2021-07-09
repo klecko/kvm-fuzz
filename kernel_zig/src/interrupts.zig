@@ -1,6 +1,7 @@
 usingnamespace @import("common.zig");
 const x86 = @import("x86/x86.zig");
 const hypercalls = @import("hypercalls.zig");
+const mem = @import("mem/mem.zig");
 
 /// The type of each interrupt handler entry point, which will end up jumping
 /// to the actual interrupt handler.
@@ -9,8 +10,9 @@ pub const InterruptHandlerEntryPoint = fn () callconv(.Naked) void;
 /// The type of each interrupt handler, which will do the actual work.
 const InterruptHandler = fn (*InterruptFrame) void;
 
+// TODO: this is definitely x86-dependant
 /// The data we'll have in the stack inside every interrupt handler.
-const InterruptFrame = struct {
+pub const InterruptFrame = struct {
     // Registers. Pushed by us, except rsp which is pushed by the CPU and
     // it's below.
     rax: u64,
@@ -163,6 +165,9 @@ fn handlePageFault(frame: *InterruptFrame) void {
     const user = (frame.error_code & (1 << 2)) != 0;
     const execute = (frame.error_code & (1 << 4)) != 0;
     const fault_addr = x86.rdcr2();
+
+    if (!user and mem.safe.handleSafeAccessFault(frame))
+        return;
 
     // Determine the fault type
     var fault_type: hypercalls.FaultInfo.Type = undefined;
