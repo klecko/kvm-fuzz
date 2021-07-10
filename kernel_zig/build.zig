@@ -24,9 +24,11 @@ pub fn build(b: *std.build.Builder) void {
     });
     exe.code_model = .kernel;
     exe.single_threaded = true;
+    exe.emit_docs = true;
 
-    // Kernel uild options
+    // Kernel build options
     exe.addBuildOption(bool, "enable_instruction_count", true);
+    exe.addBuildOption(bool, "enable_guest_output", true);
 
     exe.install();
 

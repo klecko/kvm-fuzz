@@ -10,6 +10,7 @@ const mem = @import("mem/mem.zig");
 const hypercalls = @import("hypercalls.zig");
 const fs = @import("fs/fs.zig");
 const linux = @import("linux.zig");
+// const RefCounter = @import("ref_counted.zig").RefCounter;
 const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 
@@ -27,6 +28,7 @@ export fn kmain() noreturn {
     mem.vmm.init();
     x86.perf.init();
     x86.apic.init();
+    x86.syscall.init();
     fs.file_manager.init(info.num_files);
 
     print("memory before first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
@@ -38,6 +40,28 @@ export fn kmain() noreturn {
     print("memory after second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
     mem.vmm.page_allocator.free(p2);
     print("memory after freeing second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+
+    // const p1 = @intToPtr(*u8, 5);
+    // var val: u8 = undefined;
+    // mem.safe.copyToUserSingle(u8, UserPtr(*u8).fromPtr(p1), &val) catch unreachable;
+
+    {
+        var gpa = mem.heap.GeneralPurposeAllocator(.{}){};
+        defer {
+            const leaked = gpa.deinit();
+            std.debug.assert(!leaked);
+        }
+        const allocator = &gpa.allocator;
+
+        const stdout = fs.FileDescriptionStdout.create(allocator) catch unreachable;
+        const stdout_desc = &stdout.desc;
+        defer stdout_desc.ref.unref();
+
+        const stdout_desc2 = stdout_desc.ref.ref();
+        defer stdout_desc2.ref.unref();
+
+        std.debug.assert(stdout_desc == stdout_desc2);
+    }
 
     print("Done!\n", .{});
     hypercalls.endRun(.Exit, null);

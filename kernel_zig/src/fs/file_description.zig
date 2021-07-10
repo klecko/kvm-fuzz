@@ -1,8 +1,13 @@
 usingnamespace @import("../common.zig");
 const mem = @import("../mem/mem.zig");
+const linux = @import("../linux.zig");
+const fs = @import("fs.zig");
+const build_options = @import("build_options");
+const utils = @import("../utils/utils.zig");
+const log = std.log.scoped(.file_description);
 const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
-const linux = @import("../linux.zig");
+const Allocator = std.mem.Allocator;
 
 pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) isize {
     // This structure is built at compile time, so the code generated for this
@@ -123,6 +128,9 @@ pub const FileDescription = struct {
     read: fn (self: *FileDescription, buf: UserSlice([]u8)) isize,
     write: fn (self: *FileDescription, buf: UserSlice([]const u8)) isize,
 
+    ref: RefCounter,
+
+    const RefCounter = utils.RefCounter(FileDescription);
     const O_ACCMODE = 3;
 
     pub fn isReadable(self: *const FileDescription) bool {
@@ -163,35 +171,45 @@ pub const FileDescription = struct {
 pub const FileDescriptionRegular = struct {
     desc: FileDescription,
 
-    pub fn init(buf: []const u8, flags: u32) FileDescriptionRegular {
-        return FileDescriptionRegular{
+    pub fn create(allocator: *Allocator, buf: []const u8, flags: u32) Allocator.Error!*FileDescriptionRegular {
+        // In this case we can avoid giving a destroy function to the RefCounter
+        // because a FileDescriptionRegular is just a FileDescription. We would
+        // have to do it if we added more fields, as in FileDescriptionStdin.
+        const ret = try allocator.create(FileDescriptionRegular);
+        ret.* = FileDescriptionRegular{
             .desc = FileDescription{
                 .buf = buf,
                 .flags = flags,
                 .stat = stat,
                 .read = read,
                 .write = write,
+                .ref = FileDescription.RefCounter.init(allocator, null),
             },
         };
+        return ret;
+    }
+    comptime {
+        assert(@sizeOf(FileDescriptionRegular) == @sizeOf(FileDescription));
     }
 
     fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
         // Use the pointer to the buffer as inode, as that's unique for each file.
-        return statRegular(stat_ptr, desc.size, @ptrToInt(desc.buf.ptr));
+        return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
     }
 
     fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
         assert(desc.isReadable());
 
-        // We must take of this here, as slicing OOB is UB even when the length is 0.
+        // We must take care of this here, as slicing OOB is UB even when the
+        // length is 0.
         if (desc.isOffsetPastEnd())
             return 0;
 
         const prev_offset = desc.offset;
         const length_moved = desc.moveOffset(buf.len());
         const src_slice = desc.buf[prev_offset .. prev_offset + length_moved];
-        mem.safe.copyToUser(u8, buf, src_slice) catch return -EFAULT;
-        return length_moved;
+        mem.safe.copyToUser(u8, buf, src_slice) catch return -linux.EFAULT;
+        return @intCast(isize, length_moved);
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
@@ -203,17 +221,29 @@ pub const FileDescriptionStdin = struct {
     desc: FileDescription,
     input_opened: bool,
 
-    pub fn init() FileDescriptionRegular {
-        return FileDescriptionRegular{
+    pub fn create(allocator: *Allocator) Allocator.Error!*FileDescriptionStdin {
+        const ret = try allocator.create(FileDescriptionStdin);
+        ret.* = FileDescriptionStdin{
             .desc = FileDescription{
-                .buf = {},
+                .buf = &([_]u8{}),
                 .flags = linux.O_RDWR,
                 .stat = stat,
                 .read = read,
                 .write = write,
+                .ref = FileDescription.RefCounter.init(allocator, destroy),
             },
             .input_opened = true,
         };
+        return ret;
+    }
+
+    // We must provide this function because we don't want to free desc, but self.
+    // In this case they don't have the same size, as happens with Regular or
+    // Stdout, so we must do it.
+    fn destroy(ref: *FileDescription.RefCounter) void {
+        const desc = @fieldParentPtr(FileDescription, "ref", ref);
+        const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
+        self.desc.ref.allocator.destroy(self);
     }
 
     fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
@@ -223,19 +253,67 @@ pub const FileDescriptionStdin = struct {
     fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
         // Guest is trying to read from stdin. Let's do a little hack here.
         // Assuming it's expecting to read from input file, let's set that input
-        // file as our buffer, and read from there as a regular file.
-        // We can't do this at the beginning, as we wouldn't get the real size from
-        // the hypervisor when it updated the input file.
+        // file as our buffer, and read from there as a regular file. We can't
+        // do this at the beginning, as we wouldn't get the real size from the
+        // hypervisor when it updated the input file.
+        // TODO: this assumes input file is always "input"
         const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
         if (!self.input_opened) {
-            self.input_opened = true;
+            if (fs.file_manager.fileContent("input")) |content| {
+                self.desc.buf = content;
+                self.input_opened = true;
+            } else {
+                log.warn("tried to read from stdin, but there's no input file\n", .{});
+                return 0;
+            }
         }
-        // TODO
+
+        // We already have a buf, so just read from it as if it were a regular file
+        return FileDescriptionRegular.read(&self.desc, buf);
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
-        // TODO
+        log.warn("writing to stdin, maybe a bug?\n", .{});
+        return printUserMaybe(buf);
     }
 };
 
-pub const FileDescriptionStdout = struct {};
+pub const FileDescriptionStdout = struct {
+    desc: FileDescription,
+
+    pub fn create(allocator: *Allocator) Allocator.Error!*FileDescriptionStdout {
+        // Same as with FileDescriptionStdin.
+        const ret = try allocator.create(FileDescriptionStdout);
+        ret.* = FileDescriptionStdout{
+            .desc = FileDescription{
+                .buf = &[_]u8{},
+                .flags = linux.O_RDWR,
+                .stat = stat,
+                .read = read,
+                .write = write,
+                .ref = FileDescription.RefCounter.init(allocator, null),
+            },
+        };
+        return ret;
+    }
+
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
+        return statStdout(stat_ptr);
+    }
+
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
+        unreachable;
+    }
+
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
+        return printUserMaybe(buf);
+    }
+};
+
+fn printUserMaybe(buf: UserSlice([]const u8)) isize {
+    if (!build_options.enable_guest_output)
+        return buf.len;
+
+    mem.safe.printUser(buf) catch return -linux.EFAULT;
+    return @intCast(isize, buf.len());
+}

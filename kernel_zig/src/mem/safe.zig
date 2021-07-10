@@ -197,6 +197,16 @@ pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Er
     try copy(T, dest, src.ptr());
 }
 
+pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Error)!void {
+    // Allocate a temporary buffer
+    var tmp_buf = try mem.vmm.page_allocator.alloc(u8, user_buf.len());
+    defer mem.vmm.page_allocator.free(tmp_buf);
+
+    // Copy string from user buffer and print it
+    try copyFromUser(u8, tmp_buf, user_buf);
+    print("{s}\n", .{tmp_buf});
+}
+
 // The following functions perform copies, and return an Error if a fault
 // occurred.
 fn copy(comptime T: type, dest: []T, src: []const T) Error!void {

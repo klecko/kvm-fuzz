@@ -7,13 +7,29 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 
 const Process = struct {
-    const pid_t = linux.pid_t;
-    const fd_t = linux.fd_t;
-
     pid: pid_t,
     tgid: pid_t,
+    space: mem.AddressSpace,
 
     files: std.AutoHashMap(pid_t, *fs.FileDescription),
+
+    var next_pid: pid_t = 1234;
+
+    const pid_t = linux.pid_t;
+    const fd_t = linux.fd_t;
+    // const FileDescriptorTable
+
+    pub fn fromCurrent() Process {
+        // TODO
+        const pid = next_pid;
+        next_pid += 1;
+        return Process{
+            .pid = pid,
+            .tgid = pid,
+            .space = {},
+            // .
+        };
+    }
 
     pub fn sysRead(self: *Process, fd: fd_t, buf: UserPtr(*const u8), count: usize) isize {
         return if (self.files.get(fd)) |file_desc_ptr|
