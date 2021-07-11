@@ -1,8 +1,9 @@
 // usingnamespace @import("common.zig");
+const std = @import("std");
 const x86 = @import("x86/x86.zig");
 const linux = @import("linux.zig");
 
-pub const Hypercall = enum {
+pub const Hypercall = enum(c_int) {
     Test,
     Print,
     GetMemInfo,
@@ -24,11 +25,12 @@ const phinfo_t = extern struct {
 };
 
 // Keep this the same as in the hypervisor
-pub const VmInfo = struct {
+pub const VmInfo = extern struct {
     elf_path: [linux.PATH_MAX]u8,
     brk: usize,
     num_files: usize,
-    unused: usize,
+    unused1: usize,
+    unused2: usize,
     user_entry: usize,
     elf_entry: usize,
     elf_load_addr: usize,
@@ -38,7 +40,7 @@ pub const VmInfo = struct {
 };
 
 // Keep this the same as in the hypervisor
-pub const MemInfo = struct {
+pub const MemInfo = extern struct {
     mem_start: usize,
     mem_length: usize,
     physmap_vaddr: usize,
@@ -63,6 +65,19 @@ pub const FaultInfo = extern struct {
         GeneralProtectionFault,
         StackSegmentFault,
     };
+
+    pub fn format(
+        self: FaultInfo,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try std.fmt.format(
+            writer,
+            "Fault{{ .fault_type = {s}, .rip = 0x{x}, .fault_addr = 0x{x}, .kernel = {} }}",
+            .{ @tagName(self.fault_type), self.rip, self.fault_addr, self.kernel },
+        );
+    }
 };
 
 const RunEndReason = enum(c_int) {

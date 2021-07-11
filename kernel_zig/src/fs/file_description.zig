@@ -128,6 +128,8 @@ pub const FileDescription = struct {
     read: fn (self: *FileDescription, buf: UserSlice([]u8)) isize,
     write: fn (self: *FileDescription, buf: UserSlice([]const u8)) isize,
 
+    /// Reference counter. It must free the whole object this FileDescription
+    /// belongs to, not just the FileDescription.
     ref: RefCounter,
 
     const RefCounter = utils.RefCounter(FileDescription);

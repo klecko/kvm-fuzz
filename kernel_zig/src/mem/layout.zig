@@ -1,7 +1,14 @@
-/// Lower half end
+/// Start address of the region where user mappings will be mapped.
+pub const user_mappings_start: usize = 0x7FFFF7FFE000;
+
+/// Start and size of the user stack (grows towards lower addresses)
+pub const user_stack: usize = 0x800000000000;
+pub const user_stack_size: usize = 0x10000;
+
+/// End of the lower half.
 pub const user_end: usize = 0x800000000000;
 
-/// Higher half start
+/// Start of the higher half.
 pub var higher_half: usize = 0xFFFF800000000000;
 
 /// Address of the last PTL4 entry in x86-64. Kernel should use memory from

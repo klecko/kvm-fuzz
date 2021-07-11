@@ -8,11 +8,6 @@ const Allocator = std.mem.Allocator;
 /// The kernel page table.
 pub var kernel_page_table: x86.paging.KernelPageTable = undefined;
 
-/// The kernel page allocator. It is just a wrapper around allocPages() and
-/// freePages(). Because of that, it doesn't work until the VMM is initialized.
-var page_allocator_state = PageAllocator.init();
-pub const page_allocator = &page_allocator_state.allocator;
-
 /// Start of the allocations regions. Set to kernel brk at init().
 var allocations_base_addr: usize = 0;
 
@@ -22,71 +17,6 @@ var free_bitset = std.StaticBitSet(bitset_size).initFull();
 /// This allows for 4096*8 pages, which is 128MB. Same as in PMM.
 const bitset_size_bytes = std.mem.page_size;
 const bitset_size = bitset_size_bytes * std.mem.byte_size_in_bits;
-
-const PageAllocator = struct {
-    allocator: Allocator,
-
-    pub fn init() PageAllocator {
-        return PageAllocator{
-            .allocator = Allocator{
-                .allocFn = alloc,
-                .resizeFn = resize,
-            },
-        };
-    }
-
-    fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) Allocator.Error![]u8 {
-        log.debug("page allocator alloc: {} {} {}\n", .{ len, ptr_align, len_align });
-
-        // As we always return a page aligned pointer, with this constraint we
-        // make sure it will be also aligned by ptr_align.
-        assert(ptr_align <= std.mem.page_size);
-
-        // Allocator constraints
-        assert(len > 0);
-        assert(std.mem.isValidAlign(ptr_align));
-        if (len_align > 0) {
-            assert(std.mem.isAlignedAnyAlign(len, len_align));
-            assert(len >= len_align);
-        }
-
-        // The length and pages we're going to allocate
-        const page_aligned_len = std.mem.alignForward(len, std.mem.page_size);
-        const num_pages = page_aligned_len / std.mem.page_size;
-
-        // Alocate the pages. Getting an error other than OOM is a bug.
-        const range_start = allocPages(num_pages, .{
-            .writable = true,
-            .global = true,
-            .noExecute = true,
-        }) catch |err| switch (err) {
-            error.OutOfMemory => return Allocator.Error.OutOfMemory,
-            else => unreachable,
-        };
-
-        // Construct the slice and return it
-        const range_start_ptr = @intToPtr([*]u8, range_start);
-        const slice = range_start_ptr[0..len];
-        log.debug("page allocator alloc return: {*}\n", .{slice.ptr});
-        return slice;
-    }
-
-    fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) Allocator.Error!usize {
-        log.debug("page allocator resize: {*} {} {} {}\n", .{ buf, buf_align, new_len, len_align });
-        if (new_len == 0) {
-            // The length and pages we're going to free.
-            const page_aligned_len = std.mem.alignForward(buf.len, std.mem.page_size);
-            const num_pages = page_aligned_len / std.mem.page_size;
-
-            // Free pages. Getting an error is a bug.
-            freePages(@ptrToInt(buf.ptr), num_pages) catch unreachable;
-            return 0;
-        }
-        print("TODO\n", .{});
-        assert(false);
-        return Allocator.Error.OutOfMemory;
-    }
-};
 
 pub fn init() void {
     // Initialize the kernel page table

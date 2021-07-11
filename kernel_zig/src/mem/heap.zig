@@ -1,18 +1,89 @@
-// This code is the same as general_purpose_allocator.zig with these changes:
-//   - It doesn't print the formatted stack traces, which requires having debug
-//     info and seems broken for freestanding.
-//   - It uses vmm.page_allocator as backing allocator instead of
-//     std.heap.page_allocator, which defaults to root.os.heap.page_allocator.
-// Every changed line is next to a '// KLECKO' comment
-
 usingnamespace @import("../common.zig");
-const vmm = @import("vmm.zig");
-const log = std.log.scoped(.gpa);
+const vmm = @import("mem.zig").vmm;
+const log = std.log.scoped(.heap);
 const math = std.math;
-const mem = std.mem;
 const page_size = std.mem.page_size;
 const StackTrace = std.builtin.StackTrace;
 const Allocator = std.mem.Allocator;
+
+/// The kernel page allocator. It is just a wrapper around the VMM, allocating
+/// kernel writable pages. Because of that, it won't work until the VMM is
+/// initialized.
+var page_allocator_state = PageAllocator.init();
+pub const page_allocator = &page_allocator_state.allocator;
+
+const PageAllocator = struct {
+    allocator: Allocator,
+
+    pub fn init() PageAllocator {
+        return PageAllocator{
+            .allocator = Allocator{
+                .allocFn = alloc,
+                .resizeFn = resize,
+            },
+        };
+    }
+
+    fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) Allocator.Error![]u8 {
+        log.debug("page allocator alloc: {} {} {}\n", .{ len, ptr_align, len_align });
+
+        // As we always return a page aligned pointer, with this constraint we
+        // make sure it will be also aligned by ptr_align.
+        assert(ptr_align <= std.mem.page_size);
+
+        // Allocator constraints
+        assert(len > 0);
+        assert(std.mem.isValidAlign(ptr_align));
+        if (len_align > 0) {
+            assert(std.mem.isAlignedAnyAlign(len, len_align));
+            assert(len >= len_align);
+        }
+
+        // The length and pages we're going to allocate
+        const page_aligned_len = std.mem.alignForward(len, std.mem.page_size);
+        const num_pages = page_aligned_len / std.mem.page_size;
+
+        // Alocate the pages. Getting an error other than OOM is a bug.
+        const range_start = vmm.allocPages(num_pages, .{
+            .writable = true,
+            .global = true,
+            .noExecute = true,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return Allocator.Error.OutOfMemory,
+            else => unreachable,
+        };
+
+        // Construct the slice and return it
+        const range_start_ptr = @intToPtr([*]u8, range_start);
+        const slice = range_start_ptr[0..len];
+        log.debug("page allocator alloc return: {*}\n", .{slice.ptr});
+        return slice;
+    }
+
+    fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) Allocator.Error!usize {
+        log.debug("page allocator resize: {*} {} {} {}\n", .{ buf, buf_align, new_len, len_align });
+        if (new_len == 0) {
+            // The length and pages we're going to free.
+            const page_aligned_len = std.mem.alignForward(buf.len, std.mem.page_size);
+            const num_pages = page_aligned_len / std.mem.page_size;
+
+            // Free pages. Getting an error is a bug.
+            vmm.freePages(@ptrToInt(buf.ptr), num_pages) catch unreachable;
+            return 0;
+        }
+        print("TODO\n", .{});
+        assert(false);
+        return Allocator.Error.OutOfMemory;
+    }
+};
+
+// From this point on there's the GPA code.
+// This code is the same as general_purpose_allocator.zig with these changes:
+//   - It doesn't print the formatted stack traces, which requires having debug
+//     info and seems broken for freestanding.
+//   - It uses our page_allocator as backing allocator instead of
+//     std.heap.page_allocator, which defaults to root.os.heap.page_allocator.
+// Every changed line is next to a '// KLECKO' comment
 
 /// Integer type for pointing to slots in a small allocation
 const SlotIndex = std.meta.Int(.unsigned, math.log2(page_size) + 1);
@@ -83,7 +154,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         },
         // KLECKO
         // backing_allocator: *Allocator = std.heap.page_allocator,
-        backing_allocator: *Allocator = vmm.page_allocator,
+        backing_allocator: *Allocator = page_allocator,
         buckets: [small_bucket_count]?*BucketHeader = [1]?*BucketHeader{null} ** small_bucket_count,
         large_allocations: LargeAllocTable = .{},
 
@@ -108,7 +179,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         const one_trace_size = @sizeOf(usize) * stack_n;
         const traces_per_slot = 2;
 
-        pub const Error = mem.Allocator.Error;
+        pub const Error = Allocator.Error;
 
         const small_bucket_count = math.log2(page_size);
         const largest_bucket_object_size = 1 << (small_bucket_count - 1);
@@ -194,7 +265,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         }
 
         fn bucketStackFramesStart(size_class: usize) usize {
-            return mem.alignForward(
+            return std.mem.alignForward(
                 @sizeOf(BucketHeader) + usedBitsCount(size_class),
                 @alignOf(usize),
             );
@@ -279,7 +350,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         fn collectStackTrace(first_trace_addr: usize, addresses: *[stack_n]usize) void {
             if (stack_n == 0) return;
-            mem.set(usize, addresses, 0);
+            std.mem.set(usize, addresses, 0);
             var stack_trace = StackTrace{
                 .instruction_addresses = addresses,
                 .index = 0,

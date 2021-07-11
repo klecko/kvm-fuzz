@@ -1,6 +1,7 @@
 usingnamespace @import("../common.zig");
 const interrupts = @import("../interrupts.zig");
 const mem = @import("mem.zig");
+const utils = @import("../utils/utils.zig");
 
 pub fn isAddressInUserRange(addr: usize) bool {
     return addr < mem.layout.user_end;
@@ -199,8 +200,8 @@ pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Er
 
 pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Error)!void {
     // Allocate a temporary buffer
-    var tmp_buf = try mem.vmm.page_allocator.alloc(u8, user_buf.len());
-    defer mem.vmm.page_allocator.free(tmp_buf);
+    var tmp_buf = try mem.heap.page_allocator.alloc(u8, user_buf.len());
+    defer mem.heap.page_allocator.free(tmp_buf);
 
     // Copy string from user buffer and print it
     try copyFromUser(u8, tmp_buf, user_buf);
@@ -211,17 +212,11 @@ pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Er
 // occurred.
 fn copy(comptime T: type, dest: []T, src: []const T) Error!void {
     assert(dest.len >= src.len);
-    const dest_len = dest.len * @sizeOf(T);
-    const src_len = src.len * @sizeOf(T);
-    const dest_u8 = @ptrCast([*]u8, dest.ptr)[0..dest_len];
-    const src_u8 = @ptrCast([*]const u8, src.ptr)[0..src_len];
-    try copyBase(dest_u8, src_u8);
+    try copyBase(utils.sliceToBytes(dest), utils.sliceToBytes(src));
 }
 
 fn copySingle(comptime T: type, dest: *T, src: *const T) Error!void {
-    const dest_u8 = @ptrCast([*]u8, dest)[0..@sizeOf(T)];
-    const src_u8 = @ptrCast([*]const u8, src)[0..@sizeOf(T)];
-    try copyBase(dest_u8, src_u8);
+    try copyBase(std.mem.asBytes(dest), std.mem.asBytes(src));
 }
 
 extern const safe_copy_ins_may_fault: usize;

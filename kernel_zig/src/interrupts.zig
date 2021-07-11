@@ -193,7 +193,7 @@ fn handlePageFault(frame: *InterruptFrame) void {
         .kernel = !user,
     };
     if (fault.kernel) {
-        panic("kernel PF at 0x{x}. addr: 0x{x}, type: {}\n", .{ frame.rip, fault_addr, fault.fault_type });
+        panic("kernel PF: {}\n", .{fault});
     }
 
     // This won't return

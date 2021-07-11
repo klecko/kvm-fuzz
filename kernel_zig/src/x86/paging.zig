@@ -185,7 +185,15 @@ pub const PageTable = struct {
         };
     }
 
-    pub const MappingOptions = struct {
+    pub fn fromCurrent() PageTable {
+        return init(x86.rdcr3());
+    }
+
+    pub fn load(self: *PageTable) void {
+        x86.wrcr3(mem.pmm.virtToPhys(self.ptl4));
+    }
+
+    pub const MappingOptions = packed struct {
         writable: bool = false,
         user: bool = false,
         huge: bool = false,
@@ -200,9 +208,7 @@ pub const PageTable = struct {
 
     /// Map a virtual address to a physical address with given options.
     pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
-        // Make sure we don't ask for global and protNone at the same time, as
-        // protNone uses the global bit. Also make sure addresses are aligned.
-        assert(!(options.global and options.protNone));
+        // Make sure addresses are aligned.
         assert(isPageAligned(virt));
         assert(isPageAligned(phys));
 
@@ -219,21 +225,12 @@ pub const PageTable = struct {
             }
         }
 
-        // Set the given frame and set each flag. Don't set present if protNone.
+        // Set the given frame and options, and flush the TLB entry
         pte.setFrameBase(phys);
-        pte.setPresent(!options.protNone);
-        pte.setWritable(options.writable);
-        pte.setUser(options.user);
-        pte.setHuge(options.huge);
-        pte.setGlobal(options.global);
-        pte.setProtNone(options.protNone);
-        pte.setShared(options.protNone);
-        pte.setNoExecute(options.noExecute);
-
-        // Flush the TLB entry associated with given page
+        setOptionsToPTE(pte, options);
         x86.flush_tlb_entry(virt);
 
-        log.debug("mapped 0x{x} to 0x{x}\n", .{ virt, phys });
+        log.debug("mapped 0x{x} to 0x{x}, {}\n", .{ virt, phys, options });
     }
 
     pub const UnmappingError = error{NotMapped};
@@ -258,6 +255,46 @@ pub const PageTable = struct {
             // Some page table which contains the PTE is not present, same error
             return UnmappingError.NotMapped;
         }
+    }
+
+    pub const SetPermsError = error{NotMapped};
+
+    /// Set page permissions, without altering other flags.
+    pub fn setPagePerms(self: *PageTable, page_vaddr: usize, perms: mem.Perms) SetPermsError!void {
+        assert(!options.discardAlreadyMapped); // that flag is a no-op here
+        assert(isPageAligned(virt));
+
+        // Attempt to get the PTE
+        if (self.getPTE(virt)) |pte| {
+            // If it's not present, return an error
+            if (!pte.isPresent())
+                return UnmappingError.NotMapped;
+
+            // Set given perms and flush the TLB entry associated with given page
+            pte.setProtNone(perms.isNone());
+            pte.setWritable(perms.write);
+            pte.setNoExecute(!perms.exec);
+            x86.flush_tlb_entry(virt);
+        } else {
+            // Some page table which contains the PTE is not present, same error
+            return UnmappingError.NotMapped;
+        }
+    }
+
+    fn setOptionsToPTE(pte: *PageTableEntry, options: MappingOptions) void {
+        // Make sure we don't ask for global and protNone at the same time, as
+        // protNone uses the global bit.
+        assert(!(options.global and options.protNone));
+
+        // Set each flag. Don't set present if protNone.
+        pte.setPresent(!options.protNone);
+        pte.setWritable(options.writable);
+        pte.setUser(options.user);
+        pte.setHuge(options.huge);
+        pte.setGlobal(options.global);
+        pte.setProtNone(options.protNone);
+        pte.setShared(options.shared);
+        pte.setNoExecute(options.noExecute);
     }
 
     /// Get the PTE of a given page, allocating and mapping entries along the way.
@@ -286,7 +323,7 @@ pub const PageTable = struct {
 
     /// Get the PTE of a given page, or null if any entry along the way was
     /// not present.
-    fn getPTE(self: *PageTable, page_vaddr: usize) ?*PageTableEntry {
+    pub fn getPTE(self: *PageTable, page_vaddr: usize) ?*PageTableEntry {
         const ptl4_i = PTL4_INDEX(page_vaddr);
         const ptl3_i = PTL3_INDEX(page_vaddr);
         const ptl2_i = PTL2_INDEX(page_vaddr);

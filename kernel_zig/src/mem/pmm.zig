@@ -22,11 +22,13 @@ fn isFree(i: usize) bool {
 
 fn setFree(i: usize) void {
     assert(i < free_bitset.capacity());
+    assert(!free_bitset.isSet(i));
     free_bitset.set(i);
 }
 
 fn setAllocated(i: usize) void {
     assert(i < free_bitset.capacity());
+    assert(free_bitset.isSet(i));
     free_bitset.unset(i);
 }
 
@@ -68,25 +70,55 @@ pub fn memoryLength() usize {
 
 pub const Error = error{OutOfMemory};
 
+/// Allocate a frame of physical memory. The contents of the frame are guaranteed
+/// to be zero.
 pub fn allocFrame() Error!usize {
     const i = findFirstFree() orelse return Error.OutOfMemory;
     setAllocated(i);
     const frame = i * std.mem.page_size;
+    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), 0);
     log.debug("allocated frame: 0x{x}\n", .{frame});
     return frame;
 }
 
-// pub fn allocFrames(n: usize)
-
-pub fn freeFrame(frame: usize) void {
-    log.debug("freeing frame: 0x{x}\n", .{frame});
-    defer log.debug("freed frame: 0x{x}\n", .{frame});
-    assert(x86.paging.isPageAligned(frame));
-    const i = frame / std.mem.page_size;
-    assert(!isFree(i));
-    setFree(i);
+/// Allocate a number of frames. Returns a slice allocated with given allocator.
+/// Caller is is charge of freeing it.
+pub fn allocFrames(allocator: *std.mem.Allocator, n: usize) Error![]usize {
+    // TODO: try these changes
+    //   - Instead of calling allocFrame() each time, keep the index in the bitset
+    //     while we iterate it
+    //   - Maybe make sure n < amountFreeFrames() before doing anything else, so
+    //     we can not fail in the loop
+    var frames = try allocator.alloc(usize, n);
+    var i: usize = 0;
+    errdefer {
+        freeFrames(frames[0..i]);
+        allocator.free(frames);
+    }
+    while (i < n) : (i += 1) {
+        frames[i] = try allocFrame();
+    }
+    return frames;
 }
 
+/// Free a frame of physical memory.
+pub fn freeFrame(frame: usize) void {
+    // Freed frame is set to undefined, to catch possible UAF in debug mode.
+    assert(x86.paging.isPageAligned(frame));
+    const i = frame / std.mem.page_size;
+    setFree(i);
+    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), undefined);
+    log.debug("freed frame: 0x{x}\n", .{frame});
+}
+
+/// Free a number of frames.
+pub fn freeFrames(frames: []usize) void {
+    for (frames) |frame| {
+        freeFrame(frame);
+    }
+}
+
+// TODO: doc
 pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
     const ret = mem.layout.physmap + phys;
     if (@typeInfo(ptr_type) == .Pointer) {
@@ -98,11 +130,12 @@ pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
     }
 }
 
-pub fn virtToPhys(comptime ptr_type: type, virt: ptr_type) usize {
-    assert(@typeInfo(ptr_type) == .Pointer);
+// TODO: doc
+pub fn virtToPhys(virt: anytype) usize {
+    assert(@typeInfo(@TypeOf(virt)) == .Pointer);
     const virt_flat = @ptrToInt(virt);
     const physmap = mem.layout.physmap;
-    assert(physmap <= virt_flat and virt_flat < physmap + memory_length);
+    assert(physmap <= virt_flat and virt_flat < physmap + memoryLength());
     return virt_flat - physmap;
 }
 

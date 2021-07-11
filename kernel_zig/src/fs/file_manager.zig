@@ -1,7 +1,7 @@
 usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const mem = @import("../mem/mem.zig");
-const page_allocator = mem.vmm.page_allocator;
+const page_allocator = mem.heap.page_allocator;
 const log = std.log.scoped(.FileManager);
 const linux = @import("../linux.zig");
 

@@ -10,13 +10,13 @@ const mem = @import("mem/mem.zig");
 const hypercalls = @import("hypercalls.zig");
 const fs = @import("fs/fs.zig");
 const linux = @import("linux.zig");
-// const RefCounter = @import("ref_counted.zig").RefCounter;
 const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
+const Process = @import("process.zig").Process;
 
 pub const log_level: std.log.Level = .info;
 
-export fn kmain() noreturn {
+export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     print("hello from zig\n", .{});
 
     var info: hypercalls.VmInfo = undefined;
@@ -32,16 +32,15 @@ export fn kmain() noreturn {
     fs.file_manager.init(info.num_files);
 
     print("memory before first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-    const p = mem.vmm.page_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
+    const p = mem.heap.page_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
     print("memory after first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
     std.debug.assert(p == null);
-    const p2 = mem.vmm.page_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
+    const p2 = mem.heap.page_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
     print("second attempt returned: {*}\n", .{p2});
     print("memory after second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-    mem.vmm.page_allocator.free(p2);
+    mem.heap.page_allocator.free(p2);
     print("memory after freeing second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
 
-    // const p1 = @intToPtr(*u8, 5);
     // var val: u8 = undefined;
     // mem.safe.copyToUserSingle(u8, UserPtr(*u8).fromPtr(p1), &val) catch unreachable;
 
@@ -61,6 +60,17 @@ export fn kmain() noreturn {
         defer stdout_desc2.ref.unref();
 
         std.debug.assert(stdout_desc == stdout_desc2);
+    }
+
+    {
+        var gpa = mem.heap.GeneralPurposeAllocator(.{}){};
+        defer {
+            const leaked = gpa.deinit();
+            // std.debug.assert(!leaked);
+        }
+        const allocator = &gpa.allocator;
+        var process = Process.initial(allocator, &info) catch unreachable;
+        process.startUser(argv[0..argc], &info) catch unreachable;
     }
 
     print("Done!\n", .{});

@@ -100,6 +100,14 @@ pub fn rdcr3() u64 {
     );
 }
 
+pub fn wrcr3(value: u64) void {
+    asm volatile (
+        \\mov %[value], %%cr3
+        :
+        : [value] "r" (value)
+    );
+}
+
 pub fn flush_tlb() void {
     asm volatile (
         \\mov %%cr3, %%rax
