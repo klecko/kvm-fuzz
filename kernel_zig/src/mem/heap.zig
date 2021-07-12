@@ -1,5 +1,5 @@
 usingnamespace @import("../common.zig");
-const vmm = @import("mem.zig").vmm;
+const mem = @import("mem.zig");
 const log = std.log.scoped(.heap);
 const math = std.math;
 const page_size = std.mem.page_size;
@@ -39,12 +39,11 @@ const PageAllocator = struct {
             assert(len >= len_align);
         }
 
-        // The length and pages we're going to allocate
-        const page_aligned_len = std.mem.alignForward(len, std.mem.page_size);
-        const num_pages = page_aligned_len / std.mem.page_size;
+        // The pages we're going to allocate
+        const num_pages = @divExact(mem.alignPageForward(len), std.mem.page_size);
 
         // Alocate the pages. Getting an error other than OOM is a bug.
-        const range_start = vmm.allocPages(num_pages, .{
+        const range_start = mem.vmm.allocPages(num_pages, .{
             .writable = true,
             .global = true,
             .noExecute = true,
@@ -63,12 +62,11 @@ const PageAllocator = struct {
     fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) Allocator.Error!usize {
         log.debug("page allocator resize: {*} {} {} {}\n", .{ buf, buf_align, new_len, len_align });
         if (new_len == 0) {
-            // The length and pages we're going to free.
-            const page_aligned_len = std.mem.alignForward(buf.len, std.mem.page_size);
-            const num_pages = page_aligned_len / std.mem.page_size;
+            // The pages we're going to free.
+            const num_pages = @divExact(mem.alignPageForward(buf.len), std.mem.page_size);
 
             // Free pages. Getting an error is a bug.
-            vmm.freePages(@ptrToInt(buf.ptr), num_pages) catch unreachable;
+            mem.vmm.freePages(@ptrToInt(buf.ptr), num_pages) catch unreachable;
             return 0;
         }
         print("TODO\n", .{});

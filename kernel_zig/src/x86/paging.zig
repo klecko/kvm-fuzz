@@ -35,10 +35,6 @@ pub const PAGE_SIZE: usize = 1 << PTL1_SHIFT;
 pub const PAGE_MASK: usize = ~(PAGE_SIZE - 1);
 pub const PHYS_MASK: usize = 0x000FFFFFFFFFF000;
 
-pub fn isPageAligned(addr: usize) bool {
-    return (addr & PAGE_MASK) == addr;
-}
-
 pub const PageTableEntry = struct {
     raw: usize,
 
@@ -209,8 +205,8 @@ pub const PageTable = struct {
     /// Map a virtual address to a physical address with given options.
     pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
         // Make sure addresses are aligned.
-        assert(isPageAligned(virt));
-        assert(isPageAligned(phys));
+        assert(mem.isPageAligned(virt));
+        assert(mem.isPageAligned(phys));
 
         // Ensure the PTE
         var pte = try self.ensurePTE(virt);
@@ -230,14 +226,14 @@ pub const PageTable = struct {
         setOptionsToPTE(pte, options);
         x86.flush_tlb_entry(virt);
 
-        log.debug("mapped 0x{x} to 0x{x}, {}\n", .{ virt, phys, options });
+        log.debug("mapped 0x{x} to 0x{x} {}\n", .{ virt, phys, options });
     }
 
     pub const UnmappingError = error{NotMapped};
 
     /// Unmap a virtual address.
     pub fn unmapPage(self: *PageTable, virt: usize) UnmappingError!void {
-        assert(isPageAligned(virt));
+        assert(mem.isPageAligned(virt));
 
         // Attempt to get the PTE
         if (self.getPTE(virt)) |pte| {
@@ -260,9 +256,8 @@ pub const PageTable = struct {
     pub const SetPermsError = error{NotMapped};
 
     /// Set page permissions, without altering other flags.
-    pub fn setPagePerms(self: *PageTable, page_vaddr: usize, perms: mem.Perms) SetPermsError!void {
-        assert(!options.discardAlreadyMapped); // that flag is a no-op here
-        assert(isPageAligned(virt));
+    pub fn setPagePerms(self: *PageTable, virt: usize, perms: mem.Perms) SetPermsError!void {
+        assert(mem.isPageAligned(virt));
 
         // Attempt to get the PTE
         if (self.getPTE(virt)) |pte| {

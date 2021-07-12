@@ -119,14 +119,12 @@ const TaskStateSegmentDescriptor = packed struct {
             .size = 0,
             .granularity = 0,
         };
-        // zig fmt: off
         const descriptor = GlobalDescriptor.init_base(
             @intCast(u32, tss_ptr_flat & 0xFFFFFFFF),
             @sizeOf(TaskStateSegment),
             access,
-            flags
+            flags,
         );
-        // zig fmt: on
         return TaskStateSegmentDescriptor{
             .descriptor = descriptor,
             .base_higher = @intCast(u32, tss_ptr_flat >> 32),
@@ -136,7 +134,7 @@ const TaskStateSegmentDescriptor = packed struct {
 
 /// Stack used when an interrupt causes a change to ring zero. Set in the TSS.
 /// TODO: no me acuerdo para que era esto xd
-var stack_rsp0: [0x2000]u8 = undefined;
+// var stack_rsp0: [0x2000]u8 = undefined;
 
 /// Stack used when handling interrupts like double faults, where the kernel
 /// stack may be corrupted. Set in the TSS, and referenced by the `ist` field

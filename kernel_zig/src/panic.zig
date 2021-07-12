@@ -1,5 +1,6 @@
 usingnamespace @import("common.zig");
 const hypercalls = @import("hypercalls.zig");
+const mem = @import("mem/mem.zig");
 const StackTrace = std.builtin.StackTrace;
 
 // https://github.com/ziglang/zig/issues/7962
@@ -33,6 +34,8 @@ fn panicFmtErrorReturnTrace(comptime format: []const u8, args: anytype, error_re
     var it = std.debug.StackIterator.init(@returnAddress(), null);
     while (it.next()) |addr| {
         print("\t{x}\n", .{addr});
+        if (!mem.safe.isAddressInKernelRange(addr))
+            break;
     }
 
     // Send a fault to the hypervisor so the run stops and we can debug

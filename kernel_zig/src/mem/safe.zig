@@ -2,6 +2,7 @@ usingnamespace @import("../common.zig");
 const interrupts = @import("../interrupts.zig");
 const mem = @import("mem.zig");
 const utils = @import("../utils/utils.zig");
+const Allocator = std.mem.Allocator;
 
 pub fn isAddressInUserRange(addr: usize) bool {
     return addr < mem.layout.user_end;
@@ -87,6 +88,10 @@ pub fn UserPtr(comptime T: type) type {
         pub fn toConst(self: Self) UserPtr(ConstT) {
             return UserPtr(ConstT).fromPtr(self._ptr);
         }
+
+        pub fn isNull(self: Self) bool {
+            return self.flat() == 0;
+        }
     };
 }
 
@@ -120,8 +125,8 @@ pub fn UserSlice(comptime T: type) type {
                 typeInfo.Pointer.size = .Many;
                 break :blk @Type(typeInfo);
             };
-            const slice = @intToPtr(PointerT, user_ptr)[0..length];
-            return fromSlice(slice);
+            const user_slice = @intToPtr(PointerT, user_ptr)[0..length];
+            return fromSlice(user_slice);
         }
 
         /// Get the length of the slice.
@@ -155,6 +160,8 @@ comptime {
 // If both are correct, then they try to perform the copy. If a fault occurs then,
 // they will return Error.Fault. This can happen because memory is not mapped,
 // or mapped without write permissiong.
+
+pub const UserCString = UserPtr([*:0]const u8);
 
 pub const Error = error{ NotUserRange, Fault };
 
@@ -198,6 +205,13 @@ pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Er
     try copy(T, dest, src.ptr());
 }
 
+pub fn copyStringFromUser(allocator: *Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
+    const length = try strlen(string_ptr.ptr());
+    var string = try allocator.alloc(u8, length);
+    try copyFromUser(u8, string, UserSlice([]const u8).fromFlat(string_ptr.flat(), length));
+    return string;
+}
+
 pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Error)!void {
     // Allocate a temporary buffer
     var tmp_buf = try mem.heap.page_allocator.alloc(u8, user_buf.len());
@@ -205,26 +219,31 @@ pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Er
 
     // Copy string from user buffer and print it
     try copyFromUser(u8, tmp_buf, user_buf);
-    print("{s}\n", .{tmp_buf});
+    print("{s}", .{tmp_buf});
 }
 
 // The following functions perform copies, and return an Error if a fault
 // occurred.
 fn copy(comptime T: type, dest: []T, src: []const T) Error!void {
     assert(dest.len >= src.len);
-    try copyBase(utils.sliceToBytes(dest), utils.sliceToBytes(src));
+    try copyBase(std.mem.sliceAsBytes(dest), std.mem.sliceAsBytes(src));
 }
 
 fn copySingle(comptime T: type, dest: *T, src: *const T) Error!void {
     try copyBase(std.mem.asBytes(dest), std.mem.asBytes(src));
 }
 
+// Low level implementation
 extern const safe_copy_ins_may_fault: usize;
 extern const safe_copy_ins_faulted: usize;
+extern const safe_strlen_ins_may_fault: usize;
+extern const safe_strlen_ins_faulted: usize;
 
 pub fn handleSafeAccessFault(frame: *interrupts.InterruptFrame) bool {
     if (frame.rip == @ptrToInt(&safe_copy_ins_may_fault)) {
         frame.rip = @ptrToInt(&safe_copy_ins_faulted);
+    } else if (frame.rip == @ptrToInt(&safe_strlen_ins_may_fault)) {
+        frame.rip = @ptrToInt(&safe_strlen_ins_faulted);
     } else return false;
     return true;
 }
@@ -243,8 +262,38 @@ noinline fn copyBase(dest: []u8, src: []const u8) Error!void {
         return Error.Fault;
 }
 
-// This is needed for the label symbols to be generated if `copyBase`
-// is not called
+noinline fn strlen(s: [*:0]const u8) Error!usize {
+    var fault: bool = false;
+    const result = asm volatile (
+    // Look for null byte
+        \\xor %%rax, %%rax
+
+        // Set rcx to -1 so we scan until we find a null byte
+        \\xor %%rcx, %%rcx
+        \\dec %%rcx
+
+        // Perform scan, setting rcx to the string length
+        \\safe_strlen_ins_may_fault:
+        \\repne scasb
+        \\not %%rcx
+        \\dec %%rcx
+        \\jmp end
+
+        // If we faulted, set fault to true
+        \\safe_strlen_ins_faulted:
+        \\mov $1, %[fault]
+        \\end:
+        : [len] "={rcx}" (-> usize),
+          [fault] "=r" (fault)
+        : [s] "{rdi}" (s)
+        : "rax"
+    );
+    return if (fault) Error.Fault else result;
+}
+
+// This is needed for the label symbols to be generated if these functions
+// are not called
 comptime {
     _ = copyBase;
+    _ = strlen;
 }

@@ -25,10 +25,11 @@ pub fn build(b: *std.build.Builder) void {
     exe.code_model = .kernel;
     exe.single_threaded = true;
     exe.emit_docs = true;
+    exe.red_zone = false;
 
     // Kernel build options
     exe.addBuildOption(bool, "enable_instruction_count", true);
-    exe.addBuildOption(bool, "enable_guest_output", true);
+    exe.addBuildOption(bool, "enable_guest_output", false);
 
     exe.install();
 
@@ -42,6 +43,7 @@ pub fn build(b: *std.build.Builder) void {
         "../build/hypervisor/kvm-fuzz",
         "-k",
         exe.getOutputPath(),
+        "--single-run=../build/in/parallel",
         "--",
         "../test_bins/readelf-static",
         "-a",

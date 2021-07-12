@@ -43,6 +43,31 @@ pub const InterruptFrame = struct {
     cs: u64,
     rflags: u64,
     rsp: u64,
+
+    pub fn format(
+        self: InterruptFrame,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        // zig fmt: off
+        try std.fmt.format(
+            writer,
+            \\InterruptFrame{{ .interrupt = {s}, .error_code = {}, .regs = {{
+            \\ -> rip = 0x{x: <16}
+            \\    rax = 0x{x: <16} rbx = 0x{x: <16} rcx = 0x{x: <16} rdx = 0x{x: <16}
+            \\    rsp = 0x{x: <16} rbp = 0x{x: <16} rsi = 0x{x: <16} rdi = 0x{x: <16}
+            \\    r8  = 0x{x: <16} r9  = 0x{x: <16} r10 = 0x{x: <16} r11 = 0x{x: <16}
+            \\    r12 = 0x{x: <16} r13 = 0x{x: <16} r14 = 0x{x: <16} r15 = 0x{x: <16}
+            \\    rflags = 0x{x: <16}
+            \\}}, .cs = {} }}
+            , .{ x86.idt.ExceptionNumber.string(self.interrupt_number), self.error_code, self.rip,
+                self.rax, self.rbx, self.rcx, self.rdx, self.rsp, self.rbp, self.rsi, self.rdi,
+                self.r8, self.r9, self.r10, self.r11, self.r12, self.r13, self.r14, self.r15,
+                self.rflags, self.cs }
+        );
+        // zig fmt: on
+    }
 };
 
 /// Array of interrupt handlers.
@@ -156,7 +181,7 @@ export fn interruptHandler(frame: *InterruptFrame) void {
 }
 
 fn defaultInterruptHandler(frame: *InterruptFrame) void {
-    panic("unhandled interrupt at 0x{x}: {} {}\n", .{ frame.rip, frame.interrupt_number, frame });
+    panic("unhandled interrupt at 0x{x}:\n{}\n", .{ frame.rip, frame });
 }
 
 fn handlePageFault(frame: *InterruptFrame) void {
@@ -217,7 +242,6 @@ fn handleStackSegmentFault(frame: *InterruptFrame) void {
 }
 
 fn handleApicTimer(frame: *InterruptFrame) void {
-    // print("apic timer\n", .{});
     x86.perf.tick();
 
     x86.apic.resetTimer();

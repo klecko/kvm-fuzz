@@ -22,13 +22,11 @@ const InterruptDescriptor = packed struct {
         Trap = 0b1111,
     };
 
-    // zig fmt: off
     pub fn init(
         interrupt_handler: interrupts.InterruptHandlerEntryPoint,
         interrupt_stack: u3,
-        gate_type: GateType
+        gate_type: GateType,
     ) InterruptDescriptor {
-    // zig fmt: on
         const offset = @ptrToInt(interrupt_handler);
         return InterruptDescriptor{
             .offset_low = @intCast(u16, offset & 0xFFFF),
@@ -75,6 +73,32 @@ pub const ExceptionNumber = struct {
     pub const SIMDFloatingPointException = 19;
     pub const VirtualizationException = 20;
     pub const SecurityException = 30;
+
+    pub fn string(number: usize) []const u8 {
+        return switch (number) {
+            DivByZero => "DivByZero",
+            Debug => "Debug",
+            NonMaskableInterrupt => "NonMaskableInterrupt",
+            Breakpoint => "Breakpoint",
+            Overflow => "Overflow",
+            BoundRangeExceeded => "BoundRangeExceeded",
+            InvalidOpcode => "InvalidOpcode",
+            DeviceNotAvailable => "DeviceNotAvailable",
+            DoubleFault => "DoubleFault",
+            InvalidTSS => "InvalidTSS",
+            SegmentNotPresent => "SegmentNotPresent",
+            StackSegmentFault => "StackSegmentFault",
+            GeneralProtectionFault => "GeneralProtectionFault",
+            PageFault => "PageFault",
+            x87FloatingPointException => "x87FloatingPointException",
+            AlignmentCheck => "AlignmentCheck",
+            MachineCheck => "MachineCheck",
+            SIMDFloatingPointException => "SIMDFloatingPointException",
+            VirtualizationException => "VirtualizationException",
+            SecurityException => "SecurityException",
+            else => "Unknown",
+        };
+    }
 };
 
 pub const IRQNumber = struct {

@@ -9,7 +9,7 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Allocator = std.mem.Allocator;
 
-pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) isize {
+pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) i32 {
     // This structure is built at compile time, so the code generated for this
     // function is just a memcpy, some writes for the undefined values that
     // differ for each file, and a call to copyToUserSingle.
@@ -48,7 +48,7 @@ pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux
     return 0;
 }
 
-pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) isize {
+pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) i32 {
     // Here it's just the call to copyToUserSingle.
     // zig fmt: off
     comptime const stdin_stat = linux.stat{
@@ -81,7 +81,7 @@ pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) isize {
     return 0;
 }
 
-pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) isize {
+pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) i32 {
     // zig fmt: off
     comptime const stdout_stat = linux.stat{
         .dev         = 22,
@@ -118,13 +118,13 @@ pub const FileDescription = struct {
     buf: []const u8,
 
     /// Flags specified when calling open (O_RDONLY, O_RDWR...)
-    flags: u32,
+    flags: i32,
 
     /// Cursor offset
     offset: usize = 0,
 
     // File operations
-    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize,
+    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32,
     read: fn (self: *FileDescription, buf: UserSlice([]u8)) isize,
     write: fn (self: *FileDescription, buf: UserSlice([]const u8)) isize,
 
@@ -173,7 +173,7 @@ pub const FileDescription = struct {
 pub const FileDescriptionRegular = struct {
     desc: FileDescription,
 
-    pub fn create(allocator: *Allocator, buf: []const u8, flags: u32) Allocator.Error!*FileDescriptionRegular {
+    pub fn create(allocator: *Allocator, buf: []const u8, flags: i32) Allocator.Error!*FileDescriptionRegular {
         // In this case we can avoid giving a destroy function to the RefCounter
         // because a FileDescriptionRegular is just a FileDescription. We would
         // have to do it if we added more fields, as in FileDescriptionStdin.
@@ -194,7 +194,7 @@ pub const FileDescriptionRegular = struct {
         assert(@sizeOf(FileDescriptionRegular) == @sizeOf(FileDescription));
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
         // Use the pointer to the buffer as inode, as that's unique for each file.
         return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
     }
@@ -248,7 +248,7 @@ pub const FileDescriptionStdin = struct {
         self.desc.ref.allocator.destroy(self);
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
         return statStdin(stat_ptr);
     }
 
@@ -299,7 +299,7 @@ pub const FileDescriptionStdout = struct {
         return ret;
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) isize {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
         return statStdout(stat_ptr);
     }
 
@@ -312,10 +312,11 @@ pub const FileDescriptionStdout = struct {
     }
 };
 
-fn printUserMaybe(buf: UserSlice([]const u8)) isize {
-    if (!build_options.enable_guest_output)
-        return buf.len;
+pub const FileDescriptionStderr = FileDescriptionStdout;
 
-    mem.safe.printUser(buf) catch return -linux.EFAULT;
+fn printUserMaybe(buf: UserSlice([]const u8)) isize {
+    if (build_options.enable_guest_output)
+        mem.safe.printUser(buf) catch return -linux.EFAULT;
+
     return @intCast(isize, buf.len());
 }

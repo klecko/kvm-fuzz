@@ -179,7 +179,10 @@ pub fn print(s: []const u8) void {
     }
 }
 
+const pmm = @import("mem/mem.zig").pmm;
+const log = @import("log.zig");
 pub fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn {
+    // log.print("frames allocated: {}\n", .{pmm.numberOfAllocations()});
     _endRun(reason, info, x86.perf.instructionsExecuted());
 }
 

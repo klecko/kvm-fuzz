@@ -1,9 +1,11 @@
 usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const mem = @import("../mem/mem.zig");
-const page_allocator = mem.heap.page_allocator;
-const log = std.log.scoped(.FileManager);
 const linux = @import("../linux.zig");
+const fs = @import("fs.zig");
+const page_allocator = mem.heap.page_allocator;
+const Allocator = std.mem.Allocator;
+const log = std.log.scoped(.FileManager);
 
 var file_contents: std.StringHashMap([]u8) = undefined;
 
@@ -47,10 +49,39 @@ pub fn init(num_files: usize) void {
     log.debug("File Manager initialized\n", .{});
 }
 
-pub fn existsFile(filename: []const u8) bool {
+pub fn exists(filename: []const u8) bool {
     return file_contents.contains(filename);
 }
 
 pub fn fileContent(filename: []const u8) ?[]u8 {
     return file_contents.get(filename);
+}
+
+/// Open a regular file. Caller must ensure the file exists.
+pub fn open(allocator: *Allocator, filename: []const u8, flags: i32) Allocator.Error!*fs.FileDescription {
+    const file_content = fileContent(filename).?;
+    const desc_regular = try fs.FileDescriptionRegular.create(allocator, file_content, flags);
+    return &desc_regular.desc;
+}
+
+pub fn openStdin(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+    const desc_stdin = try fs.FileDescriptionStdin.create(allocator);
+    return &desc_stdin.desc;
+}
+
+pub fn openStdout(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+    const desc_stdout = try fs.FileDescriptionStdout.create(allocator);
+    return &desc_stdout.desc;
+}
+
+pub fn openStderr(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+    const desc_stderr = try fs.FileDescriptionStderr.create(allocator);
+    return &desc_stderr.desc;
+}
+
+/// Perform stat on a file. Caller must ensure the file exists.
+pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.stat)) i32 {
+    // Use the pointer to the buffer as inode, as that's unique for each file.
+    const file_content = fileContent(filename).?;
+    return fs.statRegular(stat_ptr, file_content.len, @ptrToInt(file_content.ptr));
 }

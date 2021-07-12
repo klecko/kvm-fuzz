@@ -31,7 +31,7 @@ pub fn init() void {
 }
 
 fn addrToPageIndex(addr: usize) usize {
-    assert(x86.paging.isPageAligned(addr));
+    assert(mem.isPageAligned(addr));
     return (addr - allocations_base_addr) / std.mem.page_size;
 }
 
@@ -110,7 +110,7 @@ pub const FreePageError = x86.paging.PageTable.UnmappingError;
 pub fn freePages(addr: usize, n: usize) FreePageError!void {
     assert(allocations_base_addr != 0);
     assert(mem.safe.isRangeInKernelRange(addr, n * std.mem.page_size));
-    assert(x86.paging.isPageAligned(addr));
+    assert(mem.isPageAligned(addr));
 
     // Iterate the range, unmapping each page (and thus freeing each frame)
     // TODO: if unmapping is changed so it doesn't free anymore, change this
