@@ -9,7 +9,7 @@ pub const user_stack_size: usize = 0x10000;
 pub const user_end: usize = 0x800000000000;
 
 /// Start of the higher half.
-pub var higher_half: usize = 0xFFFF800000000000;
+pub const higher_half: usize = 0xFFFF800000000000;
 
 /// Address of the last PTL4 entry in x86-64. Kernel should use memory from
 /// this point on, so kernel memory is mapped in this PTL4 entry.

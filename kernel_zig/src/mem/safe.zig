@@ -208,6 +208,7 @@ pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Er
 pub fn copyStringFromUser(allocator: *Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
     const length = try strlen(string_ptr.ptr());
     var string = try allocator.alloc(u8, length);
+    errdefer allocator.free(string);
     try copyFromUser(u8, string, UserSlice([]const u8).fromFlat(string_ptr.flat(), length));
     return string;
 }
@@ -243,6 +244,7 @@ pub fn handleSafeAccessFault(frame: *interrupts.InterruptFrame) bool {
     if (frame.rip == @ptrToInt(&safe_copy_ins_may_fault)) {
         frame.rip = @ptrToInt(&safe_copy_ins_faulted);
     } else if (frame.rip == @ptrToInt(&safe_strlen_ins_may_fault)) {
+        print("fault: {}\n", .{frame});
         frame.rip = @ptrToInt(&safe_strlen_ins_faulted);
     } else return false;
     return true;
@@ -263,7 +265,7 @@ noinline fn copyBase(dest: []u8, src: []const u8) Error!void {
 }
 
 noinline fn strlen(s: [*:0]const u8) Error!usize {
-    var fault: bool = false;
+    var fault: bool = undefined;
     const result = asm volatile (
     // Look for null byte
         \\xor %%rax, %%rax
@@ -272,11 +274,12 @@ noinline fn strlen(s: [*:0]const u8) Error!usize {
         \\xor %%rcx, %%rcx
         \\dec %%rcx
 
-        // Perform scan, setting rcx to the string length
+        // Perform scan, setting rcx to the string length and fault to false
         \\safe_strlen_ins_may_fault:
         \\repne scasb
         \\not %%rcx
         \\dec %%rcx
+        \\mov $0, %[fault]
         \\jmp end
 
         // If we faulted, set fault to true
@@ -286,7 +289,7 @@ noinline fn strlen(s: [*:0]const u8) Error!usize {
         : [len] "={rcx}" (-> usize),
           [fault] "=r" (fault)
         : [s] "{rdi}" (s)
-        : "rax"
+        : "rax", "rcx", "rdi"
     );
     return if (fault) Error.Fault else result;
 }

@@ -49,7 +49,6 @@ pub const AddressSpace = struct {
         // Attempt to allocate physical memory for the range
         const num_frames = @divExact(mem.alignPageForward(length), std.mem.page_size);
         var frames = try mem.pmm.allocFrames(self.allocator, num_frames);
-        errdefer mem.pmm.freeFrames(frames);
         defer self.allocator.free(frames);
 
         // Get the mapping options acording to memory permissions and mapping flags
@@ -65,7 +64,12 @@ pub const AddressSpace = struct {
         // Map every page
         var i: usize = 0;
         var page_base: usize = addr;
-        errdefer self.unmapRange(addr, page_base - addr) catch unreachable;
+        errdefer {
+            // unmapRange will free and unmap frames from 0 to i-1, and
+            // freeFrames will free the rest of them
+            self.unmapRange(addr, page_base - addr) catch unreachable;
+            mem.pmm.freeFrames(frames[i..]);
+        }
         while (i < num_frames) : ({
             i += 1;
             page_base += std.mem.page_size;

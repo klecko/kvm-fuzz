@@ -26,7 +26,7 @@ pub fn init() void {
     if (build_options.enable_instruction_count) {
         // Set performance counter CTR0 (which counts number of instructions)
         // to only count when in user mode
-        x86.wrmsr(.FIXED_CTR_CTRL, CountMode.User | CountMode.Kernel);
+        x86.wrmsr(.FIXED_CTR_CTRL, CountMode.User);
 
         // Enable CTR0
         x86.wrmsr(.PERF_GLOBAL_CTRL, 1 << 32);

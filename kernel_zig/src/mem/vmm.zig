@@ -52,15 +52,20 @@ fn isPageFree(i: usize) bool {
     return free_bitset.isSet(i);
 }
 
-const AllocPageError = x86.paging.PageTable.MappingError || mem.pmm.Error;
+const AllocPageError = mem.pmm.Error;
 const MappingOptions = x86.paging.PageTable.MappingOptions;
 
 /// Allocate a number of kernel pages, mapping them with given options.
 pub fn allocPages(n: usize, options: MappingOptions) AllocPageError!usize {
-    // log.debug("allogPages: alloc: {} {} {}\n", .{ len, ptr_align, len_align });
+    log.debug("allocPages: {}\n", .{n});
     assert(allocations_base_addr != 0);
     assert(!options.discardAlreadyMapped);
     assert(n > 0);
+
+    // Check if we have enough memory available. Even if we have now, we may
+    // fail later, but this check should almost always avoid that.
+    if (mem.pmm.amountFreeFrames() < n)
+        return AllocPageError.OutOfMemory;
 
     // Find range of not allocated pages
     const i_range_start = findFreeRange(n) orelse return AllocPageError.OutOfMemory;
@@ -78,10 +83,13 @@ pub fn allocPages(n: usize, options: MappingOptions) AllocPageError!usize {
     }) {
         frame = try mem.pmm.allocFrame();
         setPageAllocated(i);
-        try kernel_page_table.mapPage(page_base, frame, options);
+        kernel_page_table.mapPage(page_base, frame, options) catch |err| switch (err) {
+            error.OutOfMemory => return AllocPageError.OutOfMemory,
+            error.AlreadyMapped => unreachable,
+        };
     }
 
-    // log.debug("page allocator alloc return: {*}\n", .{slice.ptr});
+    log.debug("allocPages: returns 0x{x}\n", .{range_start});
     return range_start;
 }
 
@@ -108,6 +116,8 @@ pub const FreePageError = x86.paging.PageTable.UnmappingError;
 /// Free pages returned by allocPages(), unmapping them and freeing the
 /// underlying memory.
 pub fn freePages(addr: usize, n: usize) FreePageError!void {
+    log.debug("freePages: freeing 0x{x} {}\n", .{ addr, n });
+    defer log.debug("freePages: freed 0x{x} {}\n", .{ addr, n });
     assert(allocations_base_addr != 0);
     assert(mem.safe.isRangeInKernelRange(addr, n * std.mem.page_size));
     assert(mem.isPageAligned(addr));

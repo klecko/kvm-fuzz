@@ -3,7 +3,6 @@ const hypercalls = @import("../hypercalls.zig");
 const mem = @import("../mem/mem.zig");
 const linux = @import("../linux.zig");
 const fs = @import("fs.zig");
-const page_allocator = mem.heap.page_allocator;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.FileManager);
 
@@ -13,8 +12,8 @@ var file_contents: std.StringHashMap([]u8) = undefined;
 /// content. Insert the filename and the buffer into file_contents, and submit
 /// the address of the buffer and the address of the length to the hypervisor,
 /// which will write to them.
-pub fn init(num_files: usize) void {
-    file_contents = std.StringHashMap([]u8).init(page_allocator);
+pub fn init(allocator: *Allocator, num_files: usize) void {
+    file_contents = std.StringHashMap([]u8).init(allocator);
 
     // Temporary buffer for the filename
     var filename_tmp: [linux.PATH_MAX]u8 = undefined;
@@ -25,16 +24,14 @@ pub fn init(num_files: usize) void {
         // allocate a buffer and copy the filename.
         hypercalls.getFileName(i, &filename_tmp);
         const filename_len = std.mem.indexOfScalar(u8, &filename_tmp, 0).?;
-        var filename = page_allocator.alloc(u8, filename_len) catch unreachable;
+        var filename = allocator.alloc(u8, filename_len) catch unreachable;
         std.mem.copy(u8, filename, filename_tmp[0..filename_len]);
 
         // Get the file size, allocate a buffer, insert it into file_contents
         // and submit buf and length pointers to the hypervisor, which will
         // fill the buffer with the file content.
         const size = hypercalls.getFileLen(i);
-        var buf = page_allocator.alloc(u8, size) catch |err| {
-            panic("{} trying to allocate file content\n", .{err});
-        };
+        var buf = allocator.alloc(u8, size) catch unreachable;
         file_contents.put(filename, buf) catch unreachable;
         const length_ptr = &file_contents.getPtr(filename).?.*.len;
         hypercalls.submitFilePointers(i, buf.ptr, length_ptr);
@@ -80,7 +77,7 @@ pub fn openStderr(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
 }
 
 /// Perform stat on a file. Caller must ensure the file exists.
-pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.stat)) i32 {
+pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.stat)) !void {
     // Use the pointer to the buffer as inode, as that's unique for each file.
     const file_content = fileContent(filename).?;
     return fs.statRegular(stat_ptr, file_content.len, @ptrToInt(file_content.ptr));

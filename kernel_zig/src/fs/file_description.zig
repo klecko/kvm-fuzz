@@ -9,7 +9,7 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Allocator = std.mem.Allocator;
 
-pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) i32 {
+pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) !void {
     // This structure is built at compile time, so the code generated for this
     // function is just a memcpy, some writes for the undefined values that
     // differ for each file, and a call to copyToUserSingle.
@@ -44,11 +44,10 @@ pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux
     st.ino = inode;
     st.size = @intCast(i64, fileSize);
     st.blocks = @intCast(i64, fileSize / 512 + 1);
-    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st) catch return -linux.EFAULT;
-    return 0;
+    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st);
 }
 
-pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) i32 {
+pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) !void {
     // Here it's just the call to copyToUserSingle.
     // zig fmt: off
     comptime const stdin_stat = linux.stat{
@@ -77,11 +76,10 @@ pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) i32 {
     };
     // zig fmt: on
 
-    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat) catch return -linux.EFAULT;
-    return 0;
+    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat);
 }
 
-pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) i32 {
+pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) !void {
     // zig fmt: off
     comptime const stdout_stat = linux.stat{
         .dev         = 22,
@@ -109,8 +107,7 @@ pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) i32 {
     };
     // zig fmt: on
 
-    mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdout_stat) catch return -linux.EFAULT;
-    return 0;
+    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdout_stat);
 }
 
 pub const FileDescription = struct {
@@ -124,9 +121,9 @@ pub const FileDescription = struct {
     offset: usize = 0,
 
     // File operations
-    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32,
-    read: fn (self: *FileDescription, buf: UserSlice([]u8)) isize,
-    write: fn (self: *FileDescription, buf: UserSlice([]const u8)) isize,
+    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void,
+    read: fn (self: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize,
+    write: fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
 
     /// Reference counter. It must free the whole object this FileDescription
     /// belongs to, not just the FileDescription.
@@ -194,12 +191,12 @@ pub const FileDescriptionRegular = struct {
         assert(@sizeOf(FileDescriptionRegular) == @sizeOf(FileDescription));
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
         // Use the pointer to the buffer as inode, as that's unique for each file.
         return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
     }
 
-    fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
         assert(desc.isReadable());
 
         // We must take care of this here, as slicing OOB is UB even when the
@@ -210,11 +207,11 @@ pub const FileDescriptionRegular = struct {
         const prev_offset = desc.offset;
         const length_moved = desc.moveOffset(buf.len());
         const src_slice = desc.buf[prev_offset .. prev_offset + length_moved];
-        mem.safe.copyToUser(u8, buf, src_slice) catch return -linux.EFAULT;
-        return @intCast(isize, length_moved);
+        try mem.safe.copyToUser(u8, buf, src_slice);
+        return length_moved;
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
         unreachable;
     }
 };
@@ -248,11 +245,11 @@ pub const FileDescriptionStdin = struct {
         self.desc.ref.allocator.destroy(self);
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
         return statStdin(stat_ptr);
     }
 
-    fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize {
         // Guest is trying to read from stdin. Let's do a little hack here.
         // Assuming it's expecting to read from input file, let's set that input
         // file as our buffer, and read from there as a regular file. We can't
@@ -266,7 +263,7 @@ pub const FileDescriptionStdin = struct {
                 self.input_opened = true;
             } else {
                 log.warn("tried to read from stdin, but there's no input file\n", .{});
-                return 0;
+                return @as(usize, 0);
             }
         }
 
@@ -274,7 +271,7 @@ pub const FileDescriptionStdin = struct {
         return FileDescriptionRegular.read(&self.desc, buf);
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
         log.warn("writing to stdin, maybe a bug?\n", .{});
         return printUserMaybe(buf);
     }
@@ -299,24 +296,24 @@ pub const FileDescriptionStdout = struct {
         return ret;
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) i32 {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
         return statStdout(stat_ptr);
     }
 
-    fn read(desc: *FileDescription, buf: UserSlice([]u8)) isize {
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
         unreachable;
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) isize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
         return printUserMaybe(buf);
     }
 };
 
 pub const FileDescriptionStderr = FileDescriptionStdout;
 
-fn printUserMaybe(buf: UserSlice([]const u8)) isize {
+fn printUserMaybe(buf: UserSlice([]const u8)) !usize {
     if (build_options.enable_guest_output)
-        mem.safe.printUser(buf) catch return -linux.EFAULT;
+        try mem.safe.printUser(buf);
 
-    return @intCast(isize, buf.len());
+    return buf.len();
 }

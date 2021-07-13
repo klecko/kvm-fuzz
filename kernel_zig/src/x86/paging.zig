@@ -204,6 +204,7 @@ pub const PageTable = struct {
 
     /// Map a virtual address to a physical address with given options.
     pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
+        // log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
         // Make sure addresses are aligned.
         assert(mem.isPageAligned(virt));
         assert(mem.isPageAligned(phys));
@@ -226,7 +227,7 @@ pub const PageTable = struct {
         setOptionsToPTE(pte, options);
         x86.flush_tlb_entry(virt);
 
-        log.debug("mapped 0x{x} to 0x{x} {}\n", .{ virt, phys, options });
+        log.debug("mapped 0x{x} to 0x{x}\n", .{ virt, phys });
     }
 
     pub const UnmappingError = error{NotMapped};

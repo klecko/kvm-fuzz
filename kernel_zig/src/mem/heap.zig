@@ -12,6 +12,81 @@ const Allocator = std.mem.Allocator;
 var page_allocator_state = PageAllocator.init();
 pub const page_allocator = &page_allocator_state.allocator;
 
+var heap_allocator_state = mem.heap.HeapAllocator.init();
+pub const heap_allocator = &heap_allocator_state.allocator;
+
+pub fn initHeapAllocator() void {
+    heap_allocator_state.base = mem.layout.kernel_brk;
+}
+
+pub const HeapAllocator = struct {
+    allocator: Allocator,
+    base: usize,
+    used: usize,
+    size: usize,
+
+    pub fn init() HeapAllocator {
+        return HeapAllocator{
+            .allocator = Allocator{
+                .allocFn = alloc,
+                .resizeFn = resize,
+            },
+            .base = 0,
+            .used = 0,
+            .size = 0,
+        };
+    }
+
+    fn more(self: *HeapAllocator, num_pages: usize) Allocator.Error!void {
+        const ret = try mem.vmm.allocPages(num_pages, .{
+            .writable = true,
+            .global = true,
+            .noExecute = true,
+        });
+        assert(ret == self.base + self.size);
+        self.size += num_pages * std.mem.page_size;
+    }
+
+    fn alloc(
+        allocator: *Allocator,
+        len: usize,
+        ptr_align: u29,
+        len_align: u29,
+        ret_addr: usize,
+    ) Allocator.Error![]u8 {
+        const self = @fieldParentPtr(HeapAllocator, "allocator", allocator);
+        const ret_offset = std.mem.alignForward(self.used, ptr_align);
+        const free_bytes = self.size - ret_offset;
+        if (len > free_bytes) {
+            const needed_memory = mem.alignPageForward(len - free_bytes);
+            const num_pages = @divExact(needed_memory, std.mem.page_size);
+            try self.more(num_pages);
+        }
+
+        self.used = ret_offset + len;
+        assert(self.used <= self.size);
+        const ret = self.base + ret_offset;
+        log.debug("heap allocator: returns 0x{x}\n", .{ret});
+        return @intToPtr([*]u8, ret)[0..len];
+    }
+
+    fn resize(
+        allocator: *Allocator,
+        buf: []u8,
+        buf_align: u29,
+        new_len: usize,
+        len_align: u29,
+        ret_addr: usize,
+    ) Allocator.Error!usize {
+        if (new_len == 0) {
+            log.debug("heap allocator: frees {*}\n", .{buf});
+            std.mem.set(u8, buf, undefined);
+            return 0;
+        }
+        TODO();
+    }
+};
+
 const PageAllocator = struct {
     allocator: Allocator,
 
@@ -42,15 +117,12 @@ const PageAllocator = struct {
         // The pages we're going to allocate
         const num_pages = @divExact(mem.alignPageForward(len), std.mem.page_size);
 
-        // Alocate the pages. Getting an error other than OOM is a bug.
-        const range_start = mem.vmm.allocPages(num_pages, .{
+        // Alocate the pages
+        const range_start = try mem.vmm.allocPages(num_pages, .{
             .writable = true,
             .global = true,
             .noExecute = true,
-        }) catch |err| switch (err) {
-            error.OutOfMemory => return Allocator.Error.OutOfMemory,
-            else => unreachable,
-        };
+        });
 
         // Construct the slice and return it
         const range_start_ptr = @intToPtr([*]u8, range_start);
@@ -60,17 +132,27 @@ const PageAllocator = struct {
     }
 
     fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) Allocator.Error!usize {
+        // Same as in std.heap.PageAllocator.resize
         log.debug("page allocator resize: {*} {} {} {}\n", .{ buf, buf_align, new_len, len_align });
-        if (new_len == 0) {
-            // The pages we're going to free.
-            const num_pages = @divExact(mem.alignPageForward(buf.len), std.mem.page_size);
+        assert(mem.isPageAligned(@ptrToInt(buf.ptr)));
+        const new_len_aligned = mem.alignPageForward(new_len);
+        const buf_len_aligned = mem.alignPageForward(buf.len);
 
-            // Free pages. Getting an error is a bug.
-            mem.vmm.freePages(@ptrToInt(buf.ptr), num_pages) catch unreachable;
-            return 0;
+        // No need to do anything here.
+        if (new_len_aligned == buf_len_aligned)
+            return std.heap.alignPageAllocLen(new_len_aligned, new_len, len_align);
+
+        // Free pages.
+        if (new_len_aligned < buf_len_aligned) {
+            const base = @ptrToInt(buf.ptr) + new_len_aligned;
+            const num_pages = @divExact(buf_len_aligned - new_len_aligned, std.mem.page_size);
+            mem.vmm.freePages(base, num_pages) catch unreachable;
+            if (new_len_aligned == 0)
+                return 0;
+            return std.heap.alignPageAllocLen(new_len_aligned, new_len, len_align);
         }
-        print("TODO\n", .{});
-        assert(false);
+
+        // It's asking for an increase in size.
         return Allocator.Error.OutOfMemory;
     }
 };
@@ -152,7 +234,8 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         },
         // KLECKO
         // backing_allocator: *Allocator = std.heap.page_allocator,
-        backing_allocator: *Allocator = page_allocator,
+        backing_allocator: *Allocator = heap_allocator,
+        // backing_allocator: *Allocator = page_allocator,
         buckets: [small_bucket_count]?*BucketHeader = [1]?*BucketHeader{null} ** small_bucket_count,
         large_allocations: LargeAllocTable = .{},
 
@@ -478,6 +561,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             ret_addr: usize,
         ) Error!usize {
             const self = @fieldParentPtr(Self, "allocator", allocator);
+            log.debug("gpa resize: {*} {} to {}\n", .{ old_mem, old_mem.len, new_size });
 
             const held = self.mutex.acquire();
             defer held.release();
@@ -510,6 +594,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 }
                 size_class *= 2;
             } else {
+                print("aligned: {} {}\n", .{ aligned_size, largest_bucket_object_size });
                 return self.resizeLarge(old_mem, old_align, new_size, len_align, ret_addr);
             };
             const byte_offset = @ptrToInt(old_mem.ptr) - @ptrToInt(bucket.page);
@@ -606,6 +691,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         }
 
         fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) Error![]u8 {
+            log.debug("gpa alloc: {}\n", .{len});
             const self = @fieldParentPtr(Self, "allocator", allocator);
 
             const held = self.mutex.acquire();
