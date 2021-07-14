@@ -18,7 +18,7 @@ fn sys_readlink(self: *Process, pathname_ptr: UserCString, buf: UserSlice([]u8))
 }
 
 pub fn handle_sys_readlink(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const pathname_ptr = UserCString.fromFlat(arg0);
-    const buf = UserSlice([]u8).fromFlat(arg1, arg2);
+    const pathname_ptr = try UserCString.fromFlat(arg0);
+    const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
     return sys_readlink(self, pathname_ptr, buf);
 }

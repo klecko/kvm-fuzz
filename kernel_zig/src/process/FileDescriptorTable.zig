@@ -16,8 +16,8 @@ fn destroy(ref: *RefCounter) void {
 
     // Unref every FileDescription in the table
     var iter = self.table.valueIterator();
-    while (iter.next()) |desc_ptr| {
-        desc_ptr.*.ref.unref();
+    while (iter.next()) |file_ptr| {
+        file_ptr.*.ref.unref();
     }
 
     // Deinit the table and free the object

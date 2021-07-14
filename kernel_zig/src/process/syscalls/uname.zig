@@ -20,7 +20,7 @@ fn sys_uname(self: *Process, uname_ptr: UserPtr(*linux.utsname)) !void {
 }
 
 pub fn handle_sys_uname(self: *Process, arg0: usize) !usize {
-    const uname_ptr = UserPtr(*linux.utsname).fromFlat(arg0);
+    const uname_ptr = try UserPtr(*linux.utsname).fromFlat(arg0);
     try sys_uname(self, uname_ptr);
     return 0;
 }

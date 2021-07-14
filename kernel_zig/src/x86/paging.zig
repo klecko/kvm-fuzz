@@ -203,6 +203,7 @@ pub const PageTable = struct {
     pub const MappingError = mem.pmm.Error || error{AlreadyMapped};
 
     /// Map a virtual address to a physical address with given options.
+    /// Can't return error.AlreadyMapped if options.discardAlreadyMapped is set.
     pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
         // log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
         // Make sure addresses are aligned.
@@ -275,6 +276,13 @@ pub const PageTable = struct {
             // Some page table which contains the PTE is not present, same error
             return UnmappingError.NotMapped;
         }
+    }
+
+    pub fn isMapped(self: *PageTable, virt: usize) bool {
+        if (self.getPTE(virt)) |pte| {
+            return pte.isPresent();
+        }
+        return false;
     }
 
     fn setOptionsToPTE(pte: *PageTableEntry, options: MappingOptions) void {

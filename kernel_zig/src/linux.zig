@@ -1,6 +1,8 @@
 pub usingnamespace @import("linux_std");
 usingnamespace @import("common.zig");
 
+pub const clockid_t = i32;
+
 // We can't use the std kernel_stat, because it defines uid_t as std.os.linux.uid_t,
 // which is not imported in freestanding. Instead, here we directly import uid_t
 // from linux_std.
@@ -31,6 +33,9 @@ pub fn errorToErrno(err: anyerror) usize {
         error.NotUserRange, error.Fault => -EFAULT,
         error.FileNotFound => -ENOENT,
         error.InvalidArgument => -EINVAL,
+        error.NumericOutOfRange => -ERANGE,
+        error.NotConnected => -ENOTCONN,
+        error.NotSocket => -ENOTSOCK,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     }));
 }

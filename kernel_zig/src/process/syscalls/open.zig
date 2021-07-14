@@ -20,17 +20,13 @@ fn sys_openat(
 
     log.debug("opening file '{s}'\n", .{pathname});
 
-    // Check if the file exists
-    if (!fs.file_manager.exists(pathname)) {
-        log.warn("attempt to open unknown file '{s}'\n", .{pathname});
-        return error.FileNotFound;
-    }
+    // Open file
+    const file = try fs.file_manager.open(self.allocator, pathname, flags);
+    errdefer file.ref.unref();
 
-    // Open it
+    // Insert it in our file descriptor table
     const fd = self.availableFd();
-    const desc = try fs.file_manager.open(self.allocator, pathname, flags);
-    errdefer desc.ref.unref();
-    try self.files.table.put(fd, desc);
+    try self.files.table.put(fd, file);
     return fd;
 }
 
@@ -42,7 +38,7 @@ pub fn handle_sys_openat(
     arg3: usize,
 ) !usize {
     const dirfd = std.meta.cast(linux.fd_t, arg0);
-    const pathname_ptr = UserCString.fromFlat(arg1);
+    const pathname_ptr = try UserCString.fromFlat(arg1);
     const flags = std.meta.cast(i32, arg2);
     const mode = std.meta.cast(linux.mode_t, arg3);
     const ret = try sys_openat(self, dirfd, pathname_ptr, flags, mode);
@@ -50,10 +46,8 @@ pub fn handle_sys_openat(
 }
 
 fn sys_close(self: *Process, fd: linux.fd_t) !void {
-    if (self.files.table.fetchRemove(fd)) |kv| {
-        kv.value.ref.unref();
-    }
-    return error.BadFD;
+    const key_value = self.files.table.fetchRemove(fd) orelse return error.BadFD;
+    key_value.value.ref.unref();
 }
 
 pub fn handle_sys_close(self: *Process, arg0: usize) !usize {

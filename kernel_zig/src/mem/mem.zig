@@ -16,6 +16,11 @@ pub fn alignPageForward(addr: usize) usize {
     return std.mem.alignForward(addr, std.mem.page_size);
 }
 
+pub fn alignPageForwardChecked(addr: usize) error{Overflow}!usize {
+    const tmp: usize = std.mem.page_size - 1;
+    return (try std.math.add(usize, addr, tmp)) & ~tmp;
+}
+
 pub fn alignPageBackward(addr: usize) usize {
     return std.mem.alignBackward(addr, std.mem.page_size);
 }

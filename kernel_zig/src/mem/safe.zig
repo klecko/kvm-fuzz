@@ -68,8 +68,14 @@ pub fn UserPtr(comptime T: type) type {
         }
 
         /// Create a UserPtr from an integer.
-        pub fn fromFlat(user_ptr: usize) Self {
-            return Self{
+        pub fn fromFlat(user_ptr: usize) !Self {
+            return if (user_ptr == 0) Error.NotUserRange else Self{
+                ._ptr = @intToPtr(T, user_ptr),
+            };
+        }
+
+        pub fn fromFlatMaybeNull(user_ptr: usize) ?Self {
+            return if (user_ptr == 0) null else Self{
                 ._ptr = @intToPtr(T, user_ptr),
             };
         }
@@ -87,10 +93,6 @@ pub fn UserPtr(comptime T: type) type {
         /// Get the const version of the UserPtr.
         pub fn toConst(self: Self) UserPtr(ConstT) {
             return UserPtr(ConstT).fromPtr(self._ptr);
-        }
-
-        pub fn isNull(self: Self) bool {
-            return self.flat() == 0;
         }
     };
 }
@@ -119,7 +121,8 @@ pub fn UserSlice(comptime T: type) type {
         }
 
         /// Create a UserSlice from a pointer as integer and a length.
-        pub fn fromFlat(user_ptr: usize, length: usize) Self {
+        pub fn fromFlat(user_ptr: usize, length: usize) !Self {
+            if (user_ptr == 0) return Error.NotUserRange;
             const PointerT = blk: {
                 comptime var typeInfo = @typeInfo(T);
                 typeInfo.Pointer.size = .Many;
@@ -209,7 +212,8 @@ pub fn copyStringFromUser(allocator: *Allocator, string_ptr: UserCString) (Alloc
     const length = try strlen(string_ptr.ptr());
     var string = try allocator.alloc(u8, length);
     errdefer allocator.free(string);
-    try copyFromUser(u8, string, UserSlice([]const u8).fromFlat(string_ptr.flat(), length));
+    const user_string_slice = UserSlice([]const u8).fromFlat(string_ptr.flat(), length) catch unreachable;
+    try copyFromUser(u8, string, user_string_slice);
     return string;
 }
 

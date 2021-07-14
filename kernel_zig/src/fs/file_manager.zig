@@ -18,6 +18,8 @@ pub fn init(allocator: *Allocator, num_files: usize) void {
     // Temporary buffer for the filename
     var filename_tmp: [linux.PATH_MAX]u8 = undefined;
 
+    // TODO: this might not work because pointers are changed while inserting
+    // items
     var i: usize = 0;
     while (i < num_files) : (i += 1) {
         // Get the filename into the tmp buffer, calculate its length,
@@ -54,31 +56,55 @@ pub fn fileContent(filename: []const u8) ?[]u8 {
     return file_contents.get(filename);
 }
 
-/// Open a regular file. Caller must ensure the file exists.
-pub fn open(allocator: *Allocator, filename: []const u8, flags: i32) Allocator.Error!*fs.FileDescription {
-    const file_content = fileContent(filename).?;
-    const desc_regular = try fs.FileDescriptionRegular.create(allocator, file_content, flags);
-    return &desc_regular.desc;
+const OpenError = Allocator.Error || error{FileNotFound};
+
+/// Open a regular file
+pub fn open(
+    allocator: *Allocator,
+    filename: []const u8,
+    flags: i32,
+) OpenError!*fs.FileDescription {
+    const file_content = fileContent(filename) orelse {
+        log.warn("attempt to open unknown file '{s}'\n", .{filename});
+        return OpenError.FileNotFound;
+    };
+    const file = try fs.FileDescriptionRegular.create(allocator, file_content, flags);
+    return &file.desc;
 }
 
 pub fn openStdin(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
-    const desc_stdin = try fs.FileDescriptionStdin.create(allocator);
-    return &desc_stdin.desc;
+    const stdin = try fs.FileDescriptionStdin.create(allocator);
+    return &stdin.desc;
 }
 
 pub fn openStdout(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
-    const desc_stdout = try fs.FileDescriptionStdout.create(allocator);
-    return &desc_stdout.desc;
+    const stdout = try fs.FileDescriptionStdout.create(allocator);
+    return &stdout.desc;
 }
 
 pub fn openStderr(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
-    const desc_stderr = try fs.FileDescriptionStderr.create(allocator);
-    return &desc_stderr.desc;
+    const stderr = try fs.FileDescriptionStderr.create(allocator);
+    return &stderr.desc;
 }
 
-/// Perform stat on a file. Caller must ensure the file exists.
+pub fn openSocket(
+    allocator: *Allocator,
+    socket_type: fs.FileDescriptionSocket.SocketType,
+) Allocator.Error!*fs.FileDescription {
+    const buf = fileContent("input") orelse {
+        log.alert("openSocket but there's no file named 'input', returning as if OOM", .{});
+        return Allocator.Error.OutOfMemory;
+    };
+    const socket = try fs.FileDescriptionSocket.create(allocator, buf, socket_type);
+    return &socket.desc;
+}
+
+/// Perform stat on a file
 pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.stat)) !void {
     // Use the pointer to the buffer as inode, as that's unique for each file.
-    const file_content = fileContent(filename).?;
+    const file_content = fileContent(filename) orelse {
+        log.warn("attempt to stat unknown file '{s}'\n", .{filename});
+        return error.FileNotFound;
+    };
     return fs.statRegular(stat_ptr, file_content.len, @ptrToInt(file_content.ptr));
 }

@@ -21,6 +21,16 @@ pub fn logRoot(
     comptime format: []const u8,
     args: anytype,
 ) void {
+    const should_print = switch (scope) {
+        .pmm => false,
+        .vmm => false,
+        .heap => false,
+        .paging => false,
+        else => true,
+    };
+    if (!should_print)
+        return;
+
     const level_txt = "[" ++ @tagName(level) ++ "] ";
     const scope_txt = "[" ++ @tagName(scope) ++ "] ";
     print(scope_txt ++ level_txt ++ format, args);

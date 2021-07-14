@@ -2,7 +2,6 @@
 // panic_fmt as panic, and we need it to be panicRoot.
 pub const log = @import("log.zig").logRoot;
 pub const panic = @import("panic.zig").panicRoot;
-// pub const os = @import("os/os.zig");
 const std = @import("std");
 const print = @import("log.zig").print;
 const x86 = @import("x86/x86.zig");
@@ -15,8 +14,8 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Process = @import("process/Process.zig");
 
-// pub const log_level: std.log.Level = .info;
 pub const log_level: std.log.Level = .info;
+// pub const log_level: std.log.Level = .debug;
 
 export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     print("hello from zig\n", .{});

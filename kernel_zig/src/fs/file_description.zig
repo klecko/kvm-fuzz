@@ -9,7 +9,11 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Allocator = std.mem.Allocator;
 
-pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux.ino_t) !void {
+pub fn statRegular(
+    stat_ptr: UserPtr(*linux.stat),
+    fileSize: usize,
+    inode: linux.ino_t,
+) mem.safe.Error!void {
     // This structure is built at compile time, so the code generated for this
     // function is just a memcpy, some writes for the undefined values that
     // differ for each file, and a call to copyToUserSingle.
@@ -47,7 +51,7 @@ pub fn statRegular(stat_ptr: UserPtr(*linux.stat), fileSize: usize, inode: linux
     try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st);
 }
 
-pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) !void {
+pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
     // Here it's just the call to copyToUserSingle.
     // zig fmt: off
     comptime const stdin_stat = linux.stat{
@@ -79,7 +83,7 @@ pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) !void {
     try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat);
 }
 
-pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) !void {
+pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
     // zig fmt: off
     comptime const stdout_stat = linux.stat{
         .dev         = 22,
@@ -122,13 +126,16 @@ pub const FileDescription = struct {
 
     // File operations
     stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void,
-    read: fn (self: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize,
+    read: fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
     write: fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
 
     /// Reference counter. It must free the whole object this FileDescription
     /// belongs to, not just the FileDescription.
     ref: RefCounter,
 
+    is_socket: bool = false,
+
+    const ReadError = mem.safe.Error || error{NotConnected};
     const RefCounter = utils.RefCounter(FileDescription);
     const O_ACCMODE = 3;
 
@@ -165,6 +172,13 @@ pub const FileDescription = struct {
         self.offset += ret;
         return ret;
     }
+
+    pub fn socket(self: *FileDescription) ?*FileDescriptionSocket {
+        return if (self.is_socket)
+            @fieldParentPtr(FileDescriptionSocket, "desc", self)
+        else
+            null;
+    }
 };
 
 pub const FileDescriptionRegular = struct {
@@ -191,12 +205,12 @@ pub const FileDescriptionRegular = struct {
         assert(@sizeOf(FileDescriptionRegular) == @sizeOf(FileDescription));
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
         // Use the pointer to the buffer as inode, as that's unique for each file.
         return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
     }
 
-    fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize {
         assert(desc.isReadable());
 
         // We must take care of this here, as slicing OOB is UB even when the
@@ -211,7 +225,7 @@ pub const FileDescriptionRegular = struct {
         return length_moved;
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
         unreachable;
     }
 };
@@ -231,7 +245,7 @@ pub const FileDescriptionStdin = struct {
                 .write = write,
                 .ref = FileDescription.RefCounter.init(allocator, destroy),
             },
-            .input_opened = true,
+            .input_opened = false,
         };
         return ret;
     }
@@ -245,7 +259,7 @@ pub const FileDescriptionStdin = struct {
         self.desc.ref.allocator.destroy(self);
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
         return statStdin(stat_ptr);
     }
 
@@ -262,7 +276,7 @@ pub const FileDescriptionStdin = struct {
                 self.desc.buf = content;
                 self.input_opened = true;
             } else {
-                log.warn("tried to read from stdin, but there's no input file\n", .{});
+                log.warn("tried to read from stdin, but there's no file named 'input'\n", .{});
                 return @as(usize, 0);
             }
         }
@@ -271,7 +285,7 @@ pub const FileDescriptionStdin = struct {
         return FileDescriptionRegular.read(&self.desc, buf);
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
         log.warn("writing to stdin, maybe a bug?\n", .{});
         return printUserMaybe(buf);
     }
@@ -296,24 +310,103 @@ pub const FileDescriptionStdout = struct {
         return ret;
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
         return statStdout(stat_ptr);
     }
 
-    fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize {
         unreachable;
     }
 
-    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
         return printUserMaybe(buf);
     }
 };
 
 pub const FileDescriptionStderr = FileDescriptionStdout;
 
-fn printUserMaybe(buf: UserSlice([]const u8)) !usize {
-    if (build_options.enable_guest_output)
-        try mem.safe.printUser(buf);
+fn printUserMaybe(buf: UserSlice([]const u8)) mem.safe.Error!usize {
+    if (build_options.enable_guest_output) {
+        mem.safe.printUser(buf) catch |err| switch (err) {
+            error.OutOfMemory => log.warn("printUser OOM, ignoring\n", .{}),
+            error.Fault => return error.Fault,
+            error.NotUserRange => return error.NotUserRange,
+        };
+    }
 
     return buf.len();
 }
+
+pub const FileDescriptionSocket = struct {
+    desc: FileDescription,
+    socket_type: SocketType,
+    binded: bool,
+    listening: bool,
+    connected: bool,
+
+    pub const SocketType = struct {
+        domain: i32,
+        type_: i32,
+        protocol: i32,
+    };
+
+    pub fn create(
+        allocator: *Allocator,
+        buf: []const u8,
+        socket_type: SocketType,
+    ) Allocator.Error!*FileDescriptionSocket {
+        const ret = try allocator.create(FileDescriptionSocket);
+        ret.* = FileDescriptionSocket{
+            .desc = FileDescription{
+                .buf = buf,
+                .flags = linux.O_RDWR,
+                .stat = stat,
+                .read = read,
+                .write = write,
+                .ref = FileDescription.RefCounter.init(allocator, destroy),
+                .is_socket = true,
+            },
+            .socket_type = socket_type,
+            .binded = false,
+            .listening = false,
+            .connected = false,
+        };
+        return ret;
+    }
+
+    fn destroy(ref: *FileDescription.RefCounter) void {
+        const desc = @fieldParentPtr(FileDescription, "ref", ref);
+        const self = @fieldParentPtr(FileDescriptionSocket, "desc", desc);
+        self.desc.ref.allocator.destroy(self);
+    }
+
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
+        TODO();
+    }
+
+    fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
+        // Check we're connected, and read as a regular file.
+        const self = @fieldParentPtr(FileDescriptionSocket, "desc", desc);
+        if (!self.connected)
+            return error.NotConnected;
+        return FileDescriptionRegular.read(&self.desc, buf);
+    }
+
+    fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
+        TODO();
+    }
+
+    pub fn bind(
+        self: *FileDescriptionSocket,
+        addr_ptr: UserPtr(*const linux.sockaddr),
+        addr_len: usize,
+    ) void {
+        self.binded = true;
+    }
+
+    pub fn listen(self: *FileDescriptionSocket, backlock: i32) void {
+        // In case it is not binded, we must assign the address and the port
+        assert(self.binded);
+        self.listening = true;
+    }
+};

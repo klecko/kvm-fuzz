@@ -12,17 +12,17 @@ fn sys_brk(self: *Process, addr: usize) usize {
 
     const brk_next_page = mem.alignPageForward(self.brk);
     const brk_cur_page = mem.alignPageBackward(self.brk);
+    const addr_next_page = mem.alignPageForwardChecked(addr) catch return self.brk;
     if (addr > brk_next_page) {
         // We have to allocate space
-        const size = mem.alignPageForward(addr - brk_next_page);
+        const size = addr_next_page - brk_next_page;
         self.space.mapRange(brk_next_page, size, .{ .read = true, .write = true }, .{}) catch |err| switch (err) {
             error.OutOfMemory => return self.brk,
-            error.NotUserRange => return self.brk, // range wrapped around
+            error.NotUserRange => unreachable, // if range wraps around, impossible here
             error.AlreadyMapped => unreachable,
         };
     } else if (addr <= brk_cur_page) {
         // We have to free space
-        const addr_next_page = mem.alignPageForward(addr);
         const size = brk_next_page - addr_next_page;
         self.space.unmapRange(addr_next_page, size) catch |err| switch (err) {
             error.NotMapped, error.NotUserRange => unreachable,

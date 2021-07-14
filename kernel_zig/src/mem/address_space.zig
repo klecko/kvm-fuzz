@@ -38,16 +38,25 @@ pub const AddressSpace = struct {
         assert(mem.isPageAligned(addr));
         assert(mem.isPageAligned(length));
         assert(length != 0);
+        assert(!std.meta.isError(std.math.add(usize, addr, length)));
         if (!mem.safe.isRangeInUserRange(addr, length))
             return error.NotUserRange;
     }
 
     const MappingError = PageTable.MappingError || error{NotUserRange};
-    pub fn mapRange(self: *AddressSpace, addr: usize, length: usize, perms: Perms, flags: MapFlags) MappingError!void {
+
+    // Can't return error.AlreadyMapped if flags.discardAlreadyMapped is set.
+    pub fn mapRange(
+        self: *AddressSpace,
+        addr: usize,
+        length: usize,
+        perms: Perms,
+        flags: MapFlags,
+    ) MappingError!void {
         try checkRange(addr, length);
 
         // Attempt to allocate physical memory for the range
-        const num_frames = @divExact(mem.alignPageForward(length), std.mem.page_size);
+        const num_frames = @divExact(length, std.mem.page_size);
         var frames = try mem.pmm.allocFrames(self.allocator, num_frames);
         defer self.allocator.free(frames);
 
@@ -78,20 +87,47 @@ pub const AddressSpace = struct {
         }
     }
 
-    pub fn mapRangeAnywhere(self: *AddressSpace, length: usize, perms: Perms, flags: MapFlags) MappingError!usize {
+    pub fn mapRangeAnywhere(
+        self: *AddressSpace,
+        length: usize,
+        perms: Perms,
+        flags: MapFlags,
+    ) error{OutOfMemory}!usize {
+        assert(mem.isPageAligned(length));
         if (self.findFreeRange(length)) |range_base_addr| {
-            try mapRange(range_base_addr, length, perms, options);
+            self.mapRange(range_base_addr, length, perms, flags) catch |err| switch (err) {
+                error.AlreadyMapped, error.NotUserRange => unreachable,
+                error.OutOfMemory => return error.OutOfMemory,
+            };
             return range_base_addr;
         }
-        return MappingError.OutOfMemory;
+        return error.OutOfMemory;
     }
 
-    // TODO
-    fn findFreeRange(self: *AddressSpace, length: usize) ?usize {}
+    fn findFreeRange(self: *AddressSpace, range_length: usize) ?usize {
+        var base = mem.layout.user_mappings_start;
+        while (mem.safe.isAddressInUserRange(base)) {
+            var length: usize = 0;
+            while (length < range_length and !self.page_table.isMapped(base + length)) {
+                length += std.mem.page_size;
+            }
+
+            // If the loop got to the end, we found our desired region
+            if (length == range_length)
+                return base;
+
+            base += length + std.mem.page_size;
+        }
+        return null;
+    }
 
     const UnmappingError = PageTable.UnmappingError || error{NotUserRange};
 
-    pub fn unmapRange(self: *AddressSpace, addr: usize, length: usize) UnmappingError!void {
+    pub fn unmapRange(
+        self: *AddressSpace,
+        addr: usize,
+        length: usize,
+    ) UnmappingError!void {
         try checkRange(addr, length);
 
         // Unmap every page
@@ -104,7 +140,12 @@ pub const AddressSpace = struct {
 
     const SetPermsError = PageTable.SetPermsError || error{NotUserRange};
 
-    pub fn setRangePerms(self: *AddressSpace, addr: usize, length: usize, perms: Perms) SetPermsError!void {
+    pub fn setRangePerms(
+        self: *AddressSpace,
+        addr: usize,
+        length: usize,
+        perms: Perms,
+    ) SetPermsError!void {
         try checkRange(addr, length);
 
         // Set permissions for each page
