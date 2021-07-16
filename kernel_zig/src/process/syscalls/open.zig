@@ -12,7 +12,6 @@ fn sys_openat(
     mode: linux.mode_t,
 ) !linux.fd_t {
     assert(dirfd == linux.AT_FDCWD);
-    assert(flags & linux.O_WRONLY == 0 and flags & linux.O_RDWR == 0);
 
     // Get the pathname
     const pathname = try mem.safe.copyStringFromUser(self.allocator, pathname_ptr);
@@ -25,8 +24,13 @@ fn sys_openat(
     errdefer file.ref.unref();
 
     // Insert it in our file descriptor table
-    const fd = self.availableFd();
+    const fd = self.availableFd() orelse return error.NoFdAvailable;
     try self.files.table.put(fd, file);
+
+    // Set file descriptor flags
+    if (flags & linux.O_CLOEXEC != 0)
+        self.files.setCloexec(fd);
+
     return fd;
 }
 
@@ -48,6 +52,7 @@ pub fn handle_sys_openat(
 fn sys_close(self: *Process, fd: linux.fd_t) !void {
     const key_value = self.files.table.fetchRemove(fd) orelse return error.BadFD;
     key_value.value.ref.unref();
+    self.files.unsetCloexec(fd);
 }
 
 pub fn handle_sys_close(self: *Process, arg0: usize) !usize {

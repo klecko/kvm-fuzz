@@ -2,6 +2,38 @@ usingnamespace @import("../common.zig");
 const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
 
+const Limit = struct {
+    hard: usize,
+    soft: usize,
+};
+
+pub const Limits = struct {
+    nofile: Limit,
+    stack: Limit,
+
+    pub fn default() Limits {
+        return Limits{ .nofile = .{
+            .hard = 1024 * 1024,
+            .soft = 1024,
+        }, .stack = .{
+            .soft = mem.layout.user_stack_size,
+            .hard = linux.RLIM_INFINITY,
+        } };
+    }
+
+    pub fn get(self: Limits, resource: linux.rlimit_resource) linux.rlimit {
+        const limit = switch (resource) {
+            .NOFILE => self.nofile,
+            .STACK => self.stack,
+            else => TODO(),
+        };
+        return linux.rlimit{
+            .cur = limit.soft,
+            .max = limit.hard,
+        };
+    }
+};
+
 fn sys_prlimit(
     self: *Process,
     pid: linux.pid_t,
@@ -13,17 +45,7 @@ fn sys_prlimit(
     assert(pid == self.pid or pid == 0);
 
     if (old_limit_ptr) |ptr| {
-        var limit: linux.rlimit = switch (resource) {
-            .NOFILE => .{
-                .cur = 1024,
-                .max = 1024 * 1024,
-            },
-            .STACK => .{
-                .cur = 8 * 1024 * 1024,
-                .max = linux.RLIM_INFINITY,
-            },
-            else => TODO(),
-        };
+        const limit = self.limits.get(resource);
         try mem.safe.copyToUserSingle(linux.rlimit, ptr, &limit);
     }
 

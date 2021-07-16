@@ -82,3 +82,12 @@ TEST_CASE("read oob") {
 
 	REQUIRE(close(fd) == 0);
 }
+
+TEST_CASE("read not readable") {
+	char buf[5];
+	int fd = open(input, O_WRONLY);
+	REQUIRE(fd > 0);
+	REQUIRE(read_and_check_first_five_bytes(fd, buf) == -1);
+	REQUIRE(errno == EBADF);
+	REQUIRE(close(fd) == 0);
+}

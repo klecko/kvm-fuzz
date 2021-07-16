@@ -2,6 +2,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static -Wl,--whole-archive -lpthread -W
 set(SOURCE_FILES
 	brk.cpp
 	dup.cpp
+	fcntl.cpp
 	files.cpp
 	fork.cpp
 	getcwd.cpp

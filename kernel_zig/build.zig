@@ -29,7 +29,7 @@ pub fn build(b: *std.build.Builder) void {
 
     // Kernel build options
     exe.addBuildOption(bool, "enable_instruction_count", true);
-    exe.addBuildOption(bool, "enable_guest_output", false);
+    exe.addBuildOption(bool, "enable_guest_output", true);
 
     exe.install();
 

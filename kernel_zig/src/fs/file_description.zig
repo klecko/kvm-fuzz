@@ -226,7 +226,7 @@ pub const FileDescriptionRegular = struct {
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
-        unreachable;
+        TODO();
     }
 };
 

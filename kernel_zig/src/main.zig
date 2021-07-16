@@ -28,7 +28,7 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     mem.pmm.init();
     mem.vmm.init();
     x86.perf.init();
-    // x86.apic.init();
+    x86.apic.init();
     x86.syscall.init();
 
     mem.heap.initHeapAllocator();

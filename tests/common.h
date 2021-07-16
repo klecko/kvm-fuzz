@@ -3,6 +3,7 @@
 #define CATCH_CONFIG_COLOUR_NONE
 #include <cstring>
 #include <unistd.h>
+#include <sys/resource.h>
 #include "catch.hpp"
 
 const char input[] = "../tests/input_hello_world";
@@ -27,3 +28,9 @@ inline int read_and_check_next_seven_bytes(int fd, char* buf) {
 	return 0;
 }
 
+__attribute__((warn_unused_result))
+inline int get_fd_limit() {
+	struct rlimit limit;
+	REQUIRE(getrlimit(RLIMIT_NOFILE, &limit) == 0);
+	return limit.rlim_cur;
+}

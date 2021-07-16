@@ -23,7 +23,11 @@ brk: usize,
 
 min_brk: usize,
 
+limits: Limits,
+
 var next_pid: linux.pid_t = 1234;
+
+const Limits = @import("syscalls/prlimit.zig").Limits;
 
 pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path_len = std.mem.indexOfScalar(u8, &info.elf_path, 0).?;
@@ -33,24 +37,32 @@ pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
     const pid = next_pid;
     next_pid += 1;
 
+    const limits = Limits.default();
     return Process{
         .allocator = allocator,
         .pid = pid,
         .tgid = pid,
         .space = mem.AddressSpace.fromCurrent(allocator),
-        .files = try FileDescriptorTable.createDefault(allocator),
+        .files = try FileDescriptorTable.createDefault(allocator, std.meta.cast(linux.fd_t, limits.nofile.hard)),
         .elf_path = elf_path,
         .brk = info.brk,
         .min_brk = info.brk,
+        .limits = limits,
     };
 }
 
-pub fn availableFd(self: Process) linux.fd_t {
-    var fd: linux.fd_t = 0;
-    while (self.files.table.contains(fd)) {
-        fd += 1;
+pub fn availableFd(self: Process) ?linux.fd_t {
+    return self.availableFdStartingOn(0);
+}
+
+pub fn availableFdStartingOn(self: Process, start: linux.fd_t) ?linux.fd_t {
+    const fd_limit = self.limits.nofile.soft;
+    var fd = start;
+    while (fd < fd_limit) : (fd += 1) {
+        if (!self.files.table.contains(fd))
+            return fd;
     }
-    return fd;
+    return null;
 }
 
 const startUser = @import("user.zig").startUser;
@@ -81,6 +93,8 @@ const handle_sys_socket = @import("syscalls/socket.zig").handle_sys_socket;
 const handle_sys_bind = @import("syscalls/socket.zig").handle_sys_bind;
 const handle_sys_listen = @import("syscalls/socket.zig").handle_sys_listen;
 const handle_sys_accept = @import("syscalls/socket.zig").handle_sys_accept;
+const handle_sys_sysinfo = @import("syscalls/sysinfo.zig").handle_sys_sysinfo;
+const handle_sys_fcntl = @import("syscalls/fcntl.zig").handle_sys_fcntl;
 
 pub fn handleSyscall(
     self: *Process,
@@ -121,6 +135,8 @@ pub fn handleSyscall(
         .munmap => self.handle_sys_munmap(arg0, arg1),
         .prlimit64 => self.handle_sys_prlimit(arg0, arg1, arg2, arg3),
         .clock_gettime => self.handle_sys_clock_gettime(arg0, arg1),
+        .sysinfo => self.handle_sys_sysinfo(arg0),
+        .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
         .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .futex, .sigaltstack, .setitimer => blk: {
             log.info("TODO {s}\n", .{@tagName(syscall)});

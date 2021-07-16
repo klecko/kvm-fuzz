@@ -2,6 +2,7 @@ pub usingnamespace @import("linux_std");
 usingnamespace @import("common.zig");
 
 pub const clockid_t = i32;
+pub const F_DUPFD_CLOEXEC = 1030;
 
 // We can't use the std kernel_stat, because it defines uid_t as std.os.linux.uid_t,
 // which is not imported in freestanding. Instead, here we directly import uid_t
@@ -26,6 +27,22 @@ pub const stat = extern struct {
     __unused: [3]isize = undefined,
 };
 
+pub const sysinfo = extern struct {
+    uptime: i64,
+    loads: [3]u64,
+    total_ram: u64,
+    free_ram: u64,
+    shared_ram: u64,
+    buffer_ram: u64,
+    total_swap: u64,
+    free_swap: u64,
+    procs: u16,
+    __pad1: u16 = 0,
+    total_high: u64,
+    free_high: u64,
+    mem_unit: u32,
+};
+
 pub fn errorToErrno(err: anyerror) usize {
     return @bitCast(usize, @as(isize, switch (err) {
         error.BadFD => -EBADF,
@@ -36,6 +53,7 @@ pub fn errorToErrno(err: anyerror) usize {
         error.NumericOutOfRange => -ERANGE,
         error.NotConnected => -ENOTCONN,
         error.NotSocket => -ENOTSOCK,
+        error.NoFdAvailable => -EMFILE,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     }));
 }

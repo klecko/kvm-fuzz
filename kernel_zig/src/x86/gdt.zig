@@ -133,13 +133,12 @@ const TaskStateSegmentDescriptor = packed struct {
 };
 
 /// Stack used when an interrupt causes a change to ring zero. Set in the TSS.
-/// TODO: no me acuerdo para que era esto xd
-// var stack_rsp0: [0x2000]u8 = undefined;
+var stack_rsp0: [0x2000]u8 align(std.mem.page_size) = undefined;
 
 /// Stack used when handling interrupts like double faults, where the kernel
 /// stack may be corrupted. Set in the TSS, and referenced by the `ist` field
 /// in an Interrupt Descriptor.
-var stack_ist1: [0x2000]u8 = undefined;
+var stack_ist1: [0x2000]u8 align(std.mem.page_size) = undefined;
 
 /// TSS
 const TaskStateSegment = packed struct {
@@ -161,7 +160,7 @@ const TaskStateSegment = packed struct {
 
     pub fn init() TaskStateSegment {
         var ret = std.mem.zeroes(TaskStateSegment);
-        // ret.rsp0 = @ptrToInt(&stack_rsp0) + stack_rsp0.len;
+        ret.rsp0 = @ptrToInt(&stack_rsp0) + stack_rsp0.len;
         ret.ist1 = @ptrToInt(&stack_ist1) + stack_ist1.len;
         return ret;
     }

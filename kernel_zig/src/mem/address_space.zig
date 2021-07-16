@@ -74,9 +74,8 @@ pub const AddressSpace = struct {
         var i: usize = 0;
         var page_base: usize = addr;
         errdefer {
-            // unmapRange will free and unmap frames from 0 to i-1, and
-            // freeFrames will free the rest of them
-            self.unmapRange(addr, page_base - addr) catch unreachable;
+            // We won't unmap the mapped pages, as that's what sys_mmap requires,
+            // so just free the unused frames
             mem.pmm.freeFrames(frames[i..]);
         }
         while (i < num_frames) : ({
@@ -123,6 +122,8 @@ pub const AddressSpace = struct {
 
     const UnmappingError = PageTable.UnmappingError || error{NotUserRange};
 
+    /// Unmap every mapped page in a range of memory. If there's any not mapped
+    /// page, it will be ignored, and at the end it will return error.NotMapped.
     pub fn unmapRange(
         self: *AddressSpace,
         addr: usize,
@@ -131,11 +132,17 @@ pub const AddressSpace = struct {
         try checkRange(addr, length);
 
         // Unmap every page
+        var not_mapped: bool = false;
         const addr_end = addr + length;
         var page_base: usize = addr;
         while (page_base < addr_end) : (page_base += std.mem.page_size) {
-            try self.page_table.unmapPage(page_base);
+            self.page_table.unmapPage(page_base) catch |err| switch (err) {
+                error.NotMapped => not_mapped = true,
+            };
         }
+
+        if (not_mapped)
+            return error.NotMapped;
     }
 
     const SetPermsError = PageTable.SetPermsError || error{NotUserRange};

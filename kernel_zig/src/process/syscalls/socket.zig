@@ -4,7 +4,7 @@ const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
 
 fn sys_socket(self: *Process, domain: i32, type_: i32, protocol: i32) !linux.fd_t {
-    const fd = self.availableFd();
+    const fd = self.availableFd() orelse return error.NoFdAvailable;
     const socket_type = .{
         .domain = domain,
         .type_ = type_,
@@ -76,7 +76,7 @@ fn sys_accept(
     // TODO: write into addr_ptr and addr_len_ptr
 
     // Insert new socket in our file descriptor table
-    const accepted_fd = self.availableFd();
+    const accepted_fd = self.availableFd() orelse return error.NoFdAvailable;
     try self.files.table.put(accepted_fd, accepted_socket_file);
     return accepted_fd;
 }
