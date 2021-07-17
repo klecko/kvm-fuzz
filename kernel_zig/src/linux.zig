@@ -43,6 +43,11 @@ pub const sysinfo = extern struct {
     mem_unit: u32,
 };
 
+pub const iovec = extern struct {
+    iov_base: [*]u8,
+    iov_len: u64,
+};
+
 pub fn errorToErrno(err: anyerror) usize {
     return @bitCast(usize, @as(isize, switch (err) {
         error.BadFD => -EBADF,

@@ -237,22 +237,17 @@ pub const PageTable = struct {
     pub fn unmapPage(self: *PageTable, virt: usize) UnmappingError!void {
         assert(mem.isPageAligned(virt));
 
-        // Attempt to get the PTE
-        if (self.getPTE(virt)) |pte| {
-            // If it's not present, return an error
-            if (!pte.isPresent())
-                return UnmappingError.NotMapped;
-
-            // TODO: should we be freeing here?
-            // Free frame and clear PTE
-            mem.pmm.freeFrame(pte.frameBase());
-            pte.clear();
-            x86.flush_tlb_entry(virt);
-            log.debug("unmapped 0x{x}\n", .{virt});
-        } else {
-            // Some page table which contains the PTE is not present, same error
+        // Attempt to get the PTE. If it is not present, same error.
+        const pte = self.getPTE(virt) orelse return UnmappingError.NotMapped;
+        if (!pte.isPresent())
             return UnmappingError.NotMapped;
-        }
+
+        // TODO: should we be freeing here?
+        // Free frame and clear PTE
+        mem.pmm.freeFrame(pte.frameBase());
+        pte.clear();
+        x86.flush_tlb_entry(virt);
+        log.debug("unmapped 0x{x}\n", .{virt});
     }
 
     pub const SetPermsError = error{NotMapped};
@@ -261,21 +256,16 @@ pub const PageTable = struct {
     pub fn setPagePerms(self: *PageTable, virt: usize, perms: mem.Perms) SetPermsError!void {
         assert(mem.isPageAligned(virt));
 
-        // Attempt to get the PTE
-        if (self.getPTE(virt)) |pte| {
-            // If it's not present, return an error
-            if (!pte.isPresent())
-                return UnmappingError.NotMapped;
-
-            // Set given perms and flush the TLB entry associated with given page
-            pte.setProtNone(perms.isNone());
-            pte.setWritable(perms.write);
-            pte.setNoExecute(!perms.exec);
-            x86.flush_tlb_entry(virt);
-        } else {
-            // Some page table which contains the PTE is not present, same error
+        // Attempt to get the PTE. If it is not present, same error.
+        const pte = self.getPTE(virt) orelse return SetPermsError.NotMapped;
+        if (!pte.isPresent())
             return UnmappingError.NotMapped;
-        }
+
+        // Set given perms and flush the TLB entry associated with given page
+        pte.setProtNone(perms.isNone());
+        pte.setWritable(perms.write);
+        pte.setNoExecute(!perms.exec);
+        x86.flush_tlb_entry(virt);
     }
 
     pub fn isMapped(self: *PageTable, virt: usize) bool {

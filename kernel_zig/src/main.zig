@@ -14,11 +14,11 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Process = @import("process/Process.zig");
 
+// pub const log_level: std.log.Level = .info;
 pub const log_level: std.log.Level = .info;
-// pub const log_level: std.log.Level = .debug;
 
 export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
-    print("hello from zig\n", .{});
+    std.log.info("hello from zig\n", .{});
 
     var info: hypercalls.VmInfo = undefined;
     hypercalls.getInfo(&info);
@@ -48,18 +48,18 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     //     defer allocator.free(s);
     // }
 
-    {
-        const test_allocator = allocator;
-        print("memory before first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-        const p = test_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
-        print("memory after first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-        std.debug.assert(p == null);
-        const p2 = test_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
-        print("second attempt returned: {*}\n", .{p2});
-        print("memory after second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-        test_allocator.free(p2);
-        print("memory after freeing second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
-    }
+    // {
+    //     const test_allocator = allocator;
+    //     print("memory before first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    //     const p = test_allocator.alloc(u8, 1024 * 1024 * 10) catch null;
+    //     print("memory after first attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    //     std.debug.assert(p == null);
+    //     const p2 = test_allocator.alloc(u8, 1024 * 1024 * 1) catch unreachable;
+    //     print("second attempt returned: {*}\n", .{p2});
+    //     print("memory after second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    //     test_allocator.free(p2);
+    //     print("memory after freeing second attempt: {}\n", .{mem.pmm.amountFreeMemory()});
+    // }
 
     // {
     //     var gpa2 = mem.heap.GeneralPurposeAllocator(.{}){};
@@ -79,6 +79,6 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     //     std.debug.assert(stdout_desc == stdout_desc2);
     // }
 
-    print("Done!\n", .{});
+    std.log.info("Done!\n", .{});
     hypercalls.endRun(.Exit, null);
 }

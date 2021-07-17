@@ -17,8 +17,7 @@ fn sys_brk(self: *Process, addr: usize) usize {
         // We have to allocate space
         const size = addr_next_page - brk_next_page;
         self.space.mapRange(brk_next_page, size, .{ .read = true, .write = true }, .{}) catch |err| switch (err) {
-            error.OutOfMemory => return self.brk,
-            error.NotUserRange => unreachable, // if range wraps around, impossible here
+            error.OutOfMemory, error.NotUserRange => return self.brk,
             error.AlreadyMapped => unreachable,
         };
     } else if (addr <= brk_cur_page) {

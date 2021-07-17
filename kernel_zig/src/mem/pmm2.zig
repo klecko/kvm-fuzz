@@ -1,3 +1,13 @@
+//! This PMM is a translation of the one in the C++ kernel. It holds the address
+//! of the frame for the next allocation, and an ArrayList of freed frames for
+//! reusing. It depends on the VMM for freeing, because the ArrayList uses
+//! dynamic memory. Alloc is O(1), and free is O(1) when there isn't a
+//! reallocation.
+//! It has some problems when there's OOM: a page is unmapped and its frame is
+//! freed as a result of an errdefer, then the ArrayList of freed frames needs
+//! reallocation and the VMM handles it the same page that is being freed, and
+//! then everyone dies. Or something like that.
+
 usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");

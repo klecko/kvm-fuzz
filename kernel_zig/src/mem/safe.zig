@@ -124,9 +124,9 @@ pub fn UserSlice(comptime T: type) type {
         pub fn fromFlat(user_ptr: usize, length: usize) !Self {
             if (user_ptr == 0) return Error.NotUserRange;
             const PointerT = blk: {
-                comptime var typeInfo = @typeInfo(T);
-                typeInfo.Pointer.size = .Many;
-                break :blk @Type(typeInfo);
+                comptime var type_info = @typeInfo(T);
+                type_info.Pointer.size = .Many;
+                break :blk @Type(type_info);
             };
             const user_slice = @intToPtr(PointerT, user_ptr)[0..length];
             return fromSlice(user_slice);
@@ -146,6 +146,17 @@ pub fn UserSlice(comptime T: type) type {
         pub fn toConst(self: Self) UserSlice(ConstT) {
             comptime assert(T != ConstT);
             return UserSlice(ConstT).fromSlice(self._slice);
+        }
+
+        const PtrAtPointerType = blk: {
+            comptime var type_info = @typeInfo(T);
+            type_info.Pointer.size = .One;
+            break :blk @Type(type_info);
+        };
+
+        pub fn ptrAt(self: Self, idx: usize) UserPtr(PtrAtPointerType) {
+            const ptr = @ptrCast(PtrAtPointerType, self.slice().ptr + idx);
+            return UserPtr(PtrAtPointerType).fromPtr(ptr);
         }
     };
 }
@@ -201,11 +212,11 @@ pub fn copyFromUser(comptime T: type, dest: []T, src: UserSlice([]const T)) Erro
 pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Error!void {
     // Make sure we're copying from user to kernel.
     assert(isPtrInKernelRange(T, dest));
-    if (!isPtrInUserRange(T, src.slice()))
+    if (!isPtrInUserRange(T, src.ptr()))
         return Error.NotUserRange;
 
     // Try to perform copy.
-    try copy(T, dest, src.ptr());
+    try copySingle(T, dest, src.ptr());
 }
 
 pub fn copyStringFromUser(allocator: *Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
@@ -248,7 +259,6 @@ pub fn handleSafeAccessFault(frame: *interrupts.InterruptFrame) bool {
     if (frame.rip == @ptrToInt(&safe_copy_ins_may_fault)) {
         frame.rip = @ptrToInt(&safe_copy_ins_faulted);
     } else if (frame.rip == @ptrToInt(&safe_strlen_ins_may_fault)) {
-        print("fault: {}\n", .{frame});
         frame.rip = @ptrToInt(&safe_strlen_ins_faulted);
     } else return false;
     return true;

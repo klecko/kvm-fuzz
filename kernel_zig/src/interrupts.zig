@@ -230,15 +230,33 @@ fn handleBreakpoint(frame: *InterruptFrame) void {
 }
 
 fn handleGeneralProtectionFault(frame: *InterruptFrame) void {
-    panic("gpf at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
+    const fault = hypercalls.FaultInfo{
+        .fault_type = .GeneralProtectionFault,
+        .fault_addr = 0,
+        .rip = frame.rip,
+        .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+    };
+    hypercalls.endRun(.Crash, &fault);
 }
 
 fn handleDivByZero(frame: *InterruptFrame) void {
-    panic("div by zero at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
+    const fault = hypercalls.FaultInfo{
+        .fault_type = .DivByZero,
+        .fault_addr = 0,
+        .rip = frame.rip,
+        .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+    };
+    hypercalls.endRun(.Crash, &fault);
 }
 
 fn handleStackSegmentFault(frame: *InterruptFrame) void {
-    panic("stack segment fault at 0x{x}, error code {}\n", .{ frame.rip, frame.error_code });
+    const fault = hypercalls.FaultInfo{
+        .fault_type = .StackSegmentFault,
+        .fault_addr = 0,
+        .rip = frame.rip,
+        .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+    };
+    hypercalls.endRun(.Crash, &fault);
 }
 
 fn handleApicTimer(frame: *InterruptFrame) void {

@@ -1,3 +1,7 @@
+//! This PMM has a slice of free frames, which contains every single free frame.
+//! The memory for this slice is allocated at `init()` depending on the memory
+//! length, and it does not depend on the VMM. Both free and alloc are O(1).
+
 usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");
@@ -8,6 +12,9 @@ var memory_length: usize = 0;
 
 var free_frames: []usize = undefined;
 var free_frames_len: usize = 0;
+
+const BITSET_CHECKS = std.debug.runtime_safety;
+var free_bitset: []u8 = undefined;
 
 var number_of_allocations: usize = 0;
 
@@ -20,13 +27,32 @@ pub fn init() void {
 
     var frames_availables = @divExact(info.mem_length - info.mem_start, std.mem.page_size);
 
-    // Reserve some space for free_frames
-    const space_needed_aligned = mem.alignPageForward(frames_availables * @sizeOf(usize));
-    const frames_needed = @divExact(space_needed_aligned, std.mem.page_size);
-    frames_availables -= frames_needed;
-    free_frames = physToVirt([*]usize, info.mem_start)[0..frames_availables];
-    info.mem_start += space_needed_aligned;
+    // Reserve space for free_frames
+    const space_needed_free_frames = mem.alignPageForward(frames_availables * @sizeOf(usize));
+    const frames_needed_free_frames = @divExact(space_needed_free_frames, std.mem.page_size);
+    frames_availables -= frames_needed_free_frames;
+    const free_frames_start = info.mem_start;
+    info.mem_start += space_needed_free_frames;
 
+    if (BITSET_CHECKS) {
+        // Reserve space for the bitset
+        const space_needed_bitset = mem.alignPageForward(std.math.divCeil(usize, frames_availables, 8) catch unreachable);
+        free_bitset = physToVirt([*]u8, info.mem_start)[0..space_needed_bitset];
+        const frames_needed_bitset = @divExact(space_needed_bitset, std.mem.page_size);
+        frames_availables -= frames_needed_bitset;
+        info.mem_start += space_needed_bitset;
+
+        // Initialize the bitset
+        std.mem.set(u8, free_bitset, 0xFF); // all free
+        var frame: usize = 0;
+        while (frame < info.mem_start) : (frame += std.mem.page_size) {
+            setFrameAllocated(frame);
+        }
+    }
+
+    free_frames = physToVirt([*]usize, free_frames_start)[0..frames_availables];
+
+    // Populate free_frames
     var frame_base = info.mem_length - std.mem.page_size;
     for (free_frames) |*frame| {
         frame.* = frame_base;
@@ -40,8 +66,28 @@ pub fn init() void {
     log.debug("PMM initialized\n", .{});
 }
 
+fn setFrameAllocated(frame: usize) void {
+    const i = @divExact(frame, std.mem.page_size);
+    const byte = i / 8;
+    const bit = @as(u8, 1) << @intCast(u3, i % 8);
+    assert(free_bitset[byte] & bit != 0);
+    free_bitset[byte] &= ~bit;
+}
+
+fn setFrameFree(frame: usize) void {
+    const i = @divExact(frame, std.mem.page_size);
+    const byte = i / 8;
+    const bit = @as(u8, 1) << @intCast(u3, i % 8);
+    assert(free_bitset[byte] & bit == 0);
+    free_bitset[byte] |= bit;
+}
+
+fn memsetFrame(frame: usize, value: u8) void {
+    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), value);
+}
+
 pub fn memoryLength() usize {
-    return limit_frame_i * std.mem.page_size;
+    return memory_length;
 }
 
 pub const Error = error{OutOfMemory};
@@ -54,33 +100,40 @@ pub noinline fn allocFrame() Error!usize {
 
     free_frames_len -= 1;
     const frame = free_frames[free_frames_len];
-    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), 0);
+    if (BITSET_CHECKS)
+        setFrameAllocated(frame);
+    memsetFrame(frame, 0);
     log.debug("allocated frame: 0x{x}\n", .{frame});
-    number_of_allocations += 1;
+    // number_of_allocations += 1;
     return frame;
 }
 
-/// Allocate a number of frames. Returns a slice allocated with given allocator.
-/// Caller is is charge of freeing it.
 pub fn allocFrames(allocator: *std.mem.Allocator, n: usize) Error![]usize {
+    // It's important to allocate the slice first, because it may also need to
+    // allocate frames
+    var frames = try allocator.alloc(usize, n);
+    errdefer allocator.free(frames);
+
     if (n > free_frames_len)
         return Error.OutOfMemory;
-
-    var frames = try allocator.alloc(usize, n);
     free_frames_len -= n;
     std.mem.copy(usize, frames, free_frames[free_frames_len .. free_frames_len + n]);
     for (frames) |frame| {
-        std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), 0);
+        if (BITSET_CHECKS)
+            setFrameAllocated(frame);
+        memsetFrame(frame, 0);
     }
-    number_of_allocations += n;
+    // number_of_allocations += n;
     return frames;
 }
 
 /// Free a frame of physical memory.
-pub noinline fn freeFrame(frame: usize) void {
+pub fn freeFrame(frame: usize) void {
     // Freed frame is set to undefined, to catch possible UAF in debug mode.
     assert(mem.isPageAligned(frame));
-    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), undefined);
+    if (BITSET_CHECKS)
+        setFrameFree(frame);
+    memsetFrame(frame, undefined);
     free_frames[free_frames_len] = frame;
     free_frames_len += 1;
     log.debug("freed frame: 0x{x}\n", .{frame});
@@ -89,10 +142,12 @@ pub noinline fn freeFrame(frame: usize) void {
 /// Free a number of frames.
 pub fn freeFrames(frames: []usize) void {
     std.mem.copy(usize, free_frames[free_frames_len..], frames);
+    for (frames) |frame| {
+        if (BITSET_CHECKS)
+            setFrameFree(frame);
+        memsetFrame(frame, undefined);
+    }
     free_frames_len += frames.len;
-    // for (frames) |frame| {
-    //     freeFrame(frame);
-    // }
 }
 
 /// Convert a physical memory address to a virtual one. The returned virtual

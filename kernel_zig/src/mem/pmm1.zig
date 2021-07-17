@@ -1,3 +1,7 @@
+//! This PMM uses a static bitset to indicate if a frame is free or not. It does
+//! not use dynamic memory, so the size for the bitset is fixed at comptime.
+//! It doesn't depend on the VMM. Free and alloc are both O(N).
+
 usingnamespace @import("../common.zig");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");

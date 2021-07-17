@@ -75,6 +75,7 @@ const handle_sys_close = @import("syscalls/open.zig").handle_sys_close;
 const handle_sys_read = @import("syscalls/read.zig").handle_sys_read;
 const handle_sys_pread64 = @import("syscalls/read.zig").handle_sys_pread64;
 const handle_sys_write = @import("syscalls/write.zig").handle_sys_write;
+const handle_sys_writev = @import("syscalls/write.zig").handle_sys_writev;
 const handle_sys_lseek = @import("syscalls/lseek.zig").handle_sys_lseek;
 const handle_sys_stat = @import("syscalls/stat.zig").handle_sys_stat;
 const handle_sys_fstat = @import("syscalls/stat.zig").handle_sys_fstat;
@@ -116,6 +117,7 @@ pub fn handleSyscall(
         .read => self.handle_sys_read(arg0, arg1, arg2),
         .pread => self.handle_sys_pread64(arg0, arg1, arg2, arg3),
         .write => self.handle_sys_write(arg0, arg1, arg2),
+        .writev => self.handle_sys_writev(arg0, arg1, arg2),
         .lseek => self.handle_sys_lseek(arg0, arg1, arg2),
         .stat => self.handle_sys_stat(arg0, arg1),
         .fstat => self.handle_sys_fstat(arg0, arg1),

@@ -594,7 +594,6 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 }
                 size_class *= 2;
             } else {
-                print("aligned: {} {}\n", .{ aligned_size, largest_bucket_object_size });
                 return self.resizeLarge(old_mem, old_align, new_size, len_align, ret_addr);
             };
             const byte_offset = @ptrToInt(old_mem.ptr) - @ptrToInt(bucket.page);
