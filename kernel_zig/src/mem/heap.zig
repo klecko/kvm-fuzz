@@ -12,8 +12,11 @@ const Allocator = std.mem.Allocator;
 var page_allocator_state = PageAllocator.init();
 pub const page_allocator = &page_allocator_state.allocator;
 
-var heap_allocator_state = mem.heap.HeapAllocator.init();
+var heap_allocator_state = HeapAllocator.init();
 pub const heap_allocator = &heap_allocator_state.allocator;
+
+var block_allocator_state = BlockAllocator.init();
+pub const block_allocator = &block_allocator_state.allocator;
 
 pub fn initHeapAllocator() void {
     heap_allocator_state.base = mem.layout.kernel_brk;
@@ -82,6 +85,109 @@ pub const HeapAllocator = struct {
             log.debug("heap allocator: frees {*}\n", .{buf});
             std.mem.set(u8, buf, undefined);
             return 0;
+        }
+        TODO();
+    }
+};
+
+pub const BlockAllocator = struct {
+    allocator: Allocator,
+
+    /// Heads of the linked lists of free blocks.
+    list_heads: [BLOCK_SIZES.len]?*Block,
+
+    /// The header of each block, which contains a pointer to the next block
+    /// of the same size.
+    const Block = struct {
+        next: ?*Block,
+    };
+
+    /// The block sizes. There will be a linked list of blocks of each size.
+    /// These sizes must be ordered.
+    const BLOCK_SIZES = [_]usize{ 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
+
+    pub fn init() BlockAllocator {
+        return BlockAllocator{
+            .allocator = Allocator{
+                .allocFn = alloc,
+                .resizeFn = resize,
+            },
+            .list_heads = [_]?*Block{null} ** BLOCK_SIZES.len,
+        };
+    }
+
+    fn getListIndex(size: usize) ?usize {
+        for (BLOCK_SIZES) |block_size, i| {
+            if (block_size >= size) return i;
+        }
+        return null;
+    }
+
+    fn blockToSlice(block_ptr: *Block, size: usize) []u8 {
+        return @ptrCast([*]u8, block_ptr)[0..size];
+    }
+
+    fn sliceToBlock(slice: []u8) *Block {
+        return @ptrCast(*Block, @alignCast(@sizeOf(Block), slice));
+    }
+
+    fn moreBlocksForList(self: *BlockAllocator, list_index: usize) !void {
+        const page = try page_allocator.alloc(u8, std.mem.page_size);
+        const block_len = BLOCK_SIZES[list_index];
+        var block_addr = @ptrToInt(page.ptr);
+        var page_end = block_addr + std.mem.page_size;
+        while (block_addr < page_end - block_len) : (block_addr += block_len) {
+            var block_ptr = @intToPtr(*Block, block_addr);
+            const next_ptr = @intToPtr(*Block, block_addr + block_len);
+            block_ptr.next = next_ptr;
+        }
+        var last_block = @intToPtr(*Block, block_addr);
+        last_block.next = null;
+        self.list_heads[list_index] = sliceToBlock(page);
+    }
+
+    fn alloc(
+        allocator: *Allocator,
+        len: usize,
+        ptr_align: u29,
+        len_align: u29,
+        ret_addr: usize,
+    ) Allocator.Error![]u8 {
+        const self = @fieldParentPtr(BlockAllocator, "allocator", allocator);
+        const list_index = getListIndex(len) orelse return page_allocator.allocFn(page_allocator, len, ptr_align, len_align, ret_addr);
+        const block_len = BLOCK_SIZES[list_index];
+        const len_aligned = std.mem.alignAllocLen(block_len, len, len_align);
+
+        if (self.list_heads[list_index] == null)
+            try self.moreBlocksForList(list_index);
+
+        const block_ptr = self.list_heads[list_index].?;
+        const next = block_ptr.next;
+        self.list_heads[list_index] = next;
+
+        const ret = blockToSlice(block_ptr, len_aligned);
+        std.mem.set(u8, ret, 0);
+        log.debug("heap allocator: {} returns {*}\n", .{ len, ret });
+        return ret;
+    }
+
+    fn resize(
+        allocator: *Allocator,
+        buf: []u8,
+        buf_align: u29,
+        new_len: usize,
+        len_align: u29,
+        ret_addr: usize,
+    ) Allocator.Error!usize {
+        const self = @fieldParentPtr(BlockAllocator, "allocator", allocator);
+        if (new_len == 0) {
+            const freed_block = sliceToBlock(buf);
+            const list_index = getListIndex(buf.len) orelse return page_allocator.resizeFn(page_allocator, buf, buf_align, new_len, len_align, ret_addr);
+            freed_block.next = self.list_heads[list_index];
+            self.list_heads[list_index] = freed_block;
+
+            log.debug("heap allocator: frees {*}\n", .{buf});
+            return @as(usize, 0);
         }
         TODO();
     }

@@ -2,6 +2,7 @@ usingnamespace @import("common.zig");
 const x86 = @import("x86/x86.zig");
 const hypercalls = @import("hypercalls.zig");
 const mem = @import("mem/mem.zig");
+const scheduler = @import("scheduler.zig");
 
 /// The type of each interrupt handler entry point, which will end up jumping
 /// to the actual interrupt handler.
@@ -218,7 +219,7 @@ fn handlePageFault(frame: *InterruptFrame) void {
         .kernel = !user,
     };
     if (fault.kernel) {
-        panic("kernel PF: {}\n", .{fault});
+        panic("kernel PF: {}\nframe: {}\n", .{ fault, frame });
     }
 
     // This won't return
@@ -261,6 +262,8 @@ fn handleStackSegmentFault(frame: *InterruptFrame) void {
 
 fn handleApicTimer(frame: *InterruptFrame) void {
     x86.perf.tick();
+
+    scheduler.schedule(frame);
 
     x86.apic.resetTimer();
 }

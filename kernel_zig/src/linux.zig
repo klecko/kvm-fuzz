@@ -49,16 +49,21 @@ pub const iovec = extern struct {
 };
 
 pub fn errorToErrno(err: anyerror) usize {
-    return @bitCast(usize, @as(isize, switch (err) {
-        error.BadFD => -EBADF,
-        error.OutOfMemory => -ENOMEM,
-        error.NotUserRange, error.Fault => -EFAULT,
-        error.FileNotFound => -ENOENT,
-        error.InvalidArgument => -EINVAL,
-        error.NumericOutOfRange => -ERANGE,
-        error.NotConnected => -ENOTCONN,
-        error.NotSocket => -ENOTSOCK,
-        error.NoFdAvailable => -EMFILE,
+    return errno(switch (err) {
+        error.BadFD => EBADF,
+        error.OutOfMemory => ENOMEM,
+        error.NotUserRange, error.Fault => EFAULT,
+        error.FileNotFound => ENOENT,
+        error.InvalidArgument => EINVAL,
+        error.NumericOutOfRange => ERANGE,
+        error.NotConnected => ENOTCONN,
+        error.NotSocket => ENOTSOCK,
+        error.NoFdAvailable => EMFILE,
+        error.PermissionDenied => EACCES,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
-    }));
+    });
+}
+
+pub fn errno(linux_errno: usize) usize {
+    return @bitCast(usize, -@bitCast(isize, linux_errno));
 }

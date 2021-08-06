@@ -24,6 +24,7 @@ pub fn init() void {
 
     // TODO: remove physmap_vaddr from meminfo
     assert(info.physmap_vaddr == mem.layout.physmap);
+    memory_length = info.mem_length;
 
     var frames_availables = @divExact(info.mem_length - info.mem_start, std.mem.page_size);
 
@@ -60,8 +61,6 @@ pub fn init() void {
     }
     assert(free_frames[free_frames.len - 1] == info.mem_start);
     free_frames_len = frames_availables;
-
-    memory_length = info.mem_length;
 
     log.debug("PMM initialized\n", .{});
 }
@@ -154,6 +153,7 @@ pub fn freeFrames(frames: []usize) void {
 /// address will be in the physmap region, a virtual mapping of all the physical
 /// memory, and it will be casted to the given ptr_type.
 pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
+    assert(phys <= memory_length);
     const ret = mem.layout.physmap + phys;
     if (@typeInfo(ptr_type) == .Pointer) {
         return @intToPtr(ptr_type, ret);
@@ -184,4 +184,12 @@ pub fn amountFreeMemory() usize {
 
 pub fn numberOfAllocations() usize {
     return number_of_allocations;
+}
+
+pub fn dupFrame(frame: usize) Error!usize {
+    const new_frame = try allocFrame();
+    const new_frame_virt = physToVirt(*[std.mem.page_size]u8, new_frame);
+    const frame_virt = physToVirt(*[std.mem.page_size]u8, frame);
+    std.mem.copy(u8, new_frame_virt, frame_virt);
+    return new_frame;
 }

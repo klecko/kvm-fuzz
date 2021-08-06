@@ -35,14 +35,14 @@ fn destroy(ref: *RefCounter) void {
     self.ref.allocator.destroy(self);
 }
 
-pub fn createDefault(allocator: *Allocator, limit_fd: linux.fd_t) !*FileDescriptorTable {
+pub fn createDefault(allocator: *Allocator, limit_fd: usize) !*FileDescriptorTable {
     // Allocate the file descriptor table and initialize it
     const ret = try allocator.create(FileDescriptorTable);
     errdefer allocator.destroy(ret);
     ret.* = FileDescriptorTable{
         .table = HashMap.init(allocator),
         .ref = RefCounter.init(allocator, destroy),
-        .cloexec = try std.DynamicBitSet.initEmpty(std.meta.cast(usize, limit_fd), allocator),
+        .cloexec = try std.DynamicBitSet.initEmpty(limit_fd, allocator),
     };
     errdefer {
         ret.table.deinit();

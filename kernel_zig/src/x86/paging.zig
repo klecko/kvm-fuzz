@@ -359,14 +359,44 @@ pub const PageTable = struct {
             x86.flush_tlb_entry(mem.pmm.physToVirt(usize, frame));
         }
     }
+
+    pub fn clone(self: PageTable) !PageTable {
+        const ptl4_paddr = try clonePageTable(4, self.ptl4);
+        return PageTable.init(ptl4_paddr);
+    }
+
+    fn clonePageTable(comptime level: usize, table: RawType) mem.pmm.Error!usize {
+        // TODO errdefer
+        // TODO try set level comptime
+        const page_table_frame = try mem.pmm.allocFrame();
+        errdefer mem.pmm.freeFrame(page_table_frame);
+        const copy = mem.pmm.physToVirt(RawType, page_table_frame);
+
+        for (table) |*entry, i| {
+            if (!entry.isPresent())
+                continue;
+            var frame = if (entry.isShared())
+                entry.frameBase()
+            else if (level > 1)
+                try clonePageTable(level - 1, pageTablePointedBy(entry))
+            else
+                try mem.pmm.dupFrame(entry.frameBase());
+            copy[i].setFrameBase(frame);
+            copy[i].setFlags(entry.flags());
+        }
+
+        return page_table_frame;
+    }
 };
 
 pub const KernelPageTable = struct {
     page_table: PageTable,
 
     pub fn init() KernelPageTable {
+        const page_table = PageTable.fromCurrent();
+        page_table.ptl4[PTL4_ENTRIES - 1].setShared(true);
         return KernelPageTable{
-            .page_table = PageTable.init(x86.rdcr3()),
+            .page_table = page_table,
         };
     }
 

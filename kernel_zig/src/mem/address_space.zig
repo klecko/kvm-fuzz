@@ -162,4 +162,11 @@ pub const AddressSpace = struct {
             try self.page_table.setPagePerms(page_base, perms);
         }
     }
+
+    pub fn clone(self: AddressSpace) !AddressSpace {
+        return AddressSpace{
+            .allocator = self.allocator,
+            .page_table = try PageTable.clone(self.page_table),
+        };
+    }
 };

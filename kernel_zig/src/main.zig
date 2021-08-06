@@ -34,6 +34,7 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     mem.heap.initHeapAllocator();
     // const allocator = mem.heap.page_allocator;
     const allocator = mem.heap.heap_allocator;
+    // const allocator = mem.heap.fixed_size_block_allocator;
     // var gpa = mem.heap.GeneralPurposeAllocator(.{}){};
     // const allocator = &gpa.allocator;
     fs.file_manager.init(allocator, info.num_files);

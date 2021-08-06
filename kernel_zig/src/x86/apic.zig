@@ -127,9 +127,9 @@ pub fn init() void {
     const current_counter = apic.readReg(.TIMER_CURRENT_COUNT);
     counter_value = initial_counter - current_counter;
 
-    // Enable interrupts, set counter to the value we just calculated and
-    // re-enable timer, this time in periodic mode.
-    x86.enableInterrupts();
+    // Set counter to the value we just calculated and re-enable timer,
+    // this time in periodic mode.
+    // x86.enableInterrupts();
     apic.writeReg(.TIMER_INITIAL_COUNT, counter_value);
     apic.writeReg(.LVT_TIMER, x86.idt.IRQNumber.APICTimer | TimerMode.Periodic);
 

@@ -162,6 +162,7 @@ const TaskStateSegment = packed struct {
         var ret = std.mem.zeroes(TaskStateSegment);
         ret.rsp0 = @ptrToInt(&stack_rsp0) + stack_rsp0.len;
         ret.ist1 = @ptrToInt(&stack_ist1) + stack_ist1.len;
+        print("rsp0 = 0x{x}\n", .{ret.rsp0});
         return ret;
     }
 };
@@ -181,7 +182,7 @@ comptime {
 }
 
 /// Our TSS, initialized at runtime.
-var tss: TaskStateSegment = undefined;
+pub var tss: TaskStateSegment = undefined;
 
 /// Segment selectors, which represent offsets into the GDT for each segment.
 pub const SegmentSelector = enum(u16) {

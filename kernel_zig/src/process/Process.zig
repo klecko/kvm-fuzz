@@ -1,5 +1,6 @@
 pub usingnamespace @import("../common.zig");
 const mem = @import("../mem/mem.zig");
+const x86 = @import("../x86/x86.zig");
 const linux = @import("../linux.zig");
 const hypercalls = @import("../hypercalls.zig");
 const FileDescriptorTable = @import("FileDescriptorTable.zig");
@@ -17,7 +18,7 @@ space: mem.AddressSpace,
 
 files: *FileDescriptorTable,
 
-elf_path: []u8,
+elf_path: []const u8,
 
 brk: usize,
 
@@ -25,17 +26,43 @@ min_brk: usize,
 
 limits: Limits,
 
+user_regs: UserRegs,
+
+// // Top of the stack
+// kernel_rsp: usize,
+
+// // Bottom of the stack, set in the TSS
+// kernel_rsp0: usize,
+
 var next_pid: linux.pid_t = 1234;
 
 const Limits = @import("syscalls/prlimit.zig").Limits;
+pub const UserRegs = struct {
+    rax: usize,
+    rbx: usize,
+    rcx: usize,
+    rdx: usize,
+    rbp: usize,
+    rsi: usize,
+    rdi: usize,
+    r8: usize,
+    r9: usize,
+    r10: usize,
+    r11: usize,
+    r12: usize,
+    r13: usize,
+    r14: usize,
+    r15: usize,
+    rip: usize,
+    rsp: usize,
+};
 
 pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path_len = std.mem.indexOfScalar(u8, &info.elf_path, 0).?;
     const elf_path = try allocator.alloc(u8, elf_path_len);
     std.mem.copy(u8, elf_path, info.elf_path[0..elf_path_len]);
 
-    const pid = next_pid;
-    next_pid += 1;
+    const pid = getNextPid();
 
     const limits = Limits.default();
     return Process{
@@ -43,12 +70,23 @@ pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
         .pid = pid,
         .tgid = pid,
         .space = mem.AddressSpace.fromCurrent(allocator),
-        .files = try FileDescriptorTable.createDefault(allocator, std.meta.cast(linux.fd_t, limits.nofile.hard)),
+        .files = try FileDescriptorTable.createDefault(allocator, limits.nofile.hard),
         .elf_path = elf_path,
         .brk = info.brk,
         .min_brk = info.brk,
         .limits = limits,
+        // .kernel_rsp = 0,
+        // .kernel_rsp0 = 0,
+        .user_regs = undefined,
     };
+}
+
+pub fn getNextPid() linux.pid_t {
+    // if (next_pid == std.math.maxInt(linux.pid_t))
+    //     return null;
+    const ret = next_pid;
+    next_pid += 1;
+    return ret;
 }
 
 pub fn availableFd(self: Process) ?linux.fd_t {
@@ -96,6 +134,9 @@ const handle_sys_listen = @import("syscalls/socket.zig").handle_sys_listen;
 const handle_sys_accept = @import("syscalls/socket.zig").handle_sys_accept;
 const handle_sys_sysinfo = @import("syscalls/sysinfo.zig").handle_sys_sysinfo;
 const handle_sys_fcntl = @import("syscalls/fcntl.zig").handle_sys_fcntl;
+const handle_sys_clone = @import("syscalls/clone.zig").handle_sys_clone;
+const handle_sys_exit = @import("syscalls/exit.zig").handle_sys_exit;
+const handle_sys_exit_group = @import("syscalls/exit.zig").handle_sys_exit_group;
 
 pub fn handleSyscall(
     self: *Process,
@@ -106,6 +147,7 @@ pub fn handleSyscall(
     arg3: usize,
     arg4: usize,
     arg5: usize,
+    regs: *UserRegs,
 ) usize {
     log.debug("--> syscall {s}\n", .{@tagName(syscall)});
 
@@ -139,12 +181,14 @@ pub fn handleSyscall(
         .clock_gettime => self.handle_sys_clock_gettime(arg0, arg1),
         .sysinfo => self.handle_sys_sysinfo(arg0),
         .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
+        .clone => self.handle_sys_clone(arg0, arg1, arg2, arg3, arg4, regs),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
         .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .futex, .sigaltstack, .setitimer => blk: {
             log.info("TODO {s}\n", .{@tagName(syscall)});
             break :blk @as(usize, 0);
         },
-        .exit, .exit_group => hypercalls.endRun(.Exit, null),
+        .exit => self.handle_sys_exit(arg0, regs),
+        .exit_group => self.handle_sys_exit_group(arg0, regs),
         else => panic("unhandled syscall: {}\n", .{syscall}),
     } catch |err| linux.errorToErrno(err);
 
