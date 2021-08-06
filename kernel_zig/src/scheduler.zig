@@ -23,14 +23,53 @@ pub fn addProcess(process: *Process) !void {
     try processes.append(process);
 }
 
-pub fn removeProcess(process: *Process) void {
-    const idx = for (processes.items) |proc, i| {
-        if (proc == process) break i;
-    } else panic("attempt to remove not found process\n", .{});
-    _ = processes.swapRemove(idx);
-
-    if (processes.items.len == 0) {
+pub fn removeActiveProcessAndSchedule(frame: *Process.UserRegs) void {
+    // Check if this is the last process
+    if (processes.items.len == 1) {
         hypercalls.endRun(.Exit, null);
+    }
+
+    const removing_process = current();
+    const removing_process_idx = active_idx;
+    print("removing process {}\n", .{removing_process.pid});
+
+    // First wake up other processes
+    for (processes.items) |proc| {
+        const should_wakeup = switch (proc.state) {
+            .waiting_for_any_with_pgid => |pgid| pgid == removing_process.pgid,
+            .waiting_for_tgid => |tgid| tgid == removing_process.tgid,
+            .waiting_for_any => proc.tgid == removing_process.ptgid,
+            else => false,
+        };
+        if (should_wakeup) {
+            print("waking up {}\n", .{proc.pid});
+            proc.state = .active;
+        }
+    }
+
+    // Now schedule and check deadlock
+    schedule(frame);
+    if (current() == removing_process)
+        panic("deadlock\n", .{});
+
+    // Remove process from list
+    _ = processes.orderedRemove(removing_process_idx);
+
+    // Update active_idx so it points to the same process we just switched to
+    if (active_idx > removing_process_idx)
+        active_idx -= 1;
+
+    // const idx = for (processes.items) |proc, i| {
+    //     if (proc == process) break i;
+    // } else panic("attempt to remove not found process\n", .{});
+    // _ = processes.orderedRemove(idx);
+
+}
+
+fn nextProcess() void {
+    active_idx = (active_idx + 1) % processes.items.len;
+    while (processes.items[active_idx].state != .active) {
+        active_idx = (active_idx + 1) % processes.items.len;
     }
 }
 
@@ -38,10 +77,14 @@ pub fn schedule(frame: anytype) void {
     if (processes.items.len == 1)
         return;
 
-    // log.info("scheduling\n", .{});
     const cur = current();
-    active_idx = (active_idx + 1) % processes.items.len;
+    nextProcess();
     const next = current();
+
+    if (next == cur)
+        return;
+
+    log.info("scheduling from {} to {}\n", .{ cur.pid, next.pid });
 
     // Save current process registers
     cur.user_regs.rax = frame.rax;

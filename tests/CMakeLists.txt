@@ -6,6 +6,7 @@ set(SOURCE_FILES
 	files.cpp
 	fork.cpp
 	getcwd.cpp
+	misc.cpp
 	mmap.cpp
 	readlink.cpp
 	socket.cpp

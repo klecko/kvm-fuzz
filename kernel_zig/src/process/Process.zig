@@ -10,9 +10,20 @@ const Process = @This();
 
 allocator: *Allocator,
 
+// Unique for each process. Returned by gettid().
 pid: linux.pid_t,
 
+// Unique for each group of threads. Main thread has pid = tgid, other threads
+// have same tgid but different pid. Returned by getpid().
 tgid: linux.pid_t,
+
+// Unique for each group of processes. Returned by getpgid().
+pgid: linux.pid_t,
+
+// Parent thread group id
+ptgid: linux.pid_t,
+
+state: State,
 
 space: mem.AddressSpace,
 
@@ -37,6 +48,7 @@ user_regs: UserRegs,
 var next_pid: linux.pid_t = 1234;
 
 const Limits = @import("syscalls/prlimit.zig").Limits;
+
 pub const UserRegs = struct {
     rax: usize,
     rbx: usize,
@@ -57,6 +69,13 @@ pub const UserRegs = struct {
     rsp: usize,
 };
 
+pub const State = union(enum) {
+    active,
+    waiting_for_any_with_pgid: linux.pid_t,
+    waiting_for_tgid: linux.pid_t,
+    waiting_for_any,
+};
+
 pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path_len = std.mem.indexOfScalar(u8, &info.elf_path, 0).?;
     const elf_path = try allocator.alloc(u8, elf_path_len);
@@ -69,6 +88,9 @@ pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
         .allocator = allocator,
         .pid = pid,
         .tgid = pid,
+        .pgid = pid,
+        .ptgid = 1,
+        .state = .active,
         .space = mem.AddressSpace.fromCurrent(allocator),
         .files = try FileDescriptorTable.createDefault(allocator, limits.nofile.hard),
         .elf_path = elf_path,
@@ -137,6 +159,11 @@ const handle_sys_fcntl = @import("syscalls/fcntl.zig").handle_sys_fcntl;
 const handle_sys_clone = @import("syscalls/clone.zig").handle_sys_clone;
 const handle_sys_exit = @import("syscalls/exit.zig").handle_sys_exit;
 const handle_sys_exit_group = @import("syscalls/exit.zig").handle_sys_exit_group;
+const handle_sys_wait4 = @import("syscalls/wait.zig").handle_sys_wait4;
+const handle_sys_getpid = @import("syscalls/getpid.zig").handle_sys_getpid;
+const handle_sys_gettid = @import("syscalls/getpid.zig").handle_sys_gettid;
+const handle_sys_getppid = @import("syscalls/getpid.zig").handle_sys_getppid;
+const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
 
 pub fn handleSyscall(
     self: *Process,
@@ -149,7 +176,7 @@ pub fn handleSyscall(
     arg5: usize,
     regs: *UserRegs,
 ) usize {
-    log.debug("--> syscall {s}\n", .{@tagName(syscall)});
+    log.debug("--> [{}] syscall {s}\n", .{ self.pid, @tagName(syscall) });
 
     const ret = switch (syscall) {
         .arch_prctl => self.handle_sys_arch_prctl(arg0, arg1),
@@ -182,6 +209,11 @@ pub fn handleSyscall(
         .sysinfo => self.handle_sys_sysinfo(arg0),
         .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
         .clone => self.handle_sys_clone(arg0, arg1, arg2, arg3, arg4, regs),
+        .wait4 => self.handle_sys_wait4(arg0, arg1, arg2, arg3, regs),
+        .getpid => self.handle_sys_getpid(),
+        .gettid => self.handle_sys_gettid(),
+        .getppid => self.handle_sys_getppid(),
+        .getpgid => self.handle_sys_getpgid(arg0),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
         .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .futex, .sigaltstack, .setitimer => blk: {
             log.info("TODO {s}\n", .{@tagName(syscall)});
@@ -192,6 +224,6 @@ pub fn handleSyscall(
         else => panic("unhandled syscall: {}\n", .{syscall}),
     } catch |err| linux.errorToErrno(err);
 
-    log.debug("<-- syscall {s} returned 0x{x}\n", .{ @tagName(syscall), ret });
+    log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ self.pid, @tagName(syscall), ret });
     return ret;
 }
