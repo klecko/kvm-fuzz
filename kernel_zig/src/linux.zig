@@ -60,6 +60,7 @@ pub fn errorToErrno(err: anyerror) usize {
         error.NotSocket => ENOTSOCK,
         error.NoFdAvailable => EMFILE,
         error.PermissionDenied => EACCES,
+        error.Search => ESRCH,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     });
 }
@@ -67,3 +68,9 @@ pub fn errorToErrno(err: anyerror) usize {
 pub fn errno(linux_errno: usize) usize {
     return @bitCast(usize, -@bitCast(isize, linux_errno));
 }
+
+// TODO: remove me
+// https://github.com/ziglang/zig/pull/9534
+pub const FUTEX_WAKE_BITSET = 10;
+pub const FUTEX_WAIT_REQUEUE_PI = 11;
+pub const FUTEX_CMP_REQUEUE_PI = 12;

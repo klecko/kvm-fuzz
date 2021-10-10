@@ -3,8 +3,9 @@ const Process = @import("process/Process.zig");
 const x86 = @import("x86/x86.zig");
 const mem = @import("mem/mem.zig");
 const hypercalls = @import("hypercalls.zig");
-const Allocator = std.mem.Allocator;
+const linux = @import("linux.zig");
 const InterruptFrame = @import("interrupts.zig").InterruptFrame;
+const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.scheduler);
 
 var active_idx: usize = 0;
@@ -132,6 +133,14 @@ pub fn schedule(frame: anytype) void {
     }
 
     // switchTasksAsm();
+}
+
+pub fn processWithPID(pid: linux.pid_t) ?*Process {
+    for (processes.items) |process| {
+        if (process.pid == pid)
+            return process;
+    }
+    return null;
 }
 
 fn switchTasksAsm() callconv(.Naked) void {

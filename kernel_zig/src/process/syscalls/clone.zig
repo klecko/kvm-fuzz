@@ -50,6 +50,7 @@ fn sys_clone(
     // TODO errdefer
     const pid = Process.getNextPid();
     const tgid = if (flags & linux.CLONE_THREAD != 0) self.tgid else pid;
+    const ptgid = if (flags & linux.CLONE_THREAD != 0) self.ptgid else self.tgid;
     const space = if (flags & linux.CLONE_VM != 0) self.space else try self.space.clone();
     const files = if (flags & linux.CLONE_FILES != 0)
         self.files.ref.ref()
@@ -70,7 +71,7 @@ fn sys_clone(
         .pid = pid,
         .tgid = tgid,
         .pgid = self.pgid,
-        .ptgid = self.tgid,
+        .ptgid = ptgid,
         .state = .active,
         .space = space,
         .files = files,
@@ -83,7 +84,29 @@ fn sys_clone(
         .user_regs = regs.*,
     };
     new_process.user_regs.rax = 0;
+    if (stack_ptr) |stack| {
+        new_process.user_regs.rsp = stack.flat();
+    }
     try scheduler.addProcess(new_process);
+
+    if (flags & linux.CLONE_CHILD_SETTID != 0) {
+        // This is thought to be done in the new process in before returning to
+        // userspace. As we can't do that because we are directly returning to
+        // userspace, do it now loading its address space temporary.
+        assert(child_tid_ptr != null);
+        new_process.space.load();
+        try mem.safe.copyToUserSingle(linux.pid_t, child_tid_ptr.?, &new_process.pid);
+        self.space.load();
+    }
+
+    if (flags & linux.CLONE_PARENT_SETTID != 0) {
+        assert(parent_tid_ptr != null);
+        try mem.safe.copyToUserSingle(linux.pid_t, parent_tid_ptr.?, &new_process.pid);
+    }
+
+    if (flags & linux.CLONE_SETTLS != 0) {
+        x86.wrmsr(.FS_BASE, tls);
+    }
 
     return new_process.pid;
 }

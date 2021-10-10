@@ -20,11 +20,14 @@ fn sys_mmap(
     fd: linux.fd_t,
     offset: usize,
 ) !usize {
-    log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x}\n", .{ addr, length, prot, flags, fd, offset });
+    log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x})\n", .{ addr, length, prot, flags, fd, offset });
 
-    const supported_flags = linux.MAP_PRIVATE | linux.MAP_SHARED | linux.MAP_ANONYMOUS |
-        linux.MAP_FIXED | linux.MAP_DENYWRITE | linux.MAP_STACK;
-    assert(flags & supported_flags == flags);
+    const supported_flags: i32 = linux.MAP_PRIVATE | linux.MAP_SHARED |
+        linux.MAP_ANONYMOUS | linux.MAP_FIXED | linux.MAP_DENYWRITE |
+        linux.MAP_STACK | linux.MAP_NORESERVE;
+    if (flags & supported_flags != flags) {
+        panic("mmap unsupported flags: 0x{x}\n", .{flags & ~supported_flags});
+    }
 
     // Check given file descriptor is valid. There's a TOCTOU vuln here, but we
     // don't have multithreading so who cares.

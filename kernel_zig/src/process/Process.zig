@@ -164,6 +164,8 @@ const handle_sys_getpid = @import("syscalls/getpid.zig").handle_sys_getpid;
 const handle_sys_gettid = @import("syscalls/getpid.zig").handle_sys_gettid;
 const handle_sys_getppid = @import("syscalls/getpid.zig").handle_sys_getppid;
 const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
+const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
+const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
 
 pub fn handleSyscall(
     self: *Process,
@@ -214,8 +216,10 @@ pub fn handleSyscall(
         .gettid => self.handle_sys_gettid(),
         .getppid => self.handle_sys_getppid(),
         .getpgid => self.handle_sys_getpgid(arg0),
+        .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2),
+        .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
-        .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .futex, .sigaltstack, .setitimer => blk: {
+        .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .sigaltstack, .setitimer, .madvise => blk: {
             log.info("TODO {s}\n", .{@tagName(syscall)});
             break :blk @as(usize, 0);
         },
