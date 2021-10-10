@@ -58,3 +58,46 @@ TEST_CASE("dup2") {
 	REQUIRE(close(other_fd) == 0);
 	delete[] buf;
 }
+
+TEST_CASE("dup2 invalid fd") {
+	int fd_limit = get_fd_limit();
+	int fd = open(input, O_RDONLY);
+	REQUIRE(fd > 0);
+
+	REQUIRE(dup2(fd, fd_limit) == -1);
+	REQUIRE(errno == EBADF);
+
+	REQUIRE(close(fd) == 0);
+}
+
+TEST_CASE("dup no fd available") {
+	int fd_limit = get_fd_limit();
+	int fd = open(input, O_RDONLY);
+	REQUIRE(fd == 3);
+
+	for (int i = 4; i < fd_limit; i++) {
+		REQUIRE(dup2(fd, i) == i);
+	}
+
+	REQUIRE(dup(fd) == -1);
+	REQUIRE(errno == EMFILE);
+
+	REQUIRE(close(fd) == 0);
+	for (int i = 4; i < fd_limit; i++) {
+		REQUIRE(close(i) == 0);
+	}
+}
+
+TEST_CASE("dup cloexec") {
+	// Dup doesn't copy cloexec
+	int fd = open(input, O_RDONLY | O_CLOEXEC);
+	REQUIRE(fd > 0);
+	REQUIRE(fcntl(fd, F_GETFD) == 1);
+
+	int fd2 = dup(fd);
+	REQUIRE(fd2 > 0);
+	REQUIRE(fcntl(fd2, F_GETFD) == 0);
+
+	REQUIRE(close(fd) == 0);
+	REQUIRE(close(fd2) == 0);
+}

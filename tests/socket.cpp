@@ -3,6 +3,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <cstring>
+#include <fcntl.h>
 #include "common.h"
 
 // Reading input from a socket
@@ -48,4 +49,30 @@ TEST_CASE("socket") {
 	REQUIRE(close(client_fd) == 0);
 
 	REQUIRE(close(sockfd) == 0);
+}
+
+TEST_CASE("not socket") {
+	int fd = open(input, O_RDONLY);
+	REQUIRE(fd > 0);
+
+	// Bind
+	struct sockaddr_in server_addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(12345),
+		.sin_addr = { htonl(INADDR_ANY) },
+	};
+	errno = 0;
+	REQUIRE(bind(fd, (sockaddr*)&server_addr, sizeof(server_addr)) == -1);
+	REQUIRE(errno == ENOTSOCK);
+
+	// Listen
+	errno = 0;
+	REQUIRE(listen(fd, 5) == -1);
+	REQUIRE(errno == ENOTSOCK);
+
+	struct sockaddr_in client_addr;
+	uint32_t client_addr_size = sizeof(sockaddr_in);
+	errno = 0;
+	REQUIRE(accept(fd, (sockaddr*)&client_addr, &client_addr_size) == -1);
+	REQUIRE(errno == ENOTSOCK);
 }

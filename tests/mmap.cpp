@@ -9,6 +9,7 @@ const uint8_t shellcode[] = "\x48\xc7\xc0\x34\x12\x00\x00\xc3";
 const int PAGE_SIZE = 0x1000;
 const int prot = PROT_READ | PROT_WRITE;
 const int flags = MAP_ANON | MAP_PRIVATE;
+void* const kernel_addr = (void*)0xffffffffa1d0f000;
 
 TEST_CASE("mmap anon write") {
 	uint8_t* p = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
@@ -82,7 +83,6 @@ TEST_CASE("mmap fixed") {
 }
 
 TEST_CASE("mmap kernel") {
-	void* kernel_addr = (void*)0xffffffffa1d0f000;
 	void* p = mmap(kernel_addr, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	REQUIRE(p == MAP_FAILED);
 	REQUIRE(errno == ENOMEM);
@@ -92,6 +92,14 @@ TEST_CASE("mmap kernel") {
 
 	REQUIRE(munmap(kernel_addr, PAGE_SIZE) == -1);
 	REQUIRE(errno == EINVAL);
+}
+
+TEST_CASE("mmap kernel hint") {
+	// Hint should be ignored
+	void* p = mmap(kernel_addr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p != MAP_FAILED);
+	REQUIRE(p != kernel_addr);
+	REQUIRE(munmap(p, PAGE_SIZE) == 0);
 }
 
 TEST_CASE("mmap not open file") {
@@ -134,4 +142,92 @@ TEST_CASE("mmap prot none") {
 	REQUIRE(p != MAP_FAILED);
 	REQUIRE(mprotect(p, PAGE_SIZE, PROT_NONE) == 0);
 	REQUIRE(munmap(p, PAGE_SIZE) == 0);
+}
+
+TEST_CASE("mmap hint") {
+	// Hint not mapped
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+	uint8_t* p2 = (uint8_t*)mmap(p1 + PAGE_SIZE, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p2 == p1 + PAGE_SIZE);
+
+	// Hint mapped
+	uint8_t* p3 = (uint8_t*)mmap(p1 + PAGE_SIZE, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p3 != MAP_FAILED);
+	REQUIRE(p3 != p1 + PAGE_SIZE);
+
+	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p3, PAGE_SIZE) == 0);
+}
+
+bool is_mapped(void* page) {
+	// Map with addr without MAP_FIXED and see if succeeds
+	void* p = mmap(page, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p != MAP_FAILED);
+	REQUIRE(munmap(p, PAGE_SIZE) == 0);
+	return p != page;
+}
+
+TEST_CASE("munmap not mappped") {
+	// We've got a mapped page, a hole of an unmapped page, and another page
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+	uint8_t* p2 = (uint8_t*)mmap(p1 + 2*PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	REQUIRE(p2 == p1 + 2*PAGE_SIZE);
+
+	// Munmap the three pages
+	REQUIRE(munmap(p1, 3*PAGE_SIZE) == 0);
+
+	// Make sure the third one has actually been unmapped
+	REQUIRE(!is_mapped(p1 + 2*PAGE_SIZE));
+}
+
+TEST_CASE("mmap partial") {
+	// Attempting to map a region which is already mapped results in the first
+	// unmapped part of the region mapped
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+	uint8_t* p2 = (uint8_t*)mmap(p1 - PAGE_SIZE, 2*PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p2 != MAP_FAILED);
+	REQUIRE(p2 != p1 - PAGE_SIZE);
+	REQUIRE(is_mapped(p1 - PAGE_SIZE));
+	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p2, 2*PAGE_SIZE) == 0);
+}
+
+TEST_CASE("mmap partial2") {
+	// We've got a mapped page, a hole of an unmapped page, and another page
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+	uint8_t* p2 = (uint8_t*)mmap(p1 + 2*PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	REQUIRE(p2 == p1 + 2*PAGE_SIZE);
+
+	// Mapping 3 pages here shouldn't map the page in the middle
+	uint8_t* p3 = (uint8_t*)mmap(p1, 3*PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p3 != MAP_FAILED);
+	REQUIRE(p3 != p1);
+	REQUIRE(!is_mapped(p1 + PAGE_SIZE));
+	REQUIRE(munmap(p3, PAGE_SIZE) == 0);
+}
+
+TEST_CASE("mmap partial fixed") {
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p1 != MAP_FAILED);
+	uint8_t* p2 = (uint8_t*)mmap(p1 - PAGE_SIZE, 2*PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	REQUIRE(p2 == p1 - PAGE_SIZE);
+	REQUIRE(munmap(p2, 2*PAGE_SIZE) == 0);
+	REQUIRE(!is_mapped(p1));
+}
+
+size_t get_system_available_memory() {
+	assert(sysconf(_SC_PAGE_SIZE) == PAGE_SIZE);
+	return sysconf(_SC_AVPHYS_PAGES) * PAGE_SIZE;
+}
+
+TEST_CASE("mmap ENOMEM") {
+	size_t size = get_system_available_memory() * 10;
+	void* p = mmap(nullptr, size, prot, flags, -1, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == ENOMEM);
 }
