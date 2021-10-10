@@ -5,6 +5,7 @@ set multiplot layout 1,2
 
 set title "Fuzz cases per second vs time"
 set ylabel "Fuzz cases per second"
+unset logscale x
 plot "./stats.txt" using 1:2 with lines title "fcps"
 
 set title "Coverage vs time"
