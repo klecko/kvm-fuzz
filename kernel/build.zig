@@ -13,10 +13,10 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     // Kernel executable build step
-    const exe = b.addExecutable("kernel_zig", "src/main.zig");
+    const exe = b.addExecutable("kernel", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
-    exe.setOutputDir(b.fmt("{s}/bin", .{b.install_path}));
+    exe.setOutputDir(b.install_path);
     exe.setLinkerScriptPath("./linker.ld");
     exe.addPackage(.{
         .name = "linux_std",
@@ -29,7 +29,7 @@ pub fn build(b: *std.build.Builder) void {
 
     // Kernel build options
     exe.addBuildOption(bool, "enable_instruction_count", true);
-    exe.addBuildOption(bool, "enable_guest_output", true);
+    exe.addBuildOption(bool, "enable_guest_output", false);
 
     exe.install();
 
