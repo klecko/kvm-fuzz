@@ -46,7 +46,7 @@ public:
 
 	// Advance to the next page, allocating page table entries when needed.
 	// In case of range page walkers, returns whether the new page is in
-	// given range. Normal page walkers always return false
+	// given range. Normal page walkers always return true
 	bool next();
 
 	// Advance to the next mapped page. This method does not allocate

@@ -26,8 +26,8 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 		m_input_dir = m_output_dir_corpus;
 
 	// Try to open input directory
-	DIR* dir = opendir(input_dir.c_str());
-	ERROR_ON(!dir, "opening input directory %s", input_dir.c_str());
+	DIR* dir = opendir(m_input_dir.c_str());
+	ERROR_ON(!dir, "opening input directory %s", m_input_dir.c_str());
 
 	// Iterate the directory
 	struct dirent* ent;
@@ -35,7 +35,7 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	string filepath, input;
 	size_t max_sz = 0;
 	while ((ent = readdir(dir))){
-		filepath = input_dir + "/" + ent->d_name;
+		filepath = m_input_dir + "/" + ent->d_name;
 
 		// Check file type. If readdir fails to provide it, fallback to stat
 		if (ent->d_type == DT_UNKNOWN){
@@ -66,7 +66,7 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	// Set max_input_size to an absolute value
 	//m_max_input_size = 200*1024;
 
-	ASSERT(m_corpus.size() != 0, "empty corpus: %s", input_dir.c_str());
+	ASSERT(m_corpus.size() != 0, "empty corpus: %s", m_input_dir.c_str());
 	cout << "Total files read: " << m_corpus.size() << endl;
 	cout << "Max mutated input size: " << m_max_input_size << endl;
 

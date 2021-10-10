@@ -8,6 +8,8 @@ void write_file(const std::string& filepath, const std::string& content);
 
 std::string md5(const std::string& s);
 
+std::string md5(const uint8_t* buf, size_t length);
+
 std::string md5_file(const std::string& filepath);
 
 std::string to_hex(size_t num);

@@ -8,7 +8,6 @@
 
 class Mmu {
 public:
-	inline uint8_t* memory() const { return m_memory; }
 	static const paddr_t PAGE_TABLE_PADDR        = 0x1000;
 	static const vaddr_t ELF_ADDR                = 0x400000; // base for DYN ELF
 	static const vaddr_t KERNEL_STACK_START_ADDR = 0xFFFFFFFFFFFFF000;

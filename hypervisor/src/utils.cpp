@@ -39,9 +39,13 @@ void write_file(const string& filepath, const string& content) {
 }
 
 string md5(const string& s) {
+	return md5((const uint8_t*)s.c_str(), s.size());
+}
+
+string md5(const uint8_t* buf, size_t length) {
 	// Perform hash
 	uint8_t hash[MD5_DIGEST_LENGTH];
-	MD5((unsigned char*)s.c_str(), s.size(), hash);
+	MD5(buf, length, hash);
 
 	// Get hex representation
 	ostringstream ss;

@@ -24,6 +24,7 @@ struct kvm_dirty_gfn {
 #define PDE64_DIRTY (1U << 6)
 #define PDE64_PS (1U << 7)
 #define PDE64_G (1U << 8)
+#define PDE64_SHARED (1U << 9) // custom
 #define PDE64_NX (1LU << 63)
 
 /* CR0 bits */

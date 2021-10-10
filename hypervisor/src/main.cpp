@@ -220,13 +220,13 @@ int main(int argc, char** argv) {
 #endif
 
 	if (args.single_run) {
-		// Just perform a single run and exit. If an input file was provided,
-		// it has already been loaded.
+		// Just perform a single run and exit.
 		if (args.single_run_input_path.empty()) {
 			printf("Performing single run with no input file\n");
 		} else {
 			printf("Performing single run with input file '%s', length %lu\n",
 				   args.single_run_input_path.c_str(), file.size());
+			vm.set_input(file);
 		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)

@@ -5,6 +5,7 @@
 #include "mmu.h"
 #include "page_walker.h"
 #include "kvm_aux.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -49,8 +50,7 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 	ioctl_chk(m_vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
 
 	// Map all physical memory. This is needed for guest kernel to access page
-	// tables and other physical addresses. This is probably what we spaniards
-	// call 'chapuza'
+	// tables and other physical addresses.
 	PageWalker pages(PHYSMAP_ADDR, *this);
 	for (paddr_t p = 0; p < m_length; p += PAGE_SIZE) {
 		pages.map(p, PDE64_PRESENT | PDE64_RW);
@@ -330,8 +330,7 @@ void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
 
 		// Allocate memory region with given permissions
 		flags = parse_perms(segm.flags);
-		if (!kernel)
-			flags |= PDE64_USER;
+		flags |= (kernel ? PDE64_SHARED : PDE64_USER);
 		alloc(segm.vaddr, segm.memsize, flags);
 
 		// Write segment data into memory

@@ -1,3 +1,4 @@
+#include <limits>
 #include "page_walker.h"
 #include "kvm_aux.h"
 
@@ -7,7 +8,7 @@ const int Mmu::PageWalker::FLAGS = PDE64_PRESENT | PDE64_RW | PDE64_USER;
 
 Mmu::PageWalker::PageWalker(vaddr_t vaddr, Mmu& mmu)
 	: m_start(vaddr)
-	, m_len(0)
+	, m_len(numeric_limits<vaddr_t>::max())
 	, m_mmu(mmu)
 	, m_offset(0)
 	, m_ptl4_i(PTL4_INDEX(vaddr))
@@ -89,18 +90,18 @@ bool Mmu::PageWalker::is_mapped() {
 }
 
 bool Mmu::PageWalker::next() {
-	// Advance one PTE, update current offset and return whether there are more
-	// pages left
-	next_ptl1_entry();
-
+	// Advance offset
 	m_offset += PAGE_SIZE - PAGE_OFFSET(vaddr());
 
-	// If there are more pages left in the range of memory specified, check
-	// we are not at the end of the memory space
-	bool ret = m_offset < m_len;
-	if (ret)
-		ASSERT(m_ptl4_i != PTRS_PER_PTL4, "PageWalker: OOB?");
-	return ret;
+	// Check if we are at the end of the range
+	if (m_offset >= m_len)
+		return false;
+
+	// We are not done yet. Advance one PTE and check we are not at the end
+	// of the memory space
+	next_ptl1_entry();
+	ASSERT(m_ptl4_i != PTRS_PER_PTL4, "PageWalker: OOB?");
+	return true;
 }
 
 void Mmu::PageWalker::update_ptl3() {
