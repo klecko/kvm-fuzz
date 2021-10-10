@@ -5,9 +5,9 @@ off_t Process::do_sys_lseek(int fd, off_t offset, int whence) {
 	// We use signed types here, as the syscall does, but we use unsigned types
 	// in File. The syscall fails if the resulting offset is negative, so
 	// there isn't any problem about that
-	if (!m_open_files.count(fd))
+	if (!m_files.count(fd))
 		return -EBADF;
-	FileDescription& file = *m_open_files[fd];
+	FileDescription& file = *m_files[fd];
 	off_t ret;
 	switch (whence) {
 		case SEEK_SET:

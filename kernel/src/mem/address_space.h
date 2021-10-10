@@ -19,10 +19,11 @@ public:
 	static bool is_user_range(uintptr_t addr, size_t len);
 	static bool is_user_range(const Range& range);
 
-	AddressSpace(uintptr_t ptl4_paddr);
+	AddressSpace(bool create=true);
+	// AddressSpace(uintptr_t ptl4_paddr);
 
 	enum MapFlags {
-		DiscardAlreadyMapped = 0,
+		DiscardAlreadyMapped = 1,
 		Shared = (1 << 1),
 	};
 
@@ -38,15 +39,23 @@ public:
 	// Set perms to an already mapped range
 	bool set_range_perms(const Range& range, uint8_t perms);
 
+	Optional<AddressSpace> clone() const;
+
+	void load();
+
+	bool operator==(const AddressSpace& other) const;
+	bool operator!=(const AddressSpace& other) const;
+
 private:
 	static const uintptr_t USER_MAPPINGS_START_ADDR = 0x7FFFF7FFE000;
 
 	PageTable m_page_table;
-	uintptr_t m_next_user_mapping;
 	// vector<Range> m_free_ranges;
 	// vector<Range> m_allocated_ranges;
 
 	uintptr_t find_free_memory_region_for_range(const Range& range);
+
+	void map_kernel();
 };
 
 #endif

@@ -91,10 +91,12 @@ void handle_stack_segment_fault(InterruptFrame* frame, uint64_t error_code) {
 
 __attribute__((interrupt))
 void handle_apic_timer(InterruptFrame* frame) {
-	ASSERT(!Scheduler::is_running(), "we're not ready for multitasking!!");
+	// ASSERT(!Scheduler::is_running(), "we're not ready for multitasking!!");
 
 	// Check timeout
 	Perf::tick();
+
+	// Scheduler::schedule();
 
 	APIC::reset_timer();
 }

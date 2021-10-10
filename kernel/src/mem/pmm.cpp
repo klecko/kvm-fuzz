@@ -9,6 +9,7 @@ static uintptr_t g_physmap_vaddr;
 static uintptr_t g_next_frame_alloc;
 static size_t g_memory_length;
 static stack<uintptr_t> g_free_frames;
+static size_t g_frames_allocated;
 
 void init() {
 	// Get ownership of the physical memory
@@ -21,6 +22,10 @@ void init() {
 	dbgprintf("PMM initialized\n");
 }
 
+size_t memory_length() {
+	return g_memory_length;
+}
+
 uintptr_t alloc_frame() {
 	ASSERT(g_next_frame_alloc != 0, "memory has not been initialized");
 
@@ -28,6 +33,7 @@ uintptr_t alloc_frame() {
 	if (!g_free_frames.empty()) {
 		uintptr_t ret = g_free_frames.top();
 		g_free_frames.pop();
+		g_frames_allocated++;
 		return ret;
 	}
 
@@ -36,6 +42,7 @@ uintptr_t alloc_frame() {
 		return 0;
 	uintptr_t ret = g_next_frame_alloc;
 	g_next_frame_alloc += PAGE_SIZE;
+	g_frames_allocated++;
 	return ret;
 }
 
@@ -68,13 +75,33 @@ void free_frame(uintptr_t frame) {
 
 
 void* phys_to_virt(uintptr_t phys) {
+	ASSERT(g_physmap_vaddr, "PMM not initialized");
 	return (void*)(g_physmap_vaddr + phys);
+}
+
+uintptr_t virt_to_phys(void* virt) {
+	uintptr_t p = (uintptr_t)virt;
+	ASSERT(g_physmap_vaddr <= p && p < g_physmap_vaddr + g_memory_length,
+	       "vaddr %p doesn't belong to physmap region", p);
+	return p - g_physmap_vaddr;
+}
+
+uintptr_t dup_frame(uintptr_t frame) {
+	uintptr_t copy = alloc_frame();
+	if (!copy)
+		return 0;
+	memcpy(phys_to_virt(copy), phys_to_virt(frame), PAGE_SIZE);
+	return copy;
 }
 
 size_t amount_free_frames() {
 	size_t reused_frames = g_free_frames.size();
 	size_t new_frames = (g_memory_length - g_next_frame_alloc)/PAGE_SIZE;
 	return reused_frames + new_frames;
+}
+
+size_t frames_allocated() {
+	return g_frames_allocated;
 }
 
 }

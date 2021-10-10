@@ -3,26 +3,50 @@
 #include "fs/file_manager.h"
 #include "x86/asm.h"
 
+int Process::s_next_pid = 1234;
+
+FileDescriptorTable& Process::default_files() {
+	FileDescriptorTable& table = *new FileDescriptorTable;
+	table[STDIN_FILENO] = FileManager::open(FileManager::Stdin);
+	table[STDOUT_FILENO] = FileManager::open(FileManager::Stdout);
+	table[STDERR_FILENO] = FileManager::open(FileManager::Stderr);
+	return table;
+}
+
+// Process::Process()
+// 	: m_pid(s_next_pid++)
+// 	, m_files(default_files())
+// {
+// 	// ????
+// }
+
 Process::Process(const VmInfo& info)
-	: m_pid(1234)
-	, m_space(rdcr3())
+	: m_pid(s_next_pid++)
+	, m_tgid(m_pid)
+	, m_space(false) // Initial address space is already created
+	, m_files(default_files())
 	, m_elf_path(info.elf_path)
 	, m_brk(info.brk)
 	, m_min_brk(info.brk)
 {
-	m_open_files[STDIN_FILENO] = FileManager::open(FileManager::Stdin);
-	m_open_files[STDOUT_FILENO] = FileManager::open(FileManager::Stdout);
-	m_open_files[STDERR_FILENO] = FileManager::open(FileManager::Stderr);
 	dbgprintf("Elf path: %s\n", m_elf_path.c_str());
 	dbgprintf("Brk: %p\n", m_brk);
 }
 
+AddressSpace& Process::space() {
+	return m_space;
+}
+
+const AddressSpace& Process::space() const {
+	return m_space;
+}
+
 int Process::available_fd() {
 	int fd = 0;
-	while (m_open_files.count(fd)) {
+	while (m_files.count(fd)) {
 		fd++;
-		ASSERT(fd > 0, "we ran out of fds?");
 	}
+	ASSERT(fd > 0, "we ran out of fds?");
 	return fd;
 }
 
@@ -228,7 +252,7 @@ uint64_t Process::handle_syscall(int nr, uint64_t arg0, uint64_t arg1,
 			break;
 
 		default:
-			hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
+			// hc_print_stacktrace(regs->rsp, regs->rip, regs->rbp);
 			die("Unimplemented syscall: %s (%lld)\n", syscall_str[nr], nr);
 	}
 

@@ -9,7 +9,7 @@
 namespace VMM {
 
 void init();
-PageTable& kernel_page_table();
+KernelPageTable& kernel_page_table();
 Heap& kernel_heap();
 bool alloc_page(void* addr);
 bool alloc_pages(void* addr, size_t n);

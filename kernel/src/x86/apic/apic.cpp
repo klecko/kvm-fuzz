@@ -2,6 +2,7 @@
 #include "x86/asm.h"
 #include "x86/pit/pit.h"
 #include "mem/vmm.h"
+#include "mem/pmm.h"
 #include "interrupts.h"
 
 #define APIC_APICID     0x20
@@ -86,8 +87,8 @@ void init() {
 	// Get APIC phys address
 	uintptr_t phys = rdmsr(MSR_APIC_BASE) & PTL1_MASK;
 
-	// Map it
-	g_apic = (uint8_t*)0x1234000; // FIXME: which address should i map it to?
+	// Map it after the physmap
+	g_apic = (uint8_t*)PMM::phys_to_virt(PMM::memory_length());
 	uint64_t page_flags = PageTableEntry::Present | PageTableEntry::ReadWrite;
 	ASSERT(VMM::kernel_page_table().map((uintptr_t)g_apic, phys, page_flags),
 	       "failed to map APIC?");

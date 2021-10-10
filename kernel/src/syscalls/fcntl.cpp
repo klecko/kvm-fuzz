@@ -2,9 +2,9 @@
 #include "linux/fcntl.h"
 
 int Process::do_sys_fcntl(int fd, int cmd, uint64_t arg) {
-	if (!m_open_files.count(fd))
+	if (!m_files.count(fd))
 		return -EBADF;
-	FileDescription& file = *m_open_files[fd];
+	FileDescription& file = *m_files[fd];
 	uint64_t ret = 0;
 	uint32_t flags;
 	switch (cmd) {

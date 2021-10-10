@@ -7,7 +7,7 @@ set(LINKER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/linker.ld")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffreestanding -static -Wall -mno-sse")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti -masm=intel")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic -fpie -fno-use-cxa-atexit")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-red-zone")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-red-zone -z max-page-size=0x1000")
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 

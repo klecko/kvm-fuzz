@@ -3,8 +3,10 @@
 
 #include "common.h"
 #include "libcpp/user_ptr.h"
+#include "libcpp/ref_counted.h"
 #include "linux/fcntl.h"
 #include "asm/stat.h"
+#include "map"
 
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
@@ -12,7 +14,7 @@
 
 typedef unsigned long inode_t;
 
-class FileDescription {
+class FileDescription : public RefCounted<FileDescription> {
 public:
 	// Used by stat. Fstat should use the corresponding method in File
 	static int stat_regular(UserPtr<struct stat*> stat_ptr, size_t file_size,
@@ -22,9 +24,6 @@ public:
 
 	FileDescription(uint32_t flags, const char* buf, size_t size);
 	virtual ~FileDescription() {};
-
-	void ref();
-	void unref();
 
 	uint32_t flags() const;
 	void set_flags(uint32_t flags);
@@ -48,8 +47,6 @@ protected:
 	void set_buf(const char* buf, size_t size);
 
 private:
-	size_t m_ref_count;
-
 	// Flags specified when calling open (O_RDONLY, O_RDWR...)
 	uint32_t m_flags;
 
@@ -120,5 +117,11 @@ private:
 	bool m_listening;
 	bool m_connected;
 };
+
+// Just a RefCounted map
+class FileDescriptorTable
+	: public RefCounted<FileDescriptorTable>
+	, public map<int, FileDescription*>
+{ };
 
 #endif

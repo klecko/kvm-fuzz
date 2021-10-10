@@ -75,23 +75,11 @@ int FileDescription::stat_stdout(UserPtr<struct stat*> stat_ptr) {
 }
 
 FileDescription::FileDescription(uint32_t flags, const char* buf, size_t size)
-	: m_ref_count(1)
-	, m_flags(flags)
+	: m_flags(flags)
 	, m_buf(buf)
 	, m_size(size)
 	, m_offset(0)
 { }
-
-void FileDescription::ref() {
-	m_ref_count++;
-}
-
-void FileDescription::unref() {
-	ASSERT(m_ref_count != 0, "unref with ref_count = 0");
-	m_ref_count--;
-	if (m_ref_count == 0)
-		delete this;
-}
 
 void FileDescription::set_buf(const char* buf, size_t size) {
 	m_buf = buf;

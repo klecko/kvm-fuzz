@@ -4,7 +4,7 @@
 
 int Process::do_sys_socket(int domain, int type, int protocol) {
 	int fd = available_fd();
-	m_open_files[fd] = FileManager::open_socket({ domain, type, protocol });
+	m_files[fd] = FileManager::open_socket({ domain, type, protocol });
 	return fd;
 }
 
@@ -12,9 +12,9 @@ int Process::do_sys_setsockopt(int sockfd, int level, int optname,
                                UserPtr<const void*> optval_ptr,
 							   socklen_t optlen)
 {
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
 	printf_once("TODO: setsockopt\n");
 	return 0;
@@ -23,32 +23,32 @@ int Process::do_sys_setsockopt(int sockfd, int level, int optname,
 int Process::do_sys_bind(int sockfd, UserPtr<const struct sockaddr*> addr_ptr,
                          socklen_t addr_len)
 {
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
-	auto socket = (FileDescriptionSocket*)m_open_files[sockfd];
+	auto socket = (FileDescriptionSocket*)m_files[sockfd];
 	return socket->bind(addr_ptr, addr_len);
 }
 
 int Process::do_sys_listen(int sockfd, int backlog) {
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
-	auto socket = (FileDescriptionSocket*)m_open_files[sockfd];
+	auto socket = (FileDescriptionSocket*)m_files[sockfd];
 	return socket->listen(backlog);
 }
 
 int Process::do_sys_accept(int sockfd, UserPtr<struct sockaddr*> addr_ptr,
                            UserPtr<socklen_t*> addr_len_ptr)
 {
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
 
-	auto socket = (FileDescriptionSocket*)m_open_files[sockfd];
+	auto socket = (FileDescriptionSocket*)m_files[sockfd];
 	if (!socket->is_binded() || !socket->is_listening()) // bind shouldn't be necessary
 		return -EINVAL;
 	auto accepted_socket = FileManager::open_socket(socket->type());
@@ -57,16 +57,16 @@ int Process::do_sys_accept(int sockfd, UserPtr<struct sockaddr*> addr_ptr,
 	// TODO: write into addr_ptr and addr_len_ptr
 
 	int accepted_fd = available_fd();
-	m_open_files[accepted_fd] = accepted_socket;
+	m_files[accepted_fd] = accepted_socket;
 	return accepted_fd;
 }
 
 int Process::do_sys_getpeername(int sockfd, UserPtr<struct sockaddr*> addr_ptr,
                                 UserPtr<socklen_t*> addr_len_ptr)
 {
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
 	TODO
 	return 0;
@@ -80,11 +80,11 @@ ssize_t Process::do_sys_recvfrom(
 	ASSERT(flags == 0, "TODO");
 	ASSERT(src_addr_ptr.is_null(), "TODO");
 	ASSERT(addr_len_ptr.is_null(), "TODO");
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
-	return m_open_files[sockfd]->read(buf, len);
+	return m_files[sockfd]->read(buf, len);
 }
 
 ssize_t Process::do_sys_sendto(
@@ -94,9 +94,9 @@ ssize_t Process::do_sys_sendto(
 	ASSERT(flags == 0, "TODO");
 	ASSERT(dest_addr_ptr.is_null(), "TODO");
 	ASSERT(addr_len == 0, "TODO");
-	if (!m_open_files.count(sockfd))
+	if (!m_files.count(sockfd))
 		return -EBADF;
-	if (!m_open_files[sockfd]->is_socket())
+	if (!m_files[sockfd]->is_socket())
 		return -ENOTSOCK;
 
 	// Don't do anything
@@ -106,10 +106,10 @@ ssize_t Process::do_sys_sendto(
 ssize_t Process::do_sys_sendfile(int out_fd, int in_fd, UserPtr<off_t*> off_ptr,
                                  ssize_t count)
 {
-	if (count < 0 || !m_open_files.count(out_fd) || !m_open_files.count(in_fd))
+	if (count < 0 || !m_files.count(out_fd) || !m_files.count(in_fd))
 		return -EINVAL;
-	FileDescription* out_file = m_open_files[out_fd];
-	FileDescription* in_file = m_open_files[in_fd];
+	FileDescription* out_file = m_files[out_fd];
+	FileDescription* in_file = m_files[in_fd];
 	if (!out_file->is_writable() || !in_file->is_readable())
 		return -EBADF;
 

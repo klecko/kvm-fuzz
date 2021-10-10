@@ -15,6 +15,10 @@ void* operator new[](size_t size);
 void operator delete(void* p);
 void operator delete[](void* p);
 
+// Placement new
+inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new[](size_t, void* p) { return p; }
+
 // I have no idea where this should go
 ssize_t print_user(UserPtr<const void*> buf, size_t len);
 

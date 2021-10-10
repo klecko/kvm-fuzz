@@ -112,6 +112,8 @@ void _hc_end_run(RunEndReason reason, void* info, uint64_t instr_executed) {
 	hypercall(Hypercall::EndRun);
 }
 
+#include "mem/pmm.h"
 void hc_end_run(RunEndReason reason, void* info) {
+	// printf("frames: %lu\n", PMM::frames_allocated());
 	_hc_end_run(reason, info, Perf::instructions_executed());
 }

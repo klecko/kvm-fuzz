@@ -40,6 +40,8 @@
 #define PHYS_MASK (0x000FFFFFFFFFF000)
 #define PHYS_FLAGS(addr) ((addr) & (~PHYS_MASK))
 
+#define LAST_PTL4_ENTRY_ADDR 0xFFFFFF8000000000
+
 class PageTableEntry {
 public:
 	enum Flags {
@@ -61,6 +63,10 @@ public:
 
 	uintptr_t frame_base() {
 		return m_raw & PHYS_MASK;
+	}
+
+	uint64_t flags() {
+		return m_raw & ~PHYS_MASK;
 	}
 
 	void set_frame_base(uintptr_t base) {

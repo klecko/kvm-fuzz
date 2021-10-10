@@ -8,7 +8,7 @@ namespace GDT {
 // https://wiki.osdev.org/Global_Descriptor_Table
 // https://wiki.osdev.org/GDT_Tutorial
 struct GlobalDescriptor {
-protected:
+public:
 	static const int GDT_TSS_TYPE                = 9;
 	static const int GDT_SHIFT_ACCESS_ACCESSED   = 0;
 	static const int GDT_SHIFT_ACCESS_RW         = 1;

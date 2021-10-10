@@ -11,7 +11,7 @@ void configure_sleep(uint64_t microsecs) {
 
 	ASSERT(microsecs < MAX_MICROSECS, "too high microsecs %lu, max is %lu",
 	       microsecs, MAX_MICROSECS);
-	uint16_t val = microsecs * 1193182UL / (1000000UL);
+	uint16_t val = microsecs * PIT_RATE / (1000000UL);
 
 	// Set input
 	outb(0x61, inb(0x61) | 1);

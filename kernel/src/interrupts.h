@@ -24,10 +24,7 @@ enum ExceptionNumber {
 	MachineCheck,
 	SIMDFloatingPointException,
 	VirtualizationException,
-	_reserved3,
-	SecurityException,
-	_reserved4,
-	TripleFault
+	SecurityException = 30,
 };
 
 enum IRQNumber {

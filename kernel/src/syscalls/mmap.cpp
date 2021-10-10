@@ -21,7 +21,7 @@
 {
 	dbgprintf("mmap(%p, %lu, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
 	          flags, fd, offset);
-	if (fd != -1 && !m_open_files.count(fd))
+	if (fd != -1 && !m_files.count(fd))
 		return -EBADF;
 
 	// We're not supporting multiple threads, so MAP_SHARED can be safely
@@ -57,7 +57,7 @@
 
 	// If a file descriptor was specified, copy its content to memory
 	if (fd != -1) {
-		const FileDescription& f = m_open_files[fd];
+		const FileDescription& f = m_files[fd];
 		// User seems to be allowed to map beyond the file limits (when
 		// offset + length > f.size()). Let's see if offset > f.size() is
 		// supposed to be allowed.
@@ -89,7 +89,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
                                int flags, int fd, size_t offset)
 {
 	ASSERT(!(prot & PROT_GROWSDOWN) && !(prot & PROT_GROWSUP), "prot: %d", prot);
-	dbgprintf("mmap(%p, %lu, 0x%x, 0x%x, %d, %p)\n", addr, length, prot,
+	dbgprintf("mmap(%p, %lu, 0x%x, 0x%x, %d, %p)\n", addr.flat(), length, prot,
 	          flags, fd, offset);
 
 	int supported_flags = MAP_PRIVATE | MAP_SHARED | MAP_ANONYMOUS |
@@ -97,7 +97,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 	ASSERT((flags & supported_flags) == flags, "unsupported flags 0x%x", flags);
 
 	// Check given file descriptor is valid
-	if (fd != -1 && !m_open_files.count(fd))
+	if (fd != -1 && !m_files.count(fd))
 		return -EBADF;
 
 	// We must return EINVAL if no length, and ENOMEM if length wraps
@@ -151,7 +151,7 @@ uintptr_t Process::do_sys_mmap(UserPtr<void*> addr, size_t length, int prot,
 
 	// If a file descriptor was specified, copy its content to memory
 	if (fd != -1) {
-		const FileDescription& f = *m_open_files[fd];
+		const FileDescription& f = *m_files[fd];
 		// User seems to be allowed to map beyond the file limits (when
 		// offset + length > f.size()). Let's see if offset > f.size() is
 		// supposed to be allowed.

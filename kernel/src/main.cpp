@@ -34,6 +34,8 @@ extern "C" void kmain(int argc, char** argv) {
 
 	// m_term     = info.term;
 
+	// User elf is already loaded into memory, so we'll just use current
+	// page table as this process page table
 	Process process(info);
 	Scheduler::init(process);
 	process.start_user(argc, argv, info);

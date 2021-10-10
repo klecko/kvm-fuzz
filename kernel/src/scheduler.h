@@ -6,8 +6,9 @@
 namespace Scheduler {
 
 void init(Process& first_process);
-bool is_running();
+void add(Process& process);
 Process& current();
+void schedule();
 
 };
 

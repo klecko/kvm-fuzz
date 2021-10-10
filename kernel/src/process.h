@@ -29,7 +29,14 @@ struct Regs {
 
 class Process {
 public:
+	// Process();
+
 	Process(const VmInfo& info);
+
+	Process(const Process& other, unsigned long clone_flags);
+
+	AddressSpace& space();
+	const AddressSpace& space() const;
 
 	void start_user(int argc, char** argv, const VmInfo& info);
 
@@ -37,16 +44,21 @@ public:
 	                        uint64_t, uint64_t, Regs* regs);
 
 private:
+	static int s_next_pid;
+	static FileDescriptorTable& default_files();
+
 	int m_pid;
+	int m_tgid;
 	AddressSpace m_space;
 
+	FileDescriptorTable& m_files;
 	string m_elf_path;
-	map<int, FileDescription*> m_open_files;
 	uintptr_t m_brk;
 	uintptr_t m_min_brk;
 	Regs* m_user_regs;
 
 	int available_fd();
+	int child_return_from_clone();
 
 	int do_sys_access(UserPtr<const char*>, int);
 	int do_sys_openat(int, UserPtr<const char*>, int, mode_t);

@@ -16,7 +16,7 @@ int Process::do_sys_stat(UserPtr<const char*> pathname_ptr,
 }
 
 int Process::do_sys_fstat(int fd, UserPtr<struct stat*> stat_ptr) {
-	if (!m_open_files.count(fd))
+	if (!m_files.count(fd))
 		return -EBADF;
-	return m_open_files[fd]->stat(stat_ptr);
+	return m_files[fd]->stat(stat_ptr);
 }

@@ -2,7 +2,7 @@
 #include "linux/termios.h"
 
 int Process::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
-	// if (!m_open_files.count(fd))
+	// if (!m_files.count(fd))
 	// 	return -EBADF;
 	// if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
 	// 	// We hold the whole struct termios2, but guest may want just a
@@ -16,6 +16,6 @@ int Process::do_sys_ioctl(int fd, uint64_t request, uint64_t arg) {
 	// 	} else TODO;
 	// 	return (success ? 0 : -EFAULT);
 	// }
-	printf("TODO ioctl, fd: %d, request: %p, arg: %p\n", fd, request, arg);
+	// printf("TODO ioctl, fd: %d, request: %p, arg: %p\n", fd, request, arg);
 	return -EINVAL;
 }

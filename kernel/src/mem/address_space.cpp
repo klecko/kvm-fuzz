@@ -1,5 +1,6 @@
 #include "address_space.h"
 #include "pmm.h"
+#include "vmm.h"
 #include "x86/page_table.h"
 #include "x86/asm.h"
 
@@ -17,11 +18,17 @@ bool AddressSpace::is_user_range(const Range& range) {
 	return is_user_range(range.base(), range.size());
 }
 
-AddressSpace::AddressSpace(uintptr_t ptl4_paddr)
-	: m_page_table(ptl4_paddr)
-	, m_next_user_mapping(USER_MAPPINGS_START_ADDR)
+AddressSpace::AddressSpace(bool create)
+	: m_page_table(create)
 {
+	if (!create)
+		m_page_table.set_current_cr3();
 }
+
+// AddressSpace::AddressSpace(uintptr_t ptl4_paddr)
+// 	: m_page_table(ptl4_paddr)
+// {
+// }
 
 uintptr_t AddressSpace::find_free_memory_region_for_range(const Range& range) {
 	ASSERT(range.base() == 0, "range already has base address");
@@ -49,20 +56,23 @@ bool AddressSpace::map_range(Range& range, uint8_t perms, uint8_t flags) {
 	// Assign a base address to the range in case it doesn't have one
 	if (!range.base()) {
 		uintptr_t base = find_free_memory_region_for_range(range);
-		if (!base)
+		if (!base) {
 			return false;
+		}
 		range.set_base(base);
 	}
 
 	// Check the range is in user range
-	if (!is_user_range(range))
+	if (!is_user_range(range)) {
 		return false;
+	}
 
 	// Attempt to allocate physical memory for the range
 	vector<uintptr_t> frames;
 	size_t num_frames = PAGE_CEIL(range.size()) / PAGE_SIZE;
-	if (!PMM::alloc_frames(num_frames, frames))
+	if (!PMM::alloc_frames(num_frames, frames)) {
 		return false;
+	}
 
 	// Compute page flags according to memory permissions and mapping flags
 	uint64_t page_flags = PageTableEntry::User;
@@ -78,13 +88,14 @@ bool AddressSpace::map_range(Range& range, uint8_t perms, uint8_t flags) {
 	}
 	if (flags & MapFlags::Shared)
 		page_flags |= PageTableEntry::Shared;
+	bool discard = flags & MapFlags::DiscardAlreadyMapped;
 
 	// Map every page
 	for (size_t i = 0; i < frames.size(); i++) {
 		uintptr_t page_base = range.base() + i*PAGE_SIZE;
-		if (!m_page_table.map(page_base, frames[i], page_flags,
-		                      flags & MapFlags::Shared))
+		if (!m_page_table.map(page_base, frames[i], page_flags, discard)) {
 			return false;
+		}
 	}
 	return true;
 }
@@ -129,4 +140,26 @@ bool AddressSpace::set_range_perms(const Range& range, uint8_t perms) {
 		flush_tlb_entry(page_base);
 	}
 	return true;
+}
+
+Optional<AddressSpace> AddressSpace::clone() const {
+	auto page_table_copy = m_page_table.clone();
+	if (!page_table_copy.has_value())
+		return false;
+
+	AddressSpace copy(false);
+	copy.m_page_table = page_table_copy.value();
+	return copy;
+}
+
+void AddressSpace::load() {
+	m_page_table.load();
+}
+
+bool AddressSpace::operator==(const AddressSpace& other) const {
+	return m_page_table == other.m_page_table;
+}
+
+bool AddressSpace::operator!=(const AddressSpace& other) const {
+	return !(*this == other);
 }
