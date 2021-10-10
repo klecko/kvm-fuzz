@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 TEST_CASE("fork") {
 	printf("FORK TEST --------------------------------------------------\n");
@@ -47,13 +49,34 @@ TEST_CASE("pids fork") {
 }
 
 
+// uint8_t global = 0;
+
 // void foo() {
 // 	printf("hello from thread!\n");
+// 	global = 1;
+// }
+
+// TEST_CASE("thread") {
+// 	// thread: CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+//     //         CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID |
+//     //         CLONE_CHILD_CLEARTID
+
+//     // thread: 0x3d0f00 0x7ffff87fddf0 0x7ffff87fe9d0 0x7ffff87fe9d0 0x7ffff87fe700
+// 	void* stack = mmap(nullptr, 0x10000, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+// 	int flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+//             CLONE_SYSVSEM | /*CLONE_SETTLS | */CLONE_PARENT_SETTID |
+//             CLONE_CHILD_CLEARTID;
+// 	REQUIRE(stack != MAP_FAILED);
+// 	// clone(foo, stack, flags,)
+// 	int parent_tid = 0, child_tid = 0;
+// 	int ret = syscall(SYS_clone, flags, stack, &parent_tid, &child_tid, 0);
+// 	printf("%d\n", ret);
 // }
 
 // TEST_CASE("thread") {
 // 	printf("THREAD TEST --------------------------------------------------\n");
+// 	REQUIRE(global == 0);
 // 	std::thread t(foo);
-// 	if (t.joinable())
-// 		t.join();
+// 	t.join();
+// 	REQUIRE(global == 1);
 // }
