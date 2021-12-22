@@ -27,15 +27,15 @@ fn sys_writev(self: *Process, fd: linux.fd_t, iov_buf: UserSlice([]const linux.i
 
         // If writing to stderr, assume this is an assertion failed, and report
         // it as crash
-        if (fd == linux.STDERR_FILENO) {
-            const fault = hypercalls.FaultInfo{
-                .fault_type = .AssertionFailed,
-                .rip = 0, // TODO
-                .fault_addr = 0,
-                .kernel = false,
-            };
-            hypercalls.endRun(.Crash, &fault);
-        }
+        // if (fd == linux.STDERR_FILENO) {
+        //     const fault = hypercalls.FaultInfo{
+        //         .fault_type = .AssertionFailed,
+        //         .rip = 0, // TODO
+        //         .fault_addr = 0,
+        //         .kernel = false,
+        //     };
+        //     hypercalls.endRun(.Crash, &fault);
+        // }
     }
     return ret;
 }

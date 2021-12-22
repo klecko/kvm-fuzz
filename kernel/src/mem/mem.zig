@@ -3,6 +3,7 @@ pub const pmm = @import("pmm3.zig");
 pub const vmm = @import("vmm.zig");
 pub const safe = @import("safe.zig");
 pub const layout = @import("layout.zig");
+pub const RegionManager = @import("region_manager.zig").RegionManager;
 const address_space = @import("address_space.zig");
 pub const AddressSpace = address_space.AddressSpace;
 pub const Perms = address_space.Perms;

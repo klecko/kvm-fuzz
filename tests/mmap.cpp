@@ -49,13 +49,14 @@ TEST_CASE("mmap fixed") {
 	*p = 1;
 
 	// Map one page further
-	void* p2 = mmap(p + PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	uint8_t* p2 = (uint8_t*)mmap(p + PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	REQUIRE(p2 == p + PAGE_SIZE);
-	*(uint8_t*)p2 = 2;
+	*p2 = 2;
 
 	// Remap first page
-	void* p3 = mmap(p, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
+	uint8_t* p3 = (uint8_t*)mmap(p, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	REQUIRE(p3 == p);
+	REQUIRE(*p3 == 0);
 	*(uint8_t*)p3 = 3;
 
 	// I don't know if these should be required, as they depend on mmap_min_addr
@@ -145,9 +146,12 @@ TEST_CASE("mmap prot none") {
 }
 
 TEST_CASE("mmap hint") {
-	// Hint not mapped
-	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	// Map two pages, unmap one of them
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, 2*PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p1 != MAP_FAILED);
+	REQUIRE(munmap(p1 + PAGE_SIZE, PAGE_SIZE) == 0);
+
+	// Hint not mapped
 	uint8_t* p2 = (uint8_t*)mmap(p1 + PAGE_SIZE, PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p2 == p1 + PAGE_SIZE);
 
@@ -161,6 +165,7 @@ TEST_CASE("mmap hint") {
 	REQUIRE(munmap(p3, PAGE_SIZE) == 0);
 }
 
+// This requires test mmap_hint to pass
 bool is_mapped(void* page) {
 	// Map with addr without MAP_FIXED and see if succeeds
 	void* p = mmap(page, PAGE_SIZE, prot, flags, -1, 0);
@@ -179,17 +184,21 @@ TEST_CASE("munmap not mappped") {
 	// Munmap the three pages
 	REQUIRE(munmap(p1, 3*PAGE_SIZE) == 0);
 
-	// Make sure the third one has actually been unmapped
+	// Make sure both pages have actually been unmapped
+	REQUIRE(!is_mapped(p1));
 	REQUIRE(!is_mapped(p1 + 2*PAGE_SIZE));
 }
 
 TEST_CASE("mmap partial") {
-	// Attempting to map a region which is already mapped results in the first
-	// unmapped part of the region mapped
+	// We've got a mapped page. Attempting to map two pages at the page before
+	// it results in the page before it mapped. However, as the second page is
+	// already mapped, the two pages end up being mapped somewhere else.
 	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p1 != MAP_FAILED);
 	uint8_t* p2 = (uint8_t*)mmap(p1 - PAGE_SIZE, 2*PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p2 != MAP_FAILED);
+
+	// p2 is not at p1 - PAGE_SIZE, but that page is now mapped (!!)
 	REQUIRE(p2 != p1 - PAGE_SIZE);
 	REQUIRE(is_mapped(p1 - PAGE_SIZE));
 	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
@@ -208,14 +217,19 @@ TEST_CASE("mmap partial2") {
 	REQUIRE(p3 != MAP_FAILED);
 	REQUIRE(p3 != p1);
 	REQUIRE(!is_mapped(p1 + PAGE_SIZE));
-	REQUIRE(munmap(p3, PAGE_SIZE) == 0);
+
+	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
+	REQUIRE(munmap(p3, 3*PAGE_SIZE) == 0);
 }
 
 TEST_CASE("mmap partial fixed") {
 	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p1 != MAP_FAILED);
+	*p1 = 1;
 	uint8_t* p2 = (uint8_t*)mmap(p1 - PAGE_SIZE, 2*PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
 	REQUIRE(p2 == p1 - PAGE_SIZE);
+	REQUIRE(*p1 == 0);
 	REQUIRE(munmap(p2, 2*PAGE_SIZE) == 0);
 	REQUIRE(!is_mapped(p1));
 }

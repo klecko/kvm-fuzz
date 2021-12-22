@@ -25,6 +25,8 @@ fn sys_brk(self: *Process, addr: usize) usize {
         const size = brk_next_page - addr_next_page;
         self.space.unmapRange(addr_next_page, size) catch |err| switch (err) {
             error.NotMapped, error.NotUserRange => unreachable,
+            // OOM should be impossible here, as we are not splitting any region.
+            error.OutOfMemory => unreachable,
         };
     }
 

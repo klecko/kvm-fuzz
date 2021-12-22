@@ -152,3 +152,14 @@ pub fn disableInterrupts() void {
 pub fn hlt() void {
     asm volatile ("hlt");
 }
+
+pub fn rdtsc() usize {
+    var high: u32 = undefined;
+    var low: u32 = undefined;
+    asm volatile (
+        \\rdtsc
+        : [high] "={edx}" (high),
+          [low] "={eax}" (low)
+    );
+    return (@intCast(u64, high) << 32) | low;
+}

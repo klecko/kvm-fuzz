@@ -17,11 +17,19 @@ pub const Perms = packed struct {
 pub const AddressSpace = struct {
     allocator: *Allocator,
     page_table: PageTable,
+    user_mappings: mem.RegionManager,
 
     pub fn fromCurrent(allocator: *Allocator) AddressSpace {
+        const page_table = PageTable.fromCurrent();
         return AddressSpace{
             .allocator = allocator,
-            .page_table = PageTable.fromCurrent(),
+            .page_table = page_table,
+            .user_mappings = mem.RegionManager.initCheckNotMapped(
+                allocator,
+                mem.layout.user_mappings_start,
+                mem.layout.user_end,
+                page_table,
+            ),
         };
     }
 
@@ -55,6 +63,9 @@ pub const AddressSpace = struct {
     ) MappingError!void {
         try checkRange(addr, length);
 
+        // Mark range as mapped
+        try self.user_mappings.setMapped(addr, addr + length);
+
         // Attempt to allocate physical memory for the range
         const num_frames = @divExact(length, std.mem.page_size);
         var frames = try mem.pmm.allocFrames(self.allocator, num_frames);
@@ -82,7 +93,15 @@ pub const AddressSpace = struct {
             i += 1;
             page_base += std.mem.page_size;
         }) {
-            try self.page_table.mapPage(page_base, frames[i], mapping_options);
+            self.page_table.mapPage(page_base, frames[i], mapping_options) catch |err| switch (err) {
+                error.AlreadyMapped => return err,
+                else => {
+                    // We need to set the rest of the region as not mapped before
+                    // returning the error. I don't know if that can fail.
+                    self.user_mappings.setNotMapped(page_base, addr + length) catch unreachable;
+                    return err;
+                },
+            };
         }
     }
 
@@ -93,34 +112,18 @@ pub const AddressSpace = struct {
         flags: MapFlags,
     ) error{OutOfMemory}!usize {
         assert(mem.isPageAligned(length));
-        if (self.findFreeRange(length)) |range_base_addr| {
-            self.mapRange(range_base_addr, length, perms, flags) catch |err| switch (err) {
-                error.AlreadyMapped, error.NotUserRange => unreachable,
-                error.OutOfMemory => return error.OutOfMemory,
-            };
-            return range_base_addr;
-        }
-        return error.OutOfMemory;
+        const range_base_addr = self.user_mappings.findNotMapped(length) orelse return error.OutOfMemory;
+
+        self.mapRange(range_base_addr, length, perms, flags) catch |err| switch (err) {
+            // These two represent a bug in RegionManager.findNotMapped, as it
+            // should always return a not mapped user range.
+            error.AlreadyMapped, error.NotUserRange => unreachable,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+        return range_base_addr;
     }
 
-    fn findFreeRange(self: *AddressSpace, range_length: usize) ?usize {
-        var base = mem.layout.user_mappings_start;
-        while (mem.safe.isAddressInUserRange(base)) {
-            var length: usize = 0;
-            while (length < range_length and !self.page_table.isMapped(base + length)) {
-                length += std.mem.page_size;
-            }
-
-            // If the loop got to the end, we found our desired region
-            if (length == range_length)
-                return base;
-
-            base += length + std.mem.page_size;
-        }
-        return null;
-    }
-
-    const UnmappingError = PageTable.UnmappingError || error{NotUserRange};
+    const UnmappingError = PageTable.UnmappingError || error{ NotUserRange, OutOfMemory };
 
     /// Unmap every mapped page in a range of memory. If there's any not mapped
     /// page, it will be ignored, and at the end it will return error.NotMapped.
@@ -130,6 +133,9 @@ pub const AddressSpace = struct {
         length: usize,
     ) UnmappingError!void {
         try checkRange(addr, length);
+
+        // Mark range as not mapped
+        try self.user_mappings.setNotMapped(addr, addr + length);
 
         // Unmap every page
         var not_mapped: bool = false;
@@ -167,6 +173,8 @@ pub const AddressSpace = struct {
         return AddressSpace{
             .allocator = self.allocator,
             .page_table = try PageTable.clone(self.page_table),
+            // TODO: fixme
+            .user_mappings = self.user_mappings, //mem.RegionManager.init(self.allocator),
         };
     }
 };

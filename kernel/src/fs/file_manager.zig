@@ -92,7 +92,7 @@ pub fn openSocket(
     socket_type: fs.FileDescriptionSocket.SocketType,
 ) Allocator.Error!*fs.FileDescription {
     const buf = fileContent("input") orelse {
-        log.alert("openSocket but there's no file named 'input', returning as if OOM", .{});
+        log.alert("openSocket but there's no file named 'input', returning as if OOM\n", .{});
         return Allocator.Error.OutOfMemory;
     };
     const socket = try fs.FileDescriptionSocket.create(allocator, buf, socket_type);

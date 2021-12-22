@@ -145,6 +145,7 @@ const handle_sys_mmap = @import("syscalls/mmap.zig").handle_sys_mmap;
 const handle_sys_munmap = @import("syscalls/mmap.zig").handle_sys_munmap;
 const handle_sys_mprotect = @import("syscalls/mmap.zig").handle_sys_mprotect;
 const handle_sys_prlimit = @import("syscalls/prlimit.zig").handle_sys_prlimit;
+const handle_sys_time = @import("syscalls/time.zig").handle_sys_time;
 const handle_sys_clock_gettime = @import("syscalls/time.zig").handle_sys_clock_gettime;
 const handle_sys_dup = @import("syscalls/dup.zig").handle_sys_dup;
 const handle_sys_dup2 = @import("syscalls/dup.zig").handle_sys_dup2;
@@ -154,6 +155,8 @@ const handle_sys_socket = @import("syscalls/socket.zig").handle_sys_socket;
 const handle_sys_bind = @import("syscalls/socket.zig").handle_sys_bind;
 const handle_sys_listen = @import("syscalls/socket.zig").handle_sys_listen;
 const handle_sys_accept = @import("syscalls/socket.zig").handle_sys_accept;
+const handle_sys_recv = @import("syscalls/socket.zig").handle_sys_recv;
+const handle_sys_recvfrom = @import("syscalls/socket.zig").handle_sys_recvfrom;
 const handle_sys_sysinfo = @import("syscalls/sysinfo.zig").handle_sys_sysinfo;
 const handle_sys_fcntl = @import("syscalls/fcntl.zig").handle_sys_fcntl;
 const handle_sys_clone = @import("syscalls/clone.zig").handle_sys_clone;
@@ -167,7 +170,7 @@ const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
 const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
 
-pub fn handleSyscall(
+pub noinline fn handleSyscall(
     self: *Process,
     syscall: linux.SYS,
     arg0: usize,
@@ -198,6 +201,8 @@ pub fn handleSyscall(
         .bind => self.handle_sys_bind(arg0, arg1, arg2),
         .listen => self.handle_sys_listen(arg0, arg1),
         .accept => self.handle_sys_accept(arg0, arg1, arg2),
+        // .recv => self.handle_sys_recv(arg0, arg1, arg2, arg3),
+        .recvfrom => self.handle_sys_recvfrom(arg0, arg1, arg2, arg3, arg4, arg5),
         .close => self.handle_sys_close(arg0),
         .uname => self.handle_sys_uname(arg0),
         .getcwd => self.handle_sys_getcwd(arg0, arg1),
@@ -207,6 +212,7 @@ pub fn handleSyscall(
         .mprotect => self.handle_sys_mprotect(arg0, arg1, arg2),
         .munmap => self.handle_sys_munmap(arg0, arg1),
         .prlimit64 => self.handle_sys_prlimit(arg0, arg1, arg2, arg3),
+        .time => self.handle_sys_time(arg0),
         .clock_gettime => self.handle_sys_clock_gettime(arg0, arg1),
         .sysinfo => self.handle_sys_sysinfo(arg0),
         .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
@@ -219,8 +225,17 @@ pub fn handleSyscall(
         .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2),
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
-        .set_tid_address, .set_robust_list, .rt_sigaction, .rt_sigprocmask, .sigaltstack, .setitimer, .madvise => blk: {
-            log.info("TODO {s}\n", .{@tagName(syscall)});
+        .set_tid_address,
+        .set_robust_list,
+        .rt_sigaction,
+        .rt_sigprocmask,
+        .sigaltstack,
+        .setitimer,
+        .madvise,
+        .setsockopt,
+        .sched_yield,
+        => blk: {
+            // log.info("TODO {s}\n", .{@tagName(syscall)});
             break :blk @as(usize, 0);
         },
         .exit => self.handle_sys_exit(arg0, regs),

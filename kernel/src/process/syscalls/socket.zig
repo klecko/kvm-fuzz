@@ -2,6 +2,7 @@ usingnamespace @import("../common.zig");
 const fs = @import("../../fs/fs.zig");
 const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
+const UserSlice = mem.safe.UserSlice;
 
 fn sys_socket(self: *Process, domain: i32, type_: i32, protocol: i32) !linux.fd_t {
     const fd = self.availableFd() orelse return error.NoFdAvailable;
@@ -59,8 +60,8 @@ pub fn handle_sys_listen(self: *Process, arg0: usize, arg1: usize) !usize {
 fn sys_accept(
     self: *Process,
     sockfd: linux.fd_t,
-    addr_ptr: UserPtr(*linux.sockaddr),
-    addr_len_ptr: UserPtr(*linux.socklen_t),
+    addr_ptr: ?UserPtr(*linux.sockaddr),
+    addr_len_ptr: ?UserPtr(*linux.socklen_t),
 ) !linux.fd_t {
     const file = self.files.table.get(sockfd) orelse return error.BadFD;
     const socket = file.socket() orelse return error.NotSocket;
@@ -88,8 +89,62 @@ pub fn handle_sys_accept(
     arg2: usize,
 ) !usize {
     const sockfd = std.meta.cast(linux.fd_t, arg0);
-    const addr_ptr = try UserPtr(*linux.sockaddr).fromFlat(arg1);
-    const addr_len_ptr = try UserPtr(*linux.socklen_t).fromFlat(arg2);
+    const addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg1);
+    const addr_len_ptr = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg2);
     const ret = try sys_accept(self, sockfd, addr_ptr, addr_len_ptr);
     return std.meta.cast(usize, ret);
+}
+
+fn sys_recv(
+    self: *Process,
+    sockfd: linux.fd_t,
+    buf: UserSlice([]u8),
+    flags: linux.i32,
+) !usize {
+    return sys_recvfrom(self, sockfd, buf, flags, null, null);
+}
+
+pub fn handle_sys_recv(
+    self: *Process,
+    arg0: usize,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+) !usize {
+    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
+    const flags = std.meta.cast(i32, arg3);
+    return sys_recv(self, sockfd, buf, flags);
+}
+
+fn sys_recvfrom(
+    self: *Process,
+    sockfd: linux.fd_t,
+    buf: UserSlice([]u8),
+    flags: i32,
+    src_addr_ptr: ?UserPtr(*linux.sockaddr),
+    addr_len_ptr: ?UserPtr(*linux.socklen_t),
+) !usize {
+    const file = self.files.table.get(sockfd) orelse return error.BadFD;
+    _ = file.socket() orelse return error.NotSocket;
+    if (!file.isReadable())
+        return error.BadFD;
+    return file.read(file, buf);
+}
+
+pub fn handle_sys_recvfrom(
+    self: *Process,
+    arg0: usize,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+) !usize {
+    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
+    const flags = std.meta.cast(i32, arg3);
+    const src_addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg4);
+    const addr_len = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg5);
+    return sys_recvfrom(self, sockfd, buf, flags, src_addr_ptr, addr_len);
 }

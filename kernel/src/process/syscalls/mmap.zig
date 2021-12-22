@@ -136,7 +136,7 @@ fn sys_munmap(self: *Process, addr: usize, length: usize) !void {
     // Trying to munmap a not mapped range is not an error.
     self.space.unmapRange(addr, length_aligned) catch |err| switch (err) {
         error.NotMapped => {},
-        error.NotUserRange => return error.InvalidArgument,
+        error.NotUserRange, error.OutOfMemory => return err,
     };
 }
 

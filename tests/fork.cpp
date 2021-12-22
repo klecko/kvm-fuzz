@@ -20,6 +20,8 @@ TEST_CASE("fork") {
 	pid_t pid = fork();
 	REQUIRE(pid != -1);
 	if (pid == 0) {
+		// TODO: if this is removed, process exits before parent calls waitpid,
+		// leading to deadlock
 		for (volatile int i = 0; i < 12345678; i++);
 		*p_shared = 1;
 		*p_private = 1;

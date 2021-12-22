@@ -14,8 +14,8 @@ const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
 const Process = @import("process/Process.zig");
 
-// pub const log_level: std.log.Level = .info;
 pub const log_level: std.log.Level = .info;
+// pub const log_level: std.log.Level = .debug;
 
 export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     std.log.info("hello from zig\n", .{});
@@ -34,7 +34,7 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     mem.heap.initHeapAllocator();
     // const allocator = mem.heap.page_allocator;
     const allocator = mem.heap.heap_allocator;
-    // const allocator = mem.heap.fixed_size_block_allocator;
+    // const allocator = mem.heap.block_allocator;
     // var gpa = mem.heap.GeneralPurposeAllocator(.{}){};
     // const allocator = &gpa.allocator;
     fs.file_manager.init(allocator, info.num_files);

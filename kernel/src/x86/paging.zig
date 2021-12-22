@@ -268,7 +268,7 @@ pub const PageTable = struct {
         x86.flush_tlb_entry(virt);
     }
 
-    pub fn isMapped(self: *PageTable, virt: usize) bool {
+    pub fn isMapped(self: PageTable, virt: usize) bool {
         if (self.getPTE(virt)) |pte| {
             return pte.isPresent();
         }
@@ -317,7 +317,7 @@ pub const PageTable = struct {
 
     /// Get the PTE of a given page, or null if any entry along the way was
     /// not present.
-    pub fn getPTE(self: *PageTable, page_vaddr: usize) ?*PageTableEntry {
+    pub fn getPTE(self: PageTable, page_vaddr: usize) ?*PageTableEntry {
         const ptl4_i = PTL4_INDEX(page_vaddr);
         const ptl3_i = PTL3_INDEX(page_vaddr);
         const ptl2_i = PTL2_INDEX(page_vaddr);

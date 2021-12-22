@@ -1,5 +1,6 @@
 //! This PMM uses a static bitset to indicate if a frame is free or not. It does
 //! not use dynamic memory, so the size for the bitset is fixed at comptime.
+//! This limits the amount of memory the virtual machine can have.
 //! It doesn't depend on the VMM. Free and alloc are both O(N).
 
 usingnamespace @import("../common.zig");

@@ -21,6 +21,7 @@ fn sys_wait4(
     else
         State{ .waiting_for_tgid = pid };
 
+    // TODO: process we are waiting for may have already exited, leading to deadlock
     scheduler.schedule(regs);
     if (scheduler.current() == self)
         panic("deadlock\n", .{});

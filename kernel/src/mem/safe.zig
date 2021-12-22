@@ -9,10 +9,10 @@ pub fn isAddressInUserRange(addr: usize) bool {
 }
 
 pub fn isRangeInUserRange(addr: usize, len: usize) bool {
-    return if (std.math.add(usize, addr, len)) |addr_end|
-        isAddressInUserRange(addr) and isAddressInUserRange(addr_end - 1)
-    else |err|
-        false; // Overflow occurred
+    // We allow empty ranges here so copyFromUser and copyToUser don't fail
+    // with empty slices pointing to wrong region.
+    const addr_end = std.math.add(usize, addr, len) catch return false;
+    return len == 0 or (isAddressInUserRange(addr) and isAddressInUserRange(addr_end - 1));
 }
 
 pub fn isPtrInUserRange(comptime T: type, ptr: *const T) bool {
@@ -28,10 +28,8 @@ pub fn isAddressInKernelRange(addr: usize) bool {
 }
 
 pub fn isRangeInKernelRange(addr: usize, len: usize) bool {
-    return if (std.math.add(usize, addr, len)) |addr_end|
-        isAddressInKernelRange(addr) and isAddressInKernelRange(addr_end - 1)
-    else |err|
-        false; // Overflow occurred
+    const addr_end = std.math.add(usize, addr, len) catch return false;
+    return len == 0 or (isAddressInKernelRange(addr) and isAddressInKernelRange(addr_end - 1));
 }
 
 pub fn isPtrInKernelRange(comptime T: type, ptr: *const T) bool {
