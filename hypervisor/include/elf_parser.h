@@ -121,6 +121,7 @@ class ElfParser {
 		std::vector<segment_t> segments() const;
 		std::vector<section_t> sections() const;
 		std::vector<symbol_t> symbols() const;
+		std::vector<std::string> dependencies() const;
 		//std::vector<relocation_t> relocations() const;
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
@@ -142,6 +143,7 @@ class ElfParser {
 		std::vector<section_t> m_sections;
 		std::vector<segment_t> m_segments;
 		std::vector<symbol_t> m_symbols;
+		std::vector<std::string> m_dependencies;
 		//std::vector<relocation_t> m_relocations;
 
 		// libdwarf stuff

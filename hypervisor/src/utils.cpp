@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <sys/stat.h>
 #include <openssl/md5.h>
+#include <vector>
 #include "utils.h"
 #include "common.h"
 
@@ -63,4 +64,26 @@ string to_hex(size_t num) {
 	ostringstream ss;
 	ss << hex << num;
 	return ss.str();
+}
+
+string exec_cmd(const string& cmd) {
+	char buffer[128];
+	string result = "";
+	FILE* pipe = popen(cmd.c_str(), "r");
+	ERROR_ON(!pipe, "Error running cmd '%s'", cmd.c_str());
+	while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+		result += buffer;
+	}
+	pclose(pipe);
+	return result;
+}
+
+vector<string> split_string(const string& s, const string& delimiter) {
+	vector<string> result;
+	size_t pos1 = 0, pos2;
+	while ((pos2 = s.find(delimiter, pos1)) != string::npos) {
+		result.push_back(s.substr(pos1, pos2-pos1));
+		pos1 = pos2 + 1;
+	}
+	return result;
 }

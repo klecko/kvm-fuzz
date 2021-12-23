@@ -272,6 +272,11 @@ void Vm::load_elfs() {
 		          m_interpreter->path().c_str(), m_interpreter->load_addr());
 		m_mmu.load_elf(m_interpreter->segments(), false);
 	}
+
+	// Read and load elf dependencies as memory-loaded files
+	for (const string& path : m_elf.dependencies()) {
+		read_and_set_file(path);
+	}
 }
 
 void Vm::setup_kernel_execution() {
@@ -571,9 +576,10 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 
 	if (reason == RunEndReason::Crash)
 		cout << fault() << endl;
-	ASSERT(reason == RunEndReason::Debug, "run until end reason: %d", reason);
+	ASSERT(reason == RunEndReason::Debug, "run until end reason: %s",
+	       Vm::reason_str[reason]);
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
-		   m_regs->rip, pc);
+	       m_regs->rip, pc);
 }
 
 void Vm::set_single_step(bool enabled) {
@@ -774,11 +780,18 @@ void Vm::set_file(const string& filename, const string& content, bool check) {
 	};
 }
 
+void Vm::read_and_set_file(const string& filename) {
+	static vector<string> file_contents;
+	string content = read_file(filename);
+	set_file(filename, content);
+	file_contents.push_back(move(content));
+}
+
 vaddr_t Vm::resolve_symbol(const string& symbol_name) {
 	for (const symbol_t symbol : m_elf.symbols())
 		if (symbol.name == symbol_name)
 			return symbol.value;
-	ASSERT(false, "not found symbol: %s", symbol_name.c_str());
+	return 0;
 }
 
 void Vm::reset_timer() {

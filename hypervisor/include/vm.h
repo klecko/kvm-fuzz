@@ -94,6 +94,8 @@ public:
 	void set_file(const std::string& filename, const std::string& content,
 	              bool check = false);
 
+	void read_and_set_file(const std::string& filename);
+
 	vaddr_t resolve_symbol(const std::string& symbol_name);
 
 	// Reset the timer inside the VM

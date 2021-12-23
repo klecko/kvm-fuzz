@@ -5,6 +5,7 @@
 #include <limits>
 #include <libelf.h>
 #include "elf_parser.h"
+#include "utils.h"
 
 #define PAGE_SIZE 0x1000
 #define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
@@ -121,6 +122,20 @@ ElfParser::ElfParser(const string& elf_path)
 		}
 	}
 
+	// Get dependencies using ldd
+	string ldd_result = exec_cmd("ldd " + elf_path + " 2>&1");
+	vector<string> lines = split_string(ldd_result, "\n");
+	for (const string& line : lines) {
+		size_t pos1 = line.find("=> ");
+		if (pos1 == string::npos)
+			continue;
+		pos1 += 3;
+		size_t pos2 = line.find(" ", pos1); // assume path doesn't have spaces :')
+		if (pos2 == string::npos)
+			continue;
+		m_dependencies.push_back(line.substr(pos1, pos2-pos1));
+	}
+
 	// libdwarf stuff.
 	// TODO: This is leaky, and unsafe when this object is copied
 	// Get libdwarf handler from memory-loaded elf
@@ -204,6 +219,10 @@ vector<section_t> ElfParser::sections() const {
 
 vector<symbol_t> ElfParser::symbols() const {
 	return m_symbols;
+}
+
+vector<string> ElfParser::dependencies() const {
+	return m_dependencies;
 }
 
 pair<vaddr_t, vaddr_t> ElfParser::section_limits(const string& name) const {

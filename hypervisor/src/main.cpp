@@ -156,12 +156,6 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 	}
 }
 
-void read_and_set_file(const string& filename, Vm& vm) {
-	static vector<string> file_contents;
-	string content = read_file(filename);
-	vm.set_file(filename, content);
-	file_contents.push_back(move(content));
-}
 
 int main(int argc, char** argv) {
 	Args args;
@@ -199,13 +193,15 @@ int main(int argc, char** argv) {
 
 	// Other memory-loaded files should be set here as well
 	for (const string& path : args.memory_files) {
-		read_and_set_file(path, vm);
+		vm.read_and_set_file(path);
 	}
 
 	// Run until main before forking or running single input
-	// vm.run_until(vm.elf().entry(), stats);
-	// vm.run_until(vm.elf().load_addr() + 0x7640, stats);
-	vm.run_until(vm.resolve_symbol("main"), stats);
+	vaddr_t main_addr = vm.resolve_symbol("main");
+	if (main_addr)
+		vm.run_until(vm.resolve_symbol("main"), stats);
+	else
+		vm.run_until(vm.elf().entry(), stats);
 
 	// Reset timer so it starts counting from 0, and set specified timeout
 	vm.reset_timer();

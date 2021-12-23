@@ -13,3 +13,7 @@ std::string md5(const uint8_t* buf, size_t length);
 std::string md5_file(const std::string& filepath);
 
 std::string to_hex(size_t num);
+
+std::string exec_cmd(const std::string& cmd);
+
+std::vector<std::string> split_string(const std::string& s, const std::string& delimiter);
