@@ -33,33 +33,4 @@ pub fn build(b: *std.build.Builder) void {
     // Format step
     const fmt_step = b.addFmt(&.{"src"});
     exe.step.dependOn(&fmt_step.step);
-
-    // Run step
-    // const run_step = std.build.RunStep.create(b, "run");
-
-    // run_step.addArtifactArg(exe);
-    // const kvm_fuzz_path = b.pathJoin(&.{ exe.output_dir.?, "../hypervisor/kvm-fuzz"});
-    // const kernel_path = b.pathJoin(&.{ exe.output_dir.?, exe.out_filename });
-    // run_step.addArgs(&.{
-    //     kvm_fuzz_path,
-    //     "-k",
-    //     kernel_path,
-    //     "--single-run=/bin/ls",
-    //     "--",
-    // })
-
-    // TODO take a look at exe.run()
-    // const run_option = b.step("run", "Run the kernel in the hypervisor with a test binary");
-    // const run = b.addSystemCommand(&.{
-    //     "../build/hypervisor/kvm-fuzz",
-    //     "-k",
-    //     exe.getOutputPath(),
-    //     "--single-run=../build/in/parallel",
-    //     "--",
-    //     "../test_bins/readelf-static",
-    //     "-a",
-    //     "input"
-    // });
-    // run.step.dependOn(&exe.step);
-    // run_option.dependOn(&run.step);
 }
