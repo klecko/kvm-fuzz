@@ -1,5 +1,8 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const fd_t = linux.fd_t;
+const cast = std.zig.c_translation.cast;
 
 fn sys_dup(self: *Process, old_fd: fd_t) !fd_t {
     // Dup old_fd into the first available fd
@@ -10,9 +13,9 @@ fn sys_dup(self: *Process, old_fd: fd_t) !fd_t {
 }
 
 pub fn handle_sys_dup(self: *Process, arg0: usize) !usize {
-    const old_fd = std.meta.cast(fd_t, arg0);
+    const old_fd = cast(fd_t, arg0);
     const ret = try sys_dup(self, old_fd);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }
 
 fn sys_dup2(self: *Process, old_fd: fd_t, new_fd: fd_t) !fd_t {
@@ -33,8 +36,8 @@ fn sys_dup2(self: *Process, old_fd: fd_t, new_fd: fd_t) !fd_t {
 }
 
 pub fn handle_sys_dup2(self: *Process, arg0: usize, arg1: usize) !usize {
-    const old_fd = std.meta.cast(fd_t, arg0);
-    const new_fd = std.meta.cast(fd_t, arg1);
+    const old_fd = cast(fd_t, arg0);
+    const new_fd = cast(fd_t, arg1);
     const ret = try sys_dup2(self, old_fd, new_fd);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }

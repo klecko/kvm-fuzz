@@ -2,7 +2,8 @@
 //! The memory for this slice is allocated at `init()` depending on the memory
 //! length, and it does not depend on the VMM. Both free and alloc are O(1).
 
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");
 const mem = @import("mem.zig");
@@ -107,7 +108,7 @@ pub noinline fn allocFrame() Error!usize {
     return frame;
 }
 
-pub fn allocFrames(allocator: *std.mem.Allocator, n: usize) Error![]usize {
+pub fn allocFrames(allocator: std.mem.Allocator, n: usize) Error![]usize {
     // It's important to allocate the slice first, because it may also need to
     // allocate frames
     var frames = try allocator.alloc(usize, n);

@@ -1,4 +1,6 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const common = @import("../common.zig");
 const mem = @import("mem.zig");
 const x86 = @import("../x86/x86.zig");
 const PageTable = x86.paging.PageTable;
@@ -15,11 +17,11 @@ pub const Perms = packed struct {
 };
 
 pub const AddressSpace = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     page_table: PageTable,
     user_mappings: mem.RegionManager,
 
-    pub fn fromCurrent(allocator: *Allocator) AddressSpace {
+    pub fn fromCurrent(allocator: Allocator) AddressSpace {
         const page_table = PageTable.fromCurrent();
         return AddressSpace{
             .allocator = allocator,

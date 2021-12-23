@@ -1,4 +1,5 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const x86 = @import("x86.zig");
 const scheduler = @import("../scheduler.zig");
 const linux = @import("../linux.zig");
@@ -19,7 +20,7 @@ export fn handleSyscall(
     number: usize,
     regs: *Process.UserRegs,
 ) usize {
-    const sys = std.meta.intToEnum(linux.SYS, number) catch return linux.errno(linux.ENOSYS);
+    const sys = std.meta.intToEnum(linux.SYS, number) catch return linux.errno(linux.E.NOSYS);
     const ret = scheduler.current().handleSyscall(sys, arg0, arg1, arg2, arg3, arg4, arg5, regs);
     return ret;
 }
@@ -116,7 +117,7 @@ pub fn init() void {
     // Save kernel stack
     kernel_stack = asm volatile (
         \\mov %%rsp, %[ret]
-        : [ret] "=r" (-> usize)
+        : [ret] "=r" (-> usize),
     );
 
     log.debug("Syscall handler initialized\n", .{});

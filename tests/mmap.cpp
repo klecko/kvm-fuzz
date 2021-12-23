@@ -42,6 +42,13 @@ TEST_CASE("mmap file") {
 	REQUIRE(munmap(p, PAGE_SIZE) == 0);
 }
 
+TEST_CASE("mmap no file no anon") {
+	// -1 is not a special value
+	void* p = mmap(nullptr, PAGE_SIZE, PROT_READ, MAP_PRIVATE, -1, 0);
+	REQUIRE(p == MAP_FAILED);
+	REQUIRE(errno == EBADF);
+}
+
 TEST_CASE("mmap fixed") {
 	// First mapping
 	uint8_t* p = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);

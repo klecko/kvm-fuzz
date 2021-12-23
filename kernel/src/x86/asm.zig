@@ -44,7 +44,7 @@ pub fn wrmsr(msr: MSR, value: u64) void {
         :
         : [msr] "{rcx}" (msr),
           [value_low] "{rax}" (value & 0xFFFFFFFF),
-          [value_high] "{rdx}" (value >> 32)
+          [value_high] "{rdx}" (value >> 32),
         : "memory"
     );
 }
@@ -55,8 +55,8 @@ pub fn rdmsr(msr: MSR) usize {
     asm volatile (
         \\rdmsr
         : [high] "={edx}" (high),
-          [low] "={eax}" (low)
-        : [msr] "{rcx}" (msr)
+          [low] "={eax}" (low),
+        : [msr] "{rcx}" (msr),
         : "memory"
     );
     return (@intCast(u64, high) << 32) | low;
@@ -66,7 +66,7 @@ pub fn lgdt(gdt_ptr: *const x86.gdt.GDTPtr) void {
     asm volatile (
         \\lgdt (%[gdt_ptr])
         :
-        : [gdt_ptr] "r" (gdt_ptr)
+        : [gdt_ptr] "r" (gdt_ptr),
     );
 }
 
@@ -74,7 +74,7 @@ pub fn ltr(tss_segment_selector: x86.gdt.SegmentSelector) void {
     asm volatile (
         \\ltr %[tss_segment_selector]
         :
-        : [tss_segment_selector] "r" (@enumToInt(tss_segment_selector))
+        : [tss_segment_selector] "r" (@enumToInt(tss_segment_selector)),
     );
 }
 
@@ -82,21 +82,21 @@ pub fn lidt(idt_ptr: *const x86.idt.IDTPtr) void {
     asm volatile (
         \\lidt (%[idt_ptr])
         :
-        : [idt_ptr] "r" (idt_ptr)
+        : [idt_ptr] "r" (idt_ptr),
     );
 }
 
 pub fn rdcr2() u64 {
     return asm volatile (
         \\mov %%cr2, %[ret]
-        : [ret] "=r" (-> u64)
+        : [ret] "=r" (-> u64),
     );
 }
 
 pub fn rdcr3() u64 {
     return asm volatile (
         \\mov %%cr3, %[ret]
-        : [ret] "=r" (-> u64)
+        : [ret] "=r" (-> u64),
     );
 }
 
@@ -104,7 +104,7 @@ pub fn wrcr3(value: u64) void {
     asm volatile (
         \\mov %[value], %%cr3
         :
-        : [value] "r" (value)
+        : [value] "r" (value),
     );
 }
 
@@ -119,7 +119,7 @@ pub fn flush_tlb_entry(page_vaddr: usize) void {
     asm volatile (
         \\invlpg (%[page])
         :
-        : [page] "r" (page_vaddr)
+        : [page] "r" (page_vaddr),
         : "memory"
     );
 }
@@ -129,15 +129,15 @@ pub fn outb(comptime port: u16, value: u8) void {
         \\outb %[value], %[port]
         :
         : [port] "im" (port),
-          [value] "{al}" (value)
+          [value] "{al}" (value),
     );
 }
 
 pub fn inb(comptime port: u16) u8 {
     return asm volatile (
         \\inb %[port], %[value]
-        : [value] "={al}" (-> u8)
-        : [port] "im" (port)
+        : [value] "={al}" (-> u8),
+        : [port] "im" (port),
     );
 }
 
@@ -159,7 +159,7 @@ pub fn rdtsc() usize {
     asm volatile (
         \\rdtsc
         : [high] "={edx}" (high),
-          [low] "={eax}" (low)
+          [low] "={eax}" (low),
     );
     return (@intCast(u64, high) << 32) | low;
 }

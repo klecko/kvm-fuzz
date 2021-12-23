@@ -1,4 +1,7 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const common = @import("../common.zig");
+const panic = common.panic;
 const PageTable = @import("../x86/x86.zig").paging.PageTable;
 const Allocator = std.mem.Allocator;
 
@@ -16,7 +19,7 @@ pub const RegionManager = struct {
     regions: std.ArrayList(Region),
 
     pub fn initCheckNotMapped(
-        allocator: *Allocator,
+        allocator: Allocator,
         addr_start: usize,
         addr_end: usize,
         page_table: PageTable,
@@ -34,7 +37,7 @@ pub const RegionManager = struct {
 
     // This is not public because it assumes the range is not mapped at all, so
     // it should be called from `initCheckNotMapped`.
-    fn init(allocator: *Allocator, addr_start: usize, addr_end: usize) RegionManager {
+    fn init(allocator: Allocator, addr_start: usize, addr_end: usize) RegionManager {
         return RegionManager{
             .total = Region{ .addr_start = addr_start, .addr_end = addr_end },
             .regions = std.ArrayList(Region).init(allocator),
@@ -99,7 +102,7 @@ pub const RegionManager = struct {
                 } else {
                     //   ________
                     // .............
-                    if (expanding_reg) |reg| {
+                    if (expanding_reg) |_| {
                         // Do nothing
                     } else {
                         region.addr_start = addr_start;

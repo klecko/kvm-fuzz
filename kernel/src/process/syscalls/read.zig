@@ -1,6 +1,9 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const UserSlice = mem.safe.UserSlice;
+const cast = std.zig.c_translation.cast;
 
 fn sys_read(self: *Process, fd: linux.fd_t, buf: UserSlice([]u8)) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
@@ -10,7 +13,7 @@ fn sys_read(self: *Process, fd: linux.fd_t, buf: UserSlice([]u8)) !usize {
 }
 
 pub fn handle_sys_read(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const fd = std.meta.cast(linux.fd_t, arg0);
+    const fd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
     return sys_read(self, fd, buf);
 }
@@ -43,8 +46,8 @@ pub fn handle_sys_pread64(
     arg2: usize,
     arg3: usize,
 ) !usize {
-    const fd = std.meta.cast(linux.fd_t, arg0);
+    const fd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
-    const offset = std.meta.cast(linux.off_t, arg3);
+    const offset = cast(linux.off_t, arg3);
     return sys_pread64(self, fd, buf, offset);
 }

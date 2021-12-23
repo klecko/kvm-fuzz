@@ -1,10 +1,14 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const scheduler = @import("../../scheduler.zig");
 const x86 = @import("../../x86/x86.zig");
 const FileDescriptorTable = @import("../FileDescriptorTable.zig");
 const UserPtr = mem.safe.UserPtr;
 const log = std.log.scoped(.sys_clone);
+const assert = std.debug.assert;
+const cast = std.zig.c_translation.cast;
 
 // const Regs = struct {
 //     rax: usize = 0,
@@ -49,10 +53,10 @@ fn sys_clone(
 
     // TODO errdefer
     const pid = Process.getNextPid();
-    const tgid = if (flags & linux.CLONE_THREAD != 0) self.tgid else pid;
-    const ptgid = if (flags & linux.CLONE_THREAD != 0) self.ptgid else self.tgid;
-    const space = if (flags & linux.CLONE_VM != 0) self.space else try self.space.clone();
-    const files = if (flags & linux.CLONE_FILES != 0)
+    const tgid = if (flags & linux.CLONE.THREAD != 0) self.tgid else pid;
+    const ptgid = if (flags & linux.CLONE.THREAD != 0) self.ptgid else self.tgid;
+    const space = if (flags & linux.CLONE.VM != 0) self.space else try self.space.clone();
+    const files = if (flags & linux.CLONE.FILES != 0)
         self.files.ref.ref()
     else
         try FileDescriptorTable.createDefault(self.allocator, self.limits.nofile.hard);
@@ -89,7 +93,7 @@ fn sys_clone(
     }
     try scheduler.addProcess(new_process);
 
-    if (flags & linux.CLONE_CHILD_SETTID != 0) {
+    if (flags & linux.CLONE.CHILD_SETTID != 0) {
         // This is thought to be done in the new process in before returning to
         // userspace. As we can't do that because we are directly returning to
         // userspace, do it now loading its address space temporary.
@@ -99,12 +103,12 @@ fn sys_clone(
         self.space.load();
     }
 
-    if (flags & linux.CLONE_PARENT_SETTID != 0) {
+    if (flags & linux.CLONE.PARENT_SETTID != 0) {
         assert(parent_tid_ptr != null);
         try mem.safe.copyToUserSingle(linux.pid_t, parent_tid_ptr.?, &new_process.pid);
     }
 
-    if (flags & linux.CLONE_SETTLS != 0) {
+    if (flags & linux.CLONE.SETTLS != 0) {
         x86.wrmsr(.FS_BASE, tls);
     }
 
@@ -126,5 +130,5 @@ pub fn handle_sys_clone(
     const child_tid_ptr = UserPtr(*linux.pid_t).fromFlatMaybeNull(arg3);
     const tls = arg4;
     const ret = sys_clone(self, flags, stack_ptr, parent_tid_ptr, child_tid_ptr, tls, regs) catch unreachable;
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }

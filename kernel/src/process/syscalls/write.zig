@@ -1,7 +1,10 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const hypercalls = @import("../../hypercalls.zig");
 const UserSlice = mem.safe.UserSlice;
+const cast = std.zig.c_translation.cast;
 
 fn sys_write(self: *Process, fd: linux.fd_t, buf: UserSlice([]const u8)) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
@@ -9,7 +12,7 @@ fn sys_write(self: *Process, fd: linux.fd_t, buf: UserSlice([]const u8)) !usize 
 }
 
 pub fn handle_sys_write(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const fd = std.meta.cast(linux.fd_t, arg0);
+    const fd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]const u8).fromFlat(arg1, arg2);
     return sys_write(self, fd, buf);
 }
@@ -41,8 +44,8 @@ fn sys_writev(self: *Process, fd: linux.fd_t, iov_buf: UserSlice([]const linux.i
 }
 
 pub fn handle_sys_writev(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const fd = std.meta.cast(linux.fd_t, arg0);
-    if (std.meta.cast(i32, arg2) < 0)
+    const fd = cast(linux.fd_t, arg0);
+    if (cast(i32, arg2) < 0)
         return error.InvalidArgument;
     const iov_buf = try UserSlice([]const linux.iovec).fromFlat(arg1, arg2);
     return sys_writev(self, fd, iov_buf);

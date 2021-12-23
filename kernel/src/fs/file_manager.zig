@@ -1,4 +1,4 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
 const hypercalls = @import("../hypercalls.zig");
 const mem = @import("../mem/mem.zig");
 const linux = @import("../linux.zig");
@@ -12,7 +12,7 @@ var file_contents: std.StringHashMap([]u8) = undefined;
 /// content. Insert the filename and the buffer into file_contents, and submit
 /// the address of the buffer and the address of the length to the hypervisor,
 /// which will write to them.
-pub fn init(allocator: *Allocator, num_files: usize) void {
+pub fn init(allocator: Allocator, num_files: usize) void {
     file_contents = std.StringHashMap([]u8).init(allocator);
 
     // Temporary buffer for the filename
@@ -60,7 +60,7 @@ const OpenError = Allocator.Error || error{FileNotFound};
 
 /// Open a regular file
 pub fn open(
-    allocator: *Allocator,
+    allocator: Allocator,
     filename: []const u8,
     flags: i32,
 ) OpenError!*fs.FileDescription {
@@ -72,27 +72,27 @@ pub fn open(
     return &file.desc;
 }
 
-pub fn openStdin(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+pub fn openStdin(allocator: Allocator) Allocator.Error!*fs.FileDescription {
     const stdin = try fs.FileDescriptionStdin.create(allocator);
     return &stdin.desc;
 }
 
-pub fn openStdout(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+pub fn openStdout(allocator: Allocator) Allocator.Error!*fs.FileDescription {
     const stdout = try fs.FileDescriptionStdout.create(allocator);
     return &stdout.desc;
 }
 
-pub fn openStderr(allocator: *Allocator) Allocator.Error!*fs.FileDescription {
+pub fn openStderr(allocator: Allocator) Allocator.Error!*fs.FileDescription {
     const stderr = try fs.FileDescriptionStderr.create(allocator);
     return &stderr.desc;
 }
 
 pub fn openSocket(
-    allocator: *Allocator,
+    allocator: Allocator,
     socket_type: fs.FileDescriptionSocket.SocketType,
 ) Allocator.Error!*fs.FileDescription {
     const buf = fileContent("input") orelse {
-        log.alert("openSocket but there's no file named 'input', returning as if OOM\n", .{});
+        log.warn("openSocket but there's no file named 'input', returning as if OOM\n", .{});
         return Allocator.Error.OutOfMemory;
     };
     const socket = try fs.FileDescriptionSocket.create(allocator, buf, socket_type);
@@ -100,7 +100,7 @@ pub fn openSocket(
 }
 
 /// Perform stat on a file
-pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.stat)) !void {
+pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.Stat)) !void {
     // Use the pointer to the buffer as inode, as that's unique for each file.
     const file_content = fileContent(filename) orelse {
         log.warn("attempt to stat unknown file '{s}'\n", .{filename});

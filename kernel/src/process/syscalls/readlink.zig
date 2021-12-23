@@ -1,7 +1,10 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const Process = @import("../Process.zig");
 const mem = @import("../../mem/mem.zig");
 const UserCString = mem.safe.UserCString;
 const UserSlice = mem.safe.UserSlice;
+const cast = std.zig.c_translation.cast;
 
 fn sys_readlink(self: *Process, pathname_ptr: UserCString, buf: UserSlice([]u8)) !usize {
     if (buf.len() == 0)

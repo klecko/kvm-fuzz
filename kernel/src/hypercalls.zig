@@ -1,4 +1,3 @@
-// usingnamespace @import("common.zig");
 const std = @import("std");
 const x86 = @import("x86/x86.zig");
 const linux = @import("linux.zig");
@@ -72,6 +71,8 @@ pub const FaultInfo = extern struct {
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
+        _ = fmt;
+        _ = options;
         try std.fmt.format(
             writer,
             "Fault{{ .fault_type = {s}, .rip = 0x{x}, .fault_addr = 0x{x}, .kernel = {} }}",

@@ -1,4 +1,6 @@
-usingnamespace @import("common.zig");
+const std = @import("std");
+const common = @import("common.zig");
+const panic = common.panic;
 const x86 = @import("x86/x86.zig");
 const hypercalls = @import("hypercalls.zig");
 const mem = @import("mem/mem.zig");
@@ -51,6 +53,8 @@ pub const InterruptFrame = struct {
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
+        _ = options;
+        _ = fmt;
         // zig fmt: off
         try std.fmt.format(
             writer,
@@ -118,7 +122,7 @@ pub fn getInterruptHandlerEntryPoint(comptime interrupt_number: usize) Interrupt
                 \\push %[interrupt_number]
                 \\jmp interruptHandlerCommon
                 :
-                : [interrupt_number] "im" (interrupt_number)
+                : [interrupt_number] "im" (interrupt_number),
             );
         }
     }.handler;

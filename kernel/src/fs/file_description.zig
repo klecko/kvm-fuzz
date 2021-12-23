@@ -1,4 +1,7 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const common = @import("../common.zig");
+const TODO = common.TODO;
 const mem = @import("../mem/mem.zig");
 const linux = @import("../linux.zig");
 const fs = @import("fs.zig");
@@ -10,7 +13,7 @@ const UserSlice = mem.safe.UserSlice;
 const Allocator = std.mem.Allocator;
 
 pub fn statRegular(
-    stat_ptr: UserPtr(*linux.stat),
+    stat_ptr: UserPtr(*linux.Stat),
     fileSize: usize,
     inode: linux.ino_t,
 ) mem.safe.Error!void {
@@ -18,13 +21,14 @@ pub fn statRegular(
     // function is just a memcpy, some writes for the undefined values that
     // differ for each file, and a call to copyToUserSingle.
     // zig fmt: off
-    comptime const regular_st_base = linux.stat{
+    const regular_st_base = comptime linux.Stat{
         .dev         = 2052,
         .ino         = undefined,
         .nlink       = 1,
         .mode        = 0o100664,
         .uid         = 0,
         .gid         = 0,
+        .__pad0      = undefined,
         .rdev        = 0,
         .size        = undefined,
         .blksize     = std.mem.page_size,
@@ -41,6 +45,7 @@ pub fn statRegular(
             .tv_sec  = 1612697533,
             .tv_nsec = 117084367,
         },
+        .__unused = undefined,
     };
     // zig fmt: on
 
@@ -48,19 +53,20 @@ pub fn statRegular(
     st.ino = inode;
     st.size = @intCast(i64, fileSize);
     st.blocks = @intCast(i64, fileSize / 512 + 1);
-    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &st);
+    try mem.safe.copyToUserSingle(linux.Stat, stat_ptr, &st);
 }
 
-pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
+pub fn statStdin(stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
     // Here it's just the call to copyToUserSingle.
     // zig fmt: off
-    comptime const stdin_stat = linux.stat{
+    const stdin_stat = comptime linux.Stat{
         .dev         = 24,
         .ino         = 15,
         .nlink       = 1,
         .mode        = 0o20620,
         .uid         = 0,
         .gid         = 0,
+        .__pad0      = undefined,
         .rdev        = 34827,
         .size        = 0,
         .blksize     = 1024,
@@ -77,21 +83,23 @@ pub fn statStdin(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
             .tv_sec  = 0,
             .tv_nsec = 0,
         },
+        .__unused = undefined,
     };
     // zig fmt: on
 
-    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdin_stat);
+    try mem.safe.copyToUserSingle(linux.Stat, stat_ptr, &stdin_stat);
 }
 
-pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
+pub fn statStdout(stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
     // zig fmt: off
-    comptime const stdout_stat = linux.stat{
+    const stdout_stat = comptime linux.Stat{
         .dev         = 22,
         .ino         = 6,
         .nlink       = 1,
         .mode        = 0o20620,
         .uid         = 0,
         .gid         = 0,
+        .__pad0      = undefined,
         .rdev        = 34819,
         .size        = 0,
         .blksize     = 1024,
@@ -108,10 +116,11 @@ pub fn statStdout(stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
             .tv_sec  = 0,
             .tv_nsec = 0,
         },
+        .__unused = undefined,
     };
     // zig fmt: on
 
-    try mem.safe.copyToUserSingle(linux.stat, stat_ptr, &stdout_stat);
+    try mem.safe.copyToUserSingle(linux.Stat, stat_ptr, &stdout_stat);
 }
 
 pub const FileDescription = struct {
@@ -125,7 +134,7 @@ pub const FileDescription = struct {
     offset: usize = 0,
 
     // File operations
-    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void,
+    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void,
     read: fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
     write: fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
 
@@ -141,12 +150,12 @@ pub const FileDescription = struct {
 
     pub fn isReadable(self: *const FileDescription) bool {
         const access_mode = self.flags & O_ACCMODE;
-        return (access_mode == linux.O_RDONLY) or (access_mode == linux.O_RDWR);
+        return (access_mode == linux.O.RDONLY) or (access_mode == linux.O.RDWR);
     }
 
     pub fn isWritable(self: *const FileDescription) bool {
         const access_mode = self.flags & O_ACCMODE;
-        return (access_mode == linux.O_WRONLY) or (access_mode == linux.O_RDWR);
+        return (access_mode == linux.O.WRONLY) or (access_mode == linux.O.RDWR);
     }
 
     pub fn isOffsetPastEnd(self: *const FileDescription) bool {
@@ -184,7 +193,7 @@ pub const FileDescription = struct {
 pub const FileDescriptionRegular = struct {
     desc: FileDescription,
 
-    pub fn create(allocator: *Allocator, buf: []const u8, flags: i32) Allocator.Error!*FileDescriptionRegular {
+    pub fn create(allocator: Allocator, buf: []const u8, flags: i32) Allocator.Error!*FileDescriptionRegular {
         // In this case we can avoid giving a destroy function to the RefCounter
         // because a FileDescriptionRegular is just a FileDescription. We would
         // have to do it if we added more fields, as in FileDescriptionStdin.
@@ -205,7 +214,7 @@ pub const FileDescriptionRegular = struct {
         assert(@sizeOf(FileDescriptionRegular) == @sizeOf(FileDescription));
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
         // Use the pointer to the buffer as inode, as that's unique for each file.
         return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
     }
@@ -226,6 +235,8 @@ pub const FileDescriptionRegular = struct {
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
+        _ = desc;
+        _ = buf;
         TODO();
     }
 };
@@ -234,12 +245,12 @@ pub const FileDescriptionStdin = struct {
     desc: FileDescription,
     input_opened: bool,
 
-    pub fn create(allocator: *Allocator) Allocator.Error!*FileDescriptionStdin {
+    pub fn create(allocator: Allocator) Allocator.Error!*FileDescriptionStdin {
         const ret = try allocator.create(FileDescriptionStdin);
         ret.* = FileDescriptionStdin{
             .desc = FileDescription{
                 .buf = &([_]u8{}),
-                .flags = linux.O_RDWR,
+                .flags = linux.O.RDWR,
                 .stat = stat,
                 .read = read,
                 .write = write,
@@ -253,13 +264,13 @@ pub const FileDescriptionStdin = struct {
     // We must provide this function because we don't want to free desc, but self.
     // In this case they don't have the same size, as happens with Regular or
     // Stdout, so we must do it.
-    fn destroy(ref: *FileDescription.RefCounter) void {
-        const desc = @fieldParentPtr(FileDescription, "ref", ref);
+    fn destroy(desc: *FileDescription) void {
         const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
         self.desc.ref.allocator.destroy(self);
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
+        _ = desc;
         return statStdin(stat_ptr);
     }
 
@@ -286,6 +297,7 @@ pub const FileDescriptionStdin = struct {
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
+        _ = desc;
         log.warn("writing to stdin, maybe a bug?\n", .{});
         return printUserMaybe(buf);
     }
@@ -294,13 +306,13 @@ pub const FileDescriptionStdin = struct {
 pub const FileDescriptionStdout = struct {
     desc: FileDescription,
 
-    pub fn create(allocator: *Allocator) Allocator.Error!*FileDescriptionStdout {
+    pub fn create(allocator: Allocator) Allocator.Error!*FileDescriptionStdout {
         // Same as with FileDescriptionStdin.
         const ret = try allocator.create(FileDescriptionStdout);
         ret.* = FileDescriptionStdout{
             .desc = FileDescription{
                 .buf = &[_]u8{},
-                .flags = linux.O_RDWR,
+                .flags = linux.O.RDWR,
                 .stat = stat,
                 .read = read,
                 .write = write,
@@ -310,15 +322,19 @@ pub const FileDescriptionStdout = struct {
         return ret;
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) mem.safe.Error!void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
+        _ = desc;
         return statStdout(stat_ptr);
     }
 
     fn read(desc: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize {
+        _ = desc;
+        _ = buf;
         unreachable;
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
+        _ = desc;
         return printUserMaybe(buf);
     }
 };
@@ -351,7 +367,7 @@ pub const FileDescriptionSocket = struct {
     };
 
     pub fn create(
-        allocator: *Allocator,
+        allocator: Allocator,
         buf: []const u8,
         socket_type: SocketType,
     ) Allocator.Error!*FileDescriptionSocket {
@@ -359,7 +375,7 @@ pub const FileDescriptionSocket = struct {
         ret.* = FileDescriptionSocket{
             .desc = FileDescription{
                 .buf = buf,
-                .flags = linux.O_RDWR,
+                .flags = linux.O.RDWR,
                 .stat = stat,
                 .read = read,
                 .write = write,
@@ -374,13 +390,14 @@ pub const FileDescriptionSocket = struct {
         return ret;
     }
 
-    fn destroy(ref: *FileDescription.RefCounter) void {
-        const desc = @fieldParentPtr(FileDescription, "ref", ref);
+    fn destroy(desc: *FileDescription) void {
         const self = @fieldParentPtr(FileDescriptionSocket, "desc", desc);
         self.desc.ref.allocator.destroy(self);
     }
 
-    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.stat)) !void {
+    fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) !void {
+        _ = desc;
+        _ = stat_ptr;
         TODO();
     }
 
@@ -393,6 +410,8 @@ pub const FileDescriptionSocket = struct {
     }
 
     fn write(desc: *FileDescription, buf: UserSlice([]const u8)) !usize {
+        _ = desc;
+        _ = buf;
         TODO();
     }
 
@@ -401,11 +420,14 @@ pub const FileDescriptionSocket = struct {
         addr_ptr: UserPtr(*const linux.sockaddr),
         addr_len: usize,
     ) void {
+        _ = addr_ptr;
+        _ = addr_len;
         self.binded = true;
     }
 
     pub fn listen(self: *FileDescriptionSocket, backlock: i32) void {
         // In case it is not binded, we must assign the address and the port
+        _ = backlock;
         assert(self.binded);
         self.listening = true;
     }

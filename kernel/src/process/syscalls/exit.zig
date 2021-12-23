@@ -1,5 +1,7 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
 const scheduler = @import("../../scheduler.zig");
+const cast = std.zig.c_translation.cast;
 
 // fn sys_exit(self: *Process, status: i32, regs: *Process.UserRegs) usize {
 //     scheduler.schedule(regs);
@@ -8,11 +10,13 @@ const scheduler = @import("../../scheduler.zig");
 // }
 
 pub fn handle_sys_exit(self: *Process, arg0: usize, regs: *Process.UserRegs) usize {
-    const status = std.meta.cast(i32, arg0);
+    const status = cast(i32, arg0);
     return sys_exit_group(self, status, regs);
 }
 
 fn sys_exit_group(self: *Process, status: i32, regs: *Process.UserRegs) usize {
+    _ = status;
+    _ = self;
     scheduler.removeActiveProcessAndSchedule(regs);
 
     // Regs have been modified. We don't want to modify rax when returning a
@@ -22,6 +26,6 @@ fn sys_exit_group(self: *Process, status: i32, regs: *Process.UserRegs) usize {
 }
 
 pub fn handle_sys_exit_group(self: *Process, arg0: usize, regs: *Process.UserRegs) usize {
-    const status = std.meta.cast(i32, arg0);
+    const status = cast(i32, arg0);
     return sys_exit_group(self, status, regs);
 }

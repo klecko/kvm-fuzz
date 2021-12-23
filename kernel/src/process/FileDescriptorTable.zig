@@ -1,7 +1,9 @@
-usingnamespace @import("common.zig");
+const std = @import("std");
+const linux = @import("../linux.zig");
 const fs = @import("../fs/fs.zig");
 const utils = @import("../utils/utils.zig");
 const Allocator = std.mem.Allocator;
+const cast = std.zig.c_translation.cast;
 const FileDescriptorTable = @This();
 
 /// Map from file descriptors to pointers to file descriptions
@@ -20,9 +22,7 @@ cloexec: std.DynamicBitSet,
 const HashMap = std.AutoHashMap(linux.fd_t, *fs.FileDescription);
 const RefCounter = utils.RefCounter(FileDescriptorTable);
 
-fn destroy(ref: *RefCounter) void {
-    const self = @fieldParentPtr(FileDescriptorTable, "ref", ref);
-
+fn destroy(self: *FileDescriptorTable) void {
     // Unref every FileDescription in the table
     var iter = self.table.valueIterator();
     while (iter.next()) |file_ptr| {
@@ -35,14 +35,14 @@ fn destroy(ref: *RefCounter) void {
     self.ref.allocator.destroy(self);
 }
 
-pub fn createDefault(allocator: *Allocator, limit_fd: usize) !*FileDescriptorTable {
+pub fn createDefault(allocator: Allocator, limit_fd: usize) !*FileDescriptorTable {
     // Allocate the file descriptor table and initialize it
     const ret = try allocator.create(FileDescriptorTable);
     errdefer allocator.destroy(ret);
     ret.* = FileDescriptorTable{
         .table = HashMap.init(allocator),
         .ref = RefCounter.init(allocator, destroy),
-        .cloexec = try std.DynamicBitSet.initEmpty(limit_fd, allocator),
+        .cloexec = try std.DynamicBitSet.initEmpty(allocator, limit_fd),
     };
     errdefer {
         ret.table.deinit();
@@ -66,17 +66,17 @@ pub fn createDefault(allocator: *Allocator, limit_fd: usize) !*FileDescriptorTab
 }
 
 pub fn setCloexec(self: *FileDescriptorTable, fd: linux.fd_t) void {
-    self.cloexec.set(std.meta.cast(usize, fd));
+    self.cloexec.set(cast(usize, fd));
 }
 
 pub fn unsetCloexec(self: *FileDescriptorTable, fd: linux.fd_t) void {
-    self.cloexec.unset(std.meta.cast(usize, fd));
+    self.cloexec.unset(cast(usize, fd));
 }
 
 pub fn setCloexecValue(self: *FileDescriptorTable, fd: linux.fd_t, value: bool) void {
-    self.cloexec.setValue(std.meta.cast(usize, fd), value);
+    self.cloexec.setValue(cast(usize, fd), value);
 }
 
 pub fn isCloexecSet(self: *FileDescriptorTable, fd: linux.fd_t) bool {
-    return self.cloexec.isSet(std.meta.cast(usize, fd));
+    return self.cloexec.isSet(cast(usize, fd));
 }

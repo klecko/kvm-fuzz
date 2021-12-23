@@ -1,8 +1,13 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const scheduler = @import("../../scheduler.zig");
 const hypercalls = @import("../../hypercalls.zig");
+const cast = std.zig.c_translation.cast;
 
 fn sys_tgkill(self: *Process, tgid: linux.pid_t, tid: linux.pid_t, sig: i32) !void {
+    _ = self;
+    _ = sig;
     const process = scheduler.processWithPID(tid) orelse return error.Search;
     if (process.tgid != tgid) return error.Search;
     const fault = hypercalls.FaultInfo{
@@ -18,9 +23,9 @@ fn sys_tgkill(self: *Process, tgid: linux.pid_t, tid: linux.pid_t, sig: i32) !vo
 }
 
 pub fn handle_sys_tgkill(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const tgid = std.meta.cast(linux.pid_t, arg0);
-    const tid = std.meta.cast(linux.pid_t, arg1);
-    const sig = std.meta.cast(i32, arg1);
+    const tgid = cast(linux.pid_t, arg0);
+    const tid = cast(linux.pid_t, arg1);
+    const sig = cast(i32, arg2);
     try sys_tgkill(self, tgid, tid, sig);
     return 0;
 }

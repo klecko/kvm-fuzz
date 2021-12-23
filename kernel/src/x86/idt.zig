@@ -1,4 +1,5 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const x86 = @import("x86.zig");
 const interrupts = @import("../interrupts.zig");
 const log = std.log.scoped(.idt);

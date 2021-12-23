@@ -1,4 +1,5 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const x86 = @import("x86.zig");
 
 // PIT runs at 1.193182 MHz, which means it's decremented 1193182 times

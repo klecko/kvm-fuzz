@@ -1,4 +1,4 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
 
 // Problem of this approach: in the file descriptor table we want pointers to
 // FileDescription's, but these pointer actually point to FileDescription's inside
@@ -35,39 +35,37 @@ usingnamespace @import("../common.zig");
 /// reference counter. This needn't to be the ref-counted object. We may have
 /// an object A with a field B which has a field RefCounter(B), but A is the
 /// object we want to count references of. In that case, A must define a destroy
-/// method which will receive a pointer to the RefCounter, and which should use
+/// method which will receive a pointer to B (ParentT), and which should use
 /// @fieldParentPtr to get its pointer and free it.
 /// If ParentT is the type of the ref-counted object, then there's no need to
 /// provide a destroy function. The RefCounter will free the parent object itself.
 pub fn RefCounter(comptime ParentT: type) type {
     return struct {
         ref_count: usize,
-        allocator: *std.mem.Allocator,
-        destroyFn: ?(fn (self: *Self) void),
+        allocator: std.mem.Allocator,
+        destroyFn: ?DestroyFn,
 
         const Self = @This();
-        const field_name = getParentFieldName();
+        const DestroyFn = fn (parent: *ParentT) void;
 
-        /// Gets the name of the field that holds us in ParentT.
-        fn getParentFieldName() []const u8 {
-            comptime {
-                var name: []const u8 = undefined;
-                var found: bool = false;
-                for (@typeInfo(ParentT).Struct.fields) |field| {
-                    if (field.field_type == Self) {
-                        if (found == false) {
-                            name = field.name;
-                            found = true;
-                        } else {
-                            @compileError("ParentT has more than one field of type RefCounter(ParentT)");
-                        }
+        /// The name of the field that holds us in ParentT.
+        const field_name = blk: {
+            var name: []const u8 = undefined;
+            var found: bool = false;
+            for (@typeInfo(ParentT).Struct.fields) |field| {
+                if (field.field_type == Self) {
+                    if (found == false) {
+                        name = field.name;
+                        found = true;
+                    } else {
+                        @compileError("ParentT has more than one field of type RefCounter(ParentT)");
                     }
                 }
-                if (!found)
-                    @compileError("ParentT doens't have any field of type RefCounter(ParentT)");
-                return name;
             }
-        }
+            if (!found)
+                @compileError("ParentT doens't have any field of type RefCounter(ParentT)");
+            break :blk name;
+        };
 
         /// Initialize the reference counter. `allocator` is the allocator that
         /// will free the ref-counted object, and `destroyFn` is the function in
@@ -76,7 +74,7 @@ pub fn RefCounter(comptime ParentT: type) type {
         /// function. If it isn't (e.g. it's an object that holds our parent),
         /// then it must be provided. An example of this can be seen in
         /// FileDescription.
-        pub fn init(allocator: *std.mem.Allocator, destroyFn: ?(fn (self: *Self) void)) Self {
+        pub fn init(allocator: std.mem.Allocator, destroyFn: ?DestroyFn) Self {
             return Self{
                 .ref_count = 1,
                 .allocator = allocator,
@@ -95,10 +93,11 @@ pub fn RefCounter(comptime ParentT: type) type {
         pub fn unref(self: *Self) void {
             self.ref_count -= 1;
             if (self.ref_count == 0) {
+                const parent = @fieldParentPtr(ParentT, field_name, self);
                 if (self.destroyFn) |destroy| {
-                    destroy(self);
+                    destroy(parent);
                 } else {
-                    self.allocator.destroy(@fieldParentPtr(ParentT, field_name, self));
+                    self.allocator.destroy(parent);
                 }
             }
         }

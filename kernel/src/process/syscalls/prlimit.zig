@@ -1,6 +1,11 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
+const TODO = @import("../../common.zig").TODO;
 const UserPtr = mem.safe.UserPtr;
+const assert = std.debug.assert;
+const cast = std.zig.c_translation.cast;
 
 const Limit = struct {
     hard: usize,
@@ -17,7 +22,7 @@ pub const Limits = struct {
             .soft = 1024,
         }, .stack = .{
             .soft = mem.layout.user_stack_size,
-            .hard = linux.RLIM_INFINITY,
+            .hard = linux.RLIM.INFINITY,
         } };
     }
 
@@ -64,7 +69,7 @@ pub fn handle_sys_prlimit(
     arg2: usize,
     arg3: usize,
 ) !usize {
-    const pid = std.meta.cast(linux.pid_t, arg0);
+    const pid = cast(linux.pid_t, arg0);
     const resource = std.meta.intToEnum(linux.rlimit_resource, arg1) catch return error.InvalidArgument;
     const new_limit_ptr = UserPtr(*const linux.rlimit).fromFlatMaybeNull(arg2);
     const old_limit_ptr = UserPtr(*linux.rlimit).fromFlatMaybeNull(arg3);

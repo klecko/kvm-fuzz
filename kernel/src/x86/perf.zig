@@ -1,4 +1,4 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
 const build_options = @import("build_options");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("x86.zig");

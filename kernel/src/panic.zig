@@ -1,4 +1,6 @@
-usingnamespace @import("common.zig");
+const std = @import("std");
+const common = @import("common.zig");
+const print = common.print;
 const hypercalls = @import("hypercalls.zig");
 const mem = @import("mem/mem.zig");
 const StackTrace = std.builtin.StackTrace;

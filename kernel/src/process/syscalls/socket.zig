@@ -1,8 +1,11 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const fs = @import("../../fs/fs.zig");
 const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
 const UserSlice = mem.safe.UserSlice;
+const cast = std.zig.c_translation.cast;
 
 fn sys_socket(self: *Process, domain: i32, type_: i32, protocol: i32) !linux.fd_t {
     const fd = self.availableFd() orelse return error.NoFdAvailable;
@@ -18,11 +21,11 @@ fn sys_socket(self: *Process, domain: i32, type_: i32, protocol: i32) !linux.fd_
 }
 
 pub fn handle_sys_socket(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const domain = std.meta.cast(i32, arg0);
-    const type_ = std.meta.cast(i32, arg1);
-    const protocol = std.meta.cast(i32, arg2);
+    const domain = cast(i32, arg0);
+    const type_ = cast(i32, arg1);
+    const protocol = cast(i32, arg2);
     const ret = try sys_socket(self, domain, type_, protocol);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }
 
 fn sys_bind(
@@ -37,9 +40,9 @@ fn sys_bind(
 }
 
 pub fn handle_sys_bind(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
-    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const sockfd = cast(linux.fd_t, arg0);
     const addr_ptr = try UserPtr(*const linux.sockaddr).fromFlat(arg1);
-    const addr_len = std.meta.cast(linux.socklen_t, arg2);
+    const addr_len = cast(linux.socklen_t, arg2);
     try sys_bind(self, sockfd, addr_ptr, addr_len);
     return 0;
 }
@@ -51,8 +54,8 @@ fn sys_listen(self: *Process, sockfd: linux.fd_t, backlog: i32) !void {
 }
 
 pub fn handle_sys_listen(self: *Process, arg0: usize, arg1: usize) !usize {
-    const sockfd = std.meta.cast(linux.fd_t, arg0);
-    const backlog = std.meta.cast(i32, arg0);
+    const sockfd = cast(linux.fd_t, arg0);
+    const backlog = cast(i32, arg1);
     try sys_listen(self, sockfd, backlog);
     return 0;
 }
@@ -75,6 +78,8 @@ fn sys_accept(
     accepted_socket.connected = true;
 
     // TODO: write into addr_ptr and addr_len_ptr
+    _ = addr_ptr;
+    _ = addr_len_ptr;
 
     // Insert new socket in our file descriptor table
     const accepted_fd = self.availableFd() orelse return error.NoFdAvailable;
@@ -88,11 +93,11 @@ pub fn handle_sys_accept(
     arg1: usize,
     arg2: usize,
 ) !usize {
-    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const sockfd = cast(linux.fd_t, arg0);
     const addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg1);
     const addr_len_ptr = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg2);
     const ret = try sys_accept(self, sockfd, addr_ptr, addr_len_ptr);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }
 
 fn sys_recv(
@@ -111,9 +116,9 @@ pub fn handle_sys_recv(
     arg2: usize,
     arg3: usize,
 ) !usize {
-    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const sockfd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
-    const flags = std.meta.cast(i32, arg3);
+    const flags = cast(i32, arg3);
     return sys_recv(self, sockfd, buf, flags);
 }
 
@@ -125,6 +130,9 @@ fn sys_recvfrom(
     src_addr_ptr: ?UserPtr(*linux.sockaddr),
     addr_len_ptr: ?UserPtr(*linux.socklen_t),
 ) !usize {
+    _ = flags;
+    _ = src_addr_ptr;
+    _ = addr_len_ptr;
     const file = self.files.table.get(sockfd) orelse return error.BadFD;
     _ = file.socket() orelse return error.NotSocket;
     if (!file.isReadable())
@@ -141,9 +149,9 @@ pub fn handle_sys_recvfrom(
     arg4: usize,
     arg5: usize,
 ) !usize {
-    const sockfd = std.meta.cast(linux.fd_t, arg0);
+    const sockfd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
-    const flags = std.meta.cast(i32, arg3);
+    const flags = cast(i32, arg3);
     const src_addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg4);
     const addr_len = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg5);
     return sys_recvfrom(self, sockfd, buf, flags, src_addr_ptr, addr_len);

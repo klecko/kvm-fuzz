@@ -1,4 +1,6 @@
-pub usingnamespace @import("../common.zig");
+const std = @import("std");
+const common = @import("../common.zig");
+const panic = common.panic;
 const mem = @import("../mem/mem.zig");
 const x86 = @import("../x86/x86.zig");
 const linux = @import("../linux.zig");
@@ -8,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.process);
 const Process = @This();
 
-allocator: *Allocator,
+allocator: Allocator,
 
 // Unique for each process. Returned by gettid().
 pid: linux.pid_t,
@@ -76,7 +78,7 @@ pub const State = union(enum) {
     waiting_for_any,
 };
 
-pub fn initial(allocator: *Allocator, info: *const hypercalls.VmInfo) !Process {
+pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path_len = std.mem.indexOfScalar(u8, &info.elf_path, 0).?;
     const elf_path = try allocator.alloc(u8, elf_path_len);
     std.mem.copy(u8, elf_path, info.elf_path[0..elf_path_len]);

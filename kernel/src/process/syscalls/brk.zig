@@ -1,6 +1,8 @@
-usingnamespace @import("../common.zig");
+const Process = @import("../Process.zig");
+const std = @import("std");
 const mem = @import("../../mem/mem.zig");
 const log = std.log.scoped(.sys_brk);
+const cast = std.zig.c_translation.cast;
 
 // sys_brk never returns an error. In case of an error, it just returns the
 // current brk.
@@ -37,5 +39,5 @@ fn sys_brk(self: *Process, addr: usize) usize {
 
 pub fn handle_sys_brk(self: *Process, arg0: usize) usize {
     const addr = arg0;
-    return sys_brk(self, arg0);
+    return sys_brk(self, addr);
 }

@@ -1,7 +1,7 @@
 const std = @import("std");
 const hypercalls = @import("hypercalls.zig");
 
-fn writeFn(context: void, str: []const u8) !usize {
+fn writeFn(_: void, str: []const u8) !usize {
     hypercalls.print(str);
     return str.len;
 }

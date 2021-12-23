@@ -1,4 +1,6 @@
-usingnamespace @import("common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const Process = @import("Process.zig");
 const hypercalls = @import("../hypercalls.zig");
 const mem = @import("../mem/mem.zig");
 const elf = std.elf;
@@ -20,7 +22,7 @@ pub fn startUser(
 
     // Jump to user code
     log.info("Jumping to user at 0x{x} with rsp 0x{x}!\n", .{ info.user_entry, rsp });
-    jumpToUser(self, info.user_entry, rsp);
+    jumpToUser(info.user_entry, rsp);
 }
 
 fn setupUserStack(
@@ -141,7 +143,7 @@ fn makeAuxv(auxv_type: usize, value: usize) elf.Auxv {
     };
 }
 
-fn jumpToUser(self: *Process, entry: usize, rsp: usize) void {
+fn jumpToUser(entry: usize, rsp: usize) noreturn {
     asm volatile (
     // Set user stack, RIP and RFLAGS
         \\mov %[rsp], %%rsp
@@ -167,6 +169,7 @@ fn jumpToUser(self: *Process, entry: usize, rsp: usize) void {
         \\sysretq
         :
         : [rsp] "rax" (rsp),
-          [entry] "rbx" (entry)
+          [entry] "rbx" (entry),
     );
+    unreachable;
 }

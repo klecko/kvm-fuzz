@@ -1,6 +1,9 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
+const cast = std.zig.c_translation.cast;
 
 fn unameHelper(comptime string: []const u8) [64:0]u8 {
     const zeroed_padding = [_:0]u8{0} ** std.math.max(0, 64 - string.len);
@@ -8,7 +11,8 @@ fn unameHelper(comptime string: []const u8) [64:0]u8 {
 }
 
 fn sys_uname(self: *Process, uname_ptr: UserPtr(*linux.utsname)) !void {
-    comptime const uname = linux.utsname{
+    _ = self;
+    const uname = comptime linux.utsname{
         .sysname = unameHelper("Linux"),
         .nodename = unameHelper("pep1t0"),
         .release = unameHelper("5.8.0-43-generic"),

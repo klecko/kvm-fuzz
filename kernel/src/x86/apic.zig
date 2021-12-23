@@ -1,4 +1,4 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
 const x86 = @import("x86.zig");
 const mem = @import("../mem/mem.zig");
 const log = std.log.scoped(.apic);

@@ -1,11 +1,15 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const Process = @import("../Process.zig");
 const mem = @import("../../mem/mem.zig");
 const UserSlice = mem.safe.UserSlice;
 const UserCString = mem.safe.UserCString;
+const cast = std.zig.c_translation.cast;
 
 const cwd = "/home/leet";
 
 fn sys_getcwd(self: *Process, buf: UserSlice([]u8)) !usize {
+    _ = self;
     if (buf.len() < cwd.len + 1)
         return error.NumericOutOfRange;
 

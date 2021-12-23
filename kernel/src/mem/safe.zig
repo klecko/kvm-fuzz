@@ -1,4 +1,7 @@
-usingnamespace @import("../common.zig");
+const common = @import("../common.zig");
+const print = common.print;
+const std = @import("std");
+const assert = std.debug.assert;
 const interrupts = @import("../interrupts.zig");
 const mem = @import("mem.zig");
 const utils = @import("../utils/utils.zig");
@@ -217,7 +220,7 @@ pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Er
     try copySingle(T, dest, src.ptr());
 }
 
-pub fn copyStringFromUser(allocator: *Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
+pub fn copyStringFromUser(allocator: Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
     const length = try strlen(string_ptr.ptr());
     var string = try allocator.alloc(u8, length);
     errdefer allocator.free(string);
@@ -267,10 +270,10 @@ noinline fn copyBase(dest: []u8, src: []const u8) Error!void {
         \\safe_copy_ins_may_fault:
         \\rep movsb
         \\safe_copy_ins_faulted:
-        : [ret] "={rcx}" (-> usize)
+        : [ret] "={rcx}" (-> usize),
         : [dest] "{rdi}" (dest.ptr),
           [src] "{rsi}" (src.ptr),
-          [len] "{rcx}" (src.len)
+          [len] "{rcx}" (src.len),
     );
     if (bytes_left != 0)
         return Error.Fault;
@@ -299,8 +302,8 @@ noinline fn strlen(s: [*:0]const u8) Error!usize {
         \\mov $1, %[fault]
         \\end:
         : [len] "={rcx}" (-> usize),
-          [fault] "=r" (fault)
-        : [s] "{rdi}" (s)
+          [fault] "=r" (fault),
+        : [s] "{rdi}" (s),
         : "rax", "rcx", "rdi"
     );
     return if (fault) Error.Fault else result;

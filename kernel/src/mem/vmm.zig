@@ -1,4 +1,5 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const mem = @import("mem.zig");
 const hypercalls = @import("../hypercalls.zig");
 const x86 = @import("../x86/x86.zig");

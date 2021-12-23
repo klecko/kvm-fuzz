@@ -1,8 +1,12 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const fs = @import("../../fs/fs.zig");
 const UserCString = mem.safe.UserCString;
 const log = std.log.scoped(.sys_openat);
+const assert = std.debug.assert;
+const cast = std.zig.c_translation.cast;
 
 fn sys_openat(
     self: *Process,
@@ -11,7 +15,8 @@ fn sys_openat(
     flags: i32,
     mode: linux.mode_t,
 ) !linux.fd_t {
-    assert(dirfd == linux.AT_FDCWD);
+    _ = mode;
+    assert(dirfd == linux.AT.FDCWD);
 
     // Get the pathname
     const pathname = try mem.safe.copyStringFromUser(self.allocator, pathname_ptr);
@@ -28,7 +33,7 @@ fn sys_openat(
     try self.files.table.put(fd, file);
 
     // Set file descriptor flags
-    if (flags & linux.O_CLOEXEC != 0)
+    if (flags & linux.O.CLOEXEC != 0)
         self.files.setCloexec(fd);
 
     return fd;
@@ -41,12 +46,12 @@ pub fn handle_sys_openat(
     arg2: usize,
     arg3: usize,
 ) !usize {
-    const dirfd = std.meta.cast(linux.fd_t, arg0);
+    const dirfd = cast(linux.fd_t, arg0);
     const pathname_ptr = try UserCString.fromFlat(arg1);
-    const flags = std.meta.cast(i32, arg2);
-    const mode = std.meta.cast(linux.mode_t, arg3);
+    const flags = cast(i32, arg2);
+    const mode = cast(linux.mode_t, arg3);
     const ret = try sys_openat(self, dirfd, pathname_ptr, flags, mode);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }
 
 fn sys_close(self: *Process, fd: linux.fd_t) !void {
@@ -56,7 +61,7 @@ fn sys_close(self: *Process, fd: linux.fd_t) !void {
 }
 
 pub fn handle_sys_close(self: *Process, arg0: usize) !usize {
-    const fd = std.meta.cast(linux.fd_t, arg0);
+    const fd = cast(linux.fd_t, arg0);
     try sys_close(self, fd);
     return 0;
 }

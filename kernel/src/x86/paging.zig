@@ -1,4 +1,5 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
 const mem = @import("../mem/mem.zig");
 const x86 = @import("x86.zig");
 const log = std.log.scoped(.paging);

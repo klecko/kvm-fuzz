@@ -1,5 +1,5 @@
 // The best would be importing as 'asm', but that's a keyword >:(
-usingnamespace @import("./asm.zig");
+pub usingnamespace @import("./asm.zig");
 
 pub const apic = @import("apic.zig");
 pub const gdt = @import("gdt.zig");

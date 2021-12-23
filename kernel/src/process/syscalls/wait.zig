@@ -1,8 +1,12 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const scheduler = @import("../../scheduler.zig");
+const panic = @import("../../common.zig").panic;
 const UserPtr = mem.safe.UserPtr;
 const State = Process.State;
+const cast = std.zig.c_translation.cast;
 
 fn sys_wait4(
     self: *Process,
@@ -12,6 +16,10 @@ fn sys_wait4(
     rusage: ?UserPtr(*linux.rusage),
     regs: *Process.UserRegs,
 ) !linux.pid_t {
+    _ = wstatus;
+    _ = options;
+    _ = rusage;
+
     self.state = if (pid < -1)
         State{ .waiting_for_any_with_pgid = -pid }
     else if (pid == -1)
@@ -36,10 +44,10 @@ pub fn handle_sys_wait4(
     arg3: usize,
     regs: *Process.UserRegs,
 ) !usize {
-    const pid = std.meta.cast(linux.pid_t, arg0);
+    const pid = cast(linux.pid_t, arg0);
     const wstatus = UserPtr(*i32).fromFlatMaybeNull(arg1);
-    const options = std.meta.cast(i32, arg2);
+    const options = cast(i32, arg2);
     const rusage = UserPtr(*linux.rusage).fromFlatMaybeNull(arg3);
     const ret = try sys_wait4(self, pid, wstatus, options, rusage, regs);
-    return std.meta.cast(usize, ret);
+    return cast(usize, ret);
 }

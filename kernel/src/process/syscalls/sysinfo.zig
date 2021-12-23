@@ -1,8 +1,12 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const Process = @import("../Process.zig");
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const UserPtr = mem.safe.UserPtr;
+const cast = std.zig.c_translation.cast;
 
 fn sys_sysinfo(self: *Process, info_ptr: UserPtr(*linux.sysinfo)) !void {
+    _ = self;
     const total_ram = mem.pmm.memoryLength();
     const free_ram = mem.pmm.amountFreeMemory();
     const used_ram = total_ram - free_ram;

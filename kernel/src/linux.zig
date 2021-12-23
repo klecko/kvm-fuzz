@@ -1,32 +1,13 @@
-pub usingnamespace @import("linux_std");
-usingnamespace @import("common.zig");
+const std = @import("std");
+const panic = @import("common.zig").panic;
 
+// Export everything of std.os.linux
+const linux = std.os.linux;
+pub usingnamespace linux;
+
+// Not available in std.os.linux
 pub const clockid_t = i32;
 pub const F_DUPFD_CLOEXEC = 1030;
-
-// We can't use the std kernel_stat, because it defines uid_t as std.os.linux.uid_t,
-// which is not imported in freestanding. Instead, here we directly import uid_t
-// from linux_std.
-pub const stat = extern struct {
-    dev: dev_t,
-    ino: ino_t,
-    nlink: usize,
-
-    mode: u32,
-    uid: uid_t,
-    gid: gid_t,
-    __pad0: u32 = undefined,
-    rdev: dev_t,
-    size: off_t,
-    blksize: isize,
-    blocks: i64,
-
-    atim: timespec,
-    mtim: timespec,
-    ctim: timespec,
-    __unused: [3]isize = undefined,
-};
-
 pub const sysinfo = extern struct {
     uptime: i64,
     loads: [3]u64,
@@ -43,34 +24,25 @@ pub const sysinfo = extern struct {
     mem_unit: u32,
 };
 
-pub const iovec = extern struct {
-    iov_base: [*]u8,
-    iov_len: u64,
-};
+pub const iovec = std.os.iovec;
 
 pub fn errorToErrno(err: anyerror) usize {
     return errno(switch (err) {
-        error.BadFD => EBADF,
-        error.OutOfMemory => ENOMEM,
-        error.NotUserRange, error.Fault => EFAULT,
-        error.FileNotFound => ENOENT,
-        error.InvalidArgument => EINVAL,
-        error.NumericOutOfRange => ERANGE,
-        error.NotConnected => ENOTCONN,
-        error.NotSocket => ENOTSOCK,
-        error.NoFdAvailable => EMFILE,
-        error.PermissionDenied => EACCES,
-        error.Search => ESRCH,
+        error.BadFD => linux.E.BADF,
+        error.OutOfMemory => linux.E.NOMEM,
+        error.NotUserRange, error.Fault => linux.E.FAULT,
+        error.FileNotFound => linux.E.NOENT,
+        error.InvalidArgument => linux.E.INVAL,
+        error.NumericOutOfRange => linux.E.RANGE,
+        error.NotConnected => linux.E.NOTCONN,
+        error.NotSocket => linux.E.NOTSOCK,
+        error.NoFdAvailable => linux.E.MFILE,
+        error.PermissionDenied => linux.E.ACCES,
+        error.Search => linux.E.SRCH,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     });
 }
 
-pub fn errno(linux_errno: usize) usize {
-    return @bitCast(usize, -@bitCast(isize, linux_errno));
+pub fn errno(linux_errno: linux.E) usize {
+    return @bitCast(usize, -@intCast(isize, @enumToInt(linux_errno)));
 }
-
-// TODO: remove me
-// https://github.com/ziglang/zig/pull/9534
-pub const FUTEX_WAKE_BITSET = 10;
-pub const FUTEX_WAIT_REQUEUE_PI = 11;
-pub const FUTEX_CMP_REQUEUE_PI = 12;

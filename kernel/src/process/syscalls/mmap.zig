@@ -1,13 +1,19 @@
-usingnamespace @import("../common.zig");
+const std = @import("std");
+const assert = std.debug.assert;
+const Process = @import("../Process.zig");
+const common = @import("../../common.zig");
+const panic = common.panic;
+const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
 const log = std.log.scoped(.sys_mmap);
+const cast = std.zig.c_translation.cast;
 
 fn protToMemPerms(prot: i32) mem.Perms {
-    assert(prot & linux.PROT_GROWSDOWN == 0 and prot & linux.PROT_GROWSUP == 0);
+    assert(prot & linux.PROT.GROWSDOWN == 0 and prot & linux.PROT.GROWSUP == 0);
     return mem.Perms{
-        .read = (prot & linux.PROT_READ) != 0,
-        .write = (prot & linux.PROT_WRITE) != 0,
-        .exec = (prot & linux.PROT_EXEC) != 0,
+        .read = (prot & linux.PROT.READ) != 0,
+        .write = (prot & linux.PROT.WRITE) != 0,
+        .exec = (prot & linux.PROT.EXEC) != 0,
     };
 }
 
@@ -22,27 +28,27 @@ fn sys_mmap(
 ) !usize {
     log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x})\n", .{ addr, length, prot, flags, fd, offset });
 
-    const supported_flags: i32 = linux.MAP_PRIVATE | linux.MAP_SHARED |
-        linux.MAP_ANONYMOUS | linux.MAP_FIXED | linux.MAP_DENYWRITE |
-        linux.MAP_STACK | linux.MAP_NORESERVE;
+    const supported_flags: i32 = linux.MAP.PRIVATE | linux.MAP.SHARED |
+        linux.MAP.ANONYMOUS | linux.MAP.FIXED | linux.MAP.DENYWRITE |
+        linux.MAP.STACK | linux.MAP.NORESERVE;
     if (flags & supported_flags != flags) {
         panic("mmap unsupported flags: 0x{x}\n", .{flags & ~supported_flags});
     }
 
+    const map_private = (flags & linux.MAP.PRIVATE) != 0;
+    const map_shared = (flags & linux.MAP.SHARED) != 0;
+    const map_anonymous = (flags & linux.MAP.ANONYMOUS) != 0;
+    const map_fixed = (flags & linux.MAP.FIXED) != 0;
+
     // Check given file descriptor is valid. There's a TOCTOU vuln here, but we
     // don't have multithreading so who cares.
-    if (fd != -1 and !self.files.table.contains(fd))
+    if (!map_anonymous and !self.files.table.contains(fd))
         return error.BadFD;
 
     // We must return EINVAL if no length, and ENOMEM if it overflows
     const length_aligned = mem.alignPageForwardChecked(length) catch return error.OutOfMemory;
     if (length_aligned == 0)
         return error.InvalidArgument;
-
-    const map_private = (flags & linux.MAP_PRIVATE) != 0;
-    const map_shared = (flags & linux.MAP_SHARED) != 0;
-    const map_anonymous = (flags & linux.MAP_ANONYMOUS) != 0;
-    const map_fixed = (flags & linux.MAP_FIXED) != 0;
 
     // Shared and private: choose one
     if (map_shared and map_private)
@@ -57,7 +63,7 @@ fn sys_mmap(
     // Get permisions. If we're mapping a file, map it as writable first
     // so we can write its contents.
     var perms = protToMemPerms(prot);
-    if (fd != -1)
+    if (!map_anonymous)
         perms.write = true;
 
     const map_flags = mem.AddressSpace.MapFlags{
@@ -93,15 +99,15 @@ fn sys_mmap(
         ret = try self.space.mapRangeAnywhere(length_aligned, perms, map_flags);
     }
 
-    // If a file descriptor was specified, copy its content to memory
-    if (fd != -1) {
+    // If we are mapping a file, copy its content to memory
+    if (!map_anonymous) {
         const file = self.files.table.get(fd).?;
         assert(offset <= file.size()); // I don't know if this is possible TODO check it
         const copy_length = std.math.min(file.size() - offset, length);
         std.mem.copy(u8, @intToPtr([*]u8, ret)[0..copy_length], file.buf[offset .. offset + copy_length]);
 
         // If it was read only, remove write permissions after copying content
-        if (prot & linux.PROT_WRITE == 0) {
+        if (prot & linux.PROT.WRITE == 0) {
             perms.write = false;
             self.space.setRangePerms(ret, length_aligned, perms) catch unreachable;
         }
@@ -121,9 +127,9 @@ pub fn handle_sys_mmap(
 ) !usize {
     const addr = arg0;
     const length = arg1;
-    const prot = std.meta.cast(i32, arg2);
-    const flags = std.meta.cast(i32, arg3);
-    const fd = std.meta.cast(linux.fd_t, arg4);
+    const prot = cast(i32, arg2);
+    const flags = cast(i32, arg3);
+    const fd = cast(linux.fd_t, arg4);
     const offset = arg5;
     return sys_mmap(self, addr, length, prot, flags, fd, offset);
 }
@@ -136,7 +142,8 @@ fn sys_munmap(self: *Process, addr: usize, length: usize) !void {
     // Trying to munmap a not mapped range is not an error.
     self.space.unmapRange(addr, length_aligned) catch |err| switch (err) {
         error.NotMapped => {},
-        error.NotUserRange, error.OutOfMemory => return err,
+        error.NotUserRange => return error.InvalidArgument,
+        error.OutOfMemory => return err,
     };
 }
 
@@ -161,7 +168,7 @@ fn sys_mprotect(self: *Process, addr: usize, length: usize, prot: i32) !void {
 pub fn handle_sys_mprotect(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
     const addr = arg0;
     const length = arg1;
-    const prot = std.meta.cast(i32, arg2);
+    const prot = cast(i32, arg2);
     try sys_mprotect(self, addr, length, prot);
     return 0;
 }

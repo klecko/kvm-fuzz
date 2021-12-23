@@ -1,4 +1,7 @@
-usingnamespace @import("common.zig");
+const std = @import("std");
+const common = @import("common.zig");
+const print = common.print;
+const panic = common.panic;
 const Process = @import("process/Process.zig");
 const x86 = @import("x86/x86.zig");
 const mem = @import("mem/mem.zig");
@@ -11,7 +14,7 @@ const log = std.log.scoped(.scheduler);
 var active_idx: usize = 0;
 var processes: std.ArrayList(*Process) = undefined;
 
-pub fn init(allocator: *Allocator, first_process: *Process) void {
+pub fn init(allocator: Allocator, first_process: *Process) void {
     processes = std.ArrayList(*Process).init(allocator);
     processes.append(first_process) catch unreachable;
 }
@@ -143,67 +146,67 @@ pub fn processWithPID(pid: linux.pid_t) ?*Process {
     return null;
 }
 
-fn switchTasksAsm() callconv(.Naked) void {
-    // aqui podemos llegar con la stack de la TSS (como resultado de una interrupcion),
-    // o con la stack de la syscall.
-    asm volatile (
-    // Push registers
-        \\push %%rax
-        \\push %%rbx
-        \\push %%rcx
-        \\push %%rdx
-        \\push %%rbp
-        \\push %%rsi
-        \\push %%rdi
-        \\push %%r8
-        \\push %%r9
-        \\push %%r10
-        \\push %%r11
-        \\push %%r12
-        \\push %%r13
-        \\push %%r14
-        \\push %%r15
+// fn switchTasksAsm() callconv(.Naked) void {
+//     // aqui podemos llegar con la stack de la TSS (como resultado de una interrupcion),
+//     // o con la stack de la syscall.
+//     asm volatile (
+//     // Push registers
+//         \\push %%rax
+//         \\push %%rbx
+//         \\push %%rcx
+//         \\push %%rdx
+//         \\push %%rbp
+//         \\push %%rsi
+//         \\push %%rdi
+//         \\push %%r8
+//         \\push %%r9
+//         \\push %%r10
+//         \\push %%r11
+//         \\push %%r12
+//         \\push %%r13
+//         \\push %%r14
+//         \\push %%r15
 
-        // // Switch stacks
-        // \\mov %%rsp, [cur_rsp]
-        // \\mov [next_rsp], %%rsp
+//         // // Switch stacks
+//         // \\mov %%rsp, [cur_rsp]
+//         // \\mov [next_rsp], %%rsp
 
-        // // Set rsp0 in the TSS
-        // \\mov [next_rsp0], %%rax
-        // \\mov %%rax, [tss_rsp0]
+//         // // Set rsp0 in the TSS
+//         // \\mov [next_rsp0], %%rax
+//         // \\mov %%rax, [tss_rsp0]
 
-        // Switch stacks
-        \\mov %%rsp, (%[cur_rsp_ptr])
-        \\mov %[next_rsp], %%rsp
+//         // Switch stacks
+//         \\mov %%rsp, (%[cur_rsp_ptr])
+//         \\mov %[next_rsp], %%rsp
 
-        // Set rsp0 in the TSS
-        \\mov %[next_rsp0], %%rax
-        \\mov %%rax, (%[tss_rsp0_ptr])
+//         // Set rsp0 in the TSS
+//         \\mov %[next_rsp0], %%rax
+//         \\mov %%rax, (%[tss_rsp0_ptr])
 
-        // Restore registers
-        \\pop %%r15
-        \\pop %%r14
-        \\pop %%r13
-        \\pop %%r12
-        \\pop %%r11
-        \\pop %%r10
-        \\pop %%r9
-        \\pop %%r8
-        \\pop %%rdi
-        \\pop %%rsi
-        \\pop %%rbp
-        \\pop %%rdx
-        \\pop %%rcx
-        \\pop %%rbx
-        \\pop %%rax
-        \\ret
+//         // Restore registers
+//         \\pop %%r15
+//         \\pop %%r14
+//         \\pop %%r13
+//         \\pop %%r12
+//         \\pop %%r11
+//         \\pop %%r10
+//         \\pop %%r9
+//         \\pop %%r8
+//         \\pop %%rdi
+//         \\pop %%rsi
+//         \\pop %%rbp
+//         \\pop %%rdx
+//         \\pop %%rcx
+//         \\pop %%rbx
+//         \\pop %%rax
+//         \\ret
 
-        // : [next_rsp] "=m" (next.kernel_rsp),
-        //   [tss_rsp0] "=m" (x86.gdt.tss.rsp0)
-        :
-        : [cur_rsp_ptr] "r" (&cur.kernel_rsp),
-          [next_rsp0] "m" (next.kernel_rsp0),
-          [next_rsp] "m" (next.kernel_rsp),
-          [tss_rsp0_ptr] "r" (&x86.gdt.tss.rsp0)
-    );
-}
+//         // : [next_rsp] "=m" (next.kernel_rsp),
+//         //   [tss_rsp0] "=m" (x86.gdt.tss.rsp0)
+//         :
+//         : [cur_rsp_ptr] "r" (&cur.kernel_rsp),
+//           [next_rsp0] "m" (next.kernel_rsp0),
+//           [next_rsp] "m" (next.kernel_rsp),
+//           [tss_rsp0_ptr] "r" (&x86.gdt.tss.rsp0),
+//     );
+// }
