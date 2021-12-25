@@ -215,3 +215,277 @@ pub const RegionManager = struct {
         return null;
     }
 };
+
+fn testingRegionManager() RegionManager {
+    return RegionManager.init(std.testing.allocator, 0, 16);
+}
+
+fn expectRegionsEqual(expected: []const Region, region_manager: RegionManager) !void {
+    try std.testing.expectEqualSlices(Region, expected, region_manager.regions.items);
+}
+
+test "setMapped join" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 1);
+    try region_manager.setMapped(2, 3);
+    try region_manager.setMapped(1, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setMapped two separate" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 1);
+    try region_manager.setMapped(2, 3);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+        Region{ .addr_start = 2, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setMapped two separate inverse order" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(2, 3);
+    try region_manager.setMapped(0, 1);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+        Region{ .addr_start = 2, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setMapped expand region right" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 2);
+    try region_manager.setMapped(2, 4);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 4 },
+    }, region_manager);
+}
+
+test "setMapped expand region right + already mapped" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 2);
+    try region_manager.setMapped(1, 3);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setMapped expand region left" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(2, 4);
+    try region_manager.setMapped(0, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 4 },
+    }, region_manager);
+}
+
+test "setMapped expand region left + already mapped" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 3);
+    try region_manager.setMapped(0, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setMapped join many" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setMapped(3, 4);
+    try region_manager.setMapped(5, 6);
+    try region_manager.setMapped(7, 8);
+    try region_manager.setMapped(0, 8);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 8 },
+    }, region_manager);
+}
+
+test "setMapped three separate" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 1);
+    try region_manager.setMapped(4, 5);
+    try region_manager.setMapped(2, 3);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+        Region{ .addr_start = 2, .addr_end = 3 },
+        Region{ .addr_start = 4, .addr_end = 5 },
+    }, region_manager);
+}
+
+test "setMapped double map whole region" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 1);
+    try region_manager.setMapped(0, 1);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+    }, region_manager);
+}
+
+test "setMapped double map subregion" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 3);
+    try region_manager.setMapped(1, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setNotMapped shrink left" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 3);
+    try region_manager.setNotMapped(1, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 2, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setNotMapped shrink left + not mapped" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 3);
+    try region_manager.setNotMapped(0, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 2, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setNotMapped shrink right" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 2);
+    try region_manager.setNotMapped(1, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+    }, region_manager);
+}
+
+test "setNotMapped shrink right + not mapped" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 2);
+    try region_manager.setNotMapped(1, 3);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+    }, region_manager);
+}
+
+test "setNotMapped split unmapping subregion" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 3);
+    try region_manager.setNotMapped(1, 2);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+        Region{ .addr_start = 2, .addr_end = 3 },
+    }, region_manager);
+}
+
+test "setNotMapped unmap region" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setNotMapped(1, 2);
+    try expectRegionsEqual(&.{}, region_manager);
+}
+
+test "setNotMapped unmap region + not mapped" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setNotMapped(0, 3);
+    try expectRegionsEqual(&.{}, region_manager);
+}
+
+test "setNotMapped unmap many" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setMapped(3, 4);
+    try region_manager.setMapped(5, 6);
+    try region_manager.setMapped(7, 8);
+    try region_manager.setNotMapped(0, 9);
+    try expectRegionsEqual(&.{}, region_manager);
+}
+
+test "setNotMapped unmap some + shrink edges" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 2);
+    try region_manager.setMapped(3, 4);
+    try region_manager.setMapped(5, 6);
+    try region_manager.setMapped(7, 9);
+    try region_manager.setNotMapped(1, 8);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 0, .addr_end = 1 },
+        Region{ .addr_start = 8, .addr_end = 9 },
+    }, region_manager);
+}
+
+test "setNotMapped unmap single" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setMapped(3, 4);
+    try region_manager.setMapped(5, 6);
+    try region_manager.setNotMapped(3, 4);
+    try expectRegionsEqual(&.{
+        Region{ .addr_start = 1, .addr_end = 2 },
+        Region{ .addr_start = 5, .addr_end = 6 },
+    }, region_manager);
+}
+
+test "findNotMapped before mapped region" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    const result = region_manager.findNotMapped(1);
+    try std.testing.expectEqual(@as(?usize, 0), result);
+}
+
+test "findNotMapped after mapped region" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(0, 1);
+    const result = region_manager.findNotMapped(1);
+    try std.testing.expectEqual(@as(?usize, 1), result);
+}
+
+test "findNotMapped skip too small holes" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(1, 2);
+    try region_manager.setMapped(3, 4);
+    const result = region_manager.findNotMapped(2);
+    try std.testing.expectEqual(@as(?usize, 4), result);
+}
+
+test "findNotMapped oom" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    try region_manager.setMapped(region_manager.total.addr_start, region_manager.total.addr_end);
+    const result = region_manager.findNotMapped(1);
+    try std.testing.expectEqual(@as(?usize, null), result);
+}
+
+test "findNotMapped almost oom" {
+    var region_manager = testingRegionManager();
+    defer region_manager.deinit();
+    const almost_end = region_manager.total.addr_end - 1;
+    try region_manager.setMapped(region_manager.total.addr_start, almost_end);
+    const result = region_manager.findNotMapped(1);
+    try std.testing.expectEqual(@as(?usize, almost_end), result);
+}

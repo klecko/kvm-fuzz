@@ -30,6 +30,15 @@ pub fn build(b: *std.build.Builder) void {
 
     exe.install();
 
+    // Unit tests
+    const exe_tests = b.addTest("src/main.zig");
+    exe_tests.setTarget(b.standardTargetOptions(.{}));
+    exe_tests.setBuildMode(mode);
+    exe_tests.addOptions("build_options", build_options);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&exe_tests.step);
+
     // Format step
     const fmt_step = b.addFmt(&.{"src"});
     exe.step.dependOn(&fmt_step.step);
