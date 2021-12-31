@@ -111,7 +111,6 @@ pub const HeapAllocator = struct {
         _ = buf_align;
         _ = ret_addr;
         log.debug("heap allocator: frees {*}\n", .{buf});
-        std.mem.set(u8, buf, undefined);
     }
 };
 
@@ -195,7 +194,6 @@ pub const BlockAllocator = struct {
         const block_len = BLOCK_SIZES[list_index];
         const len_aligned = std.mem.alignAllocLen(block_len, len, len_align);
         const ret = blockToSlice(block_ptr, len_aligned);
-        std.mem.set(u8, ret, 0);
         log.debug("heap allocator: {} returns {*}\n", .{ len, ret });
         return ret;
     }
