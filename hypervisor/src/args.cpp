@@ -53,7 +53,7 @@ bool Args::parse(int argc, char** argv) {
 			("i,input", "Input folder (initial corpus)", cxxopts::value<string>(input_dir)->default_value("./in"), "dir")
 			("o,output", "Output folder (corpus, crashes, etc)", cxxopts::value<string>(output_dir)->default_value("./out"), "dir")
 			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
-			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage. Default value is basic_blocks_<BinaryMD5Hash>.txt", cxxopts::value<string>(basic_blocks_path), "path")
+			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage. Default value is ./basic_blocks/<BinaryMD5Hash>.txt", cxxopts::value<string>(basic_blocks_path), "path")
 			("s,single-run", "Perform a single run, optionally specifying an input file", cxxopts::value<string>(single_run_input_path)->implicit_value("none"), "path")
 			("binary", "File to run", cxxopts::value<string>(binary_path))
 			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
@@ -86,8 +86,9 @@ bool Args::parse(int argc, char** argv) {
 
 		// Set default basic block file
 		if (basic_blocks_path.empty()) {
+			create_folder("./basic_blocks");
 			string md5 = md5_file(binary_path);
-			basic_blocks_path = "./basic_blocks_" + md5 + ".txt";
+			basic_blocks_path = "./basic_blocks/" + md5 + ".txt";
 		}
 
 		if (options.count("single-run")) {
