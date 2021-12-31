@@ -231,8 +231,10 @@ const string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	return m_mutated_inputs[id];
 }
 
-void Corpus::report_crash(int id, const FaultInfo& fault) {
+void Corpus::report_crash(int id, Vm& vm) {
 	ASSERT(m_mode != Mode::Unknown, "mode not set");
+
+	const FaultInfo& fault = vm.fault();
 	if (m_mode == Mode::CrashesMinimization) {
 		handle_crash_crashes_minimization(id, fault);
 		return;
@@ -245,7 +247,8 @@ void Corpus::report_crash(int id, const FaultInfo& fault) {
 
 	// If it was new, print fault information and dump input file to disk
 	if (inserted) {
-		cout << endl << fault << endl << endl;
+		vm.print_fault_info();
+
 		// We still want to count unique crashes in corpus minimization mode,
 		// but we don't want to write to other directories.
 		if (m_mode != Mode::CorpusMinimization) {
@@ -541,20 +544,27 @@ void Corpus::mut_add_sub(string& input, Rng& rng){
 	// Remaining bytes
 	size_t remain = input.size() - offset;
 
-	// Get the size of the integer we'll modify
+	// Get the size of the integer we'll modify. The sum is explained later.
 	size_t int_size;
-	if (remain >= 8)
+	if (remain >= 8 + 7)
 		int_size = 1 << rng.rnd(0, 3); // size 1, 2, 4 or 8
-	else if (remain >= 4)
+	else if (remain >= 4 + 3)
 		int_size = 1 << rng.rnd(0, 2); // size 1, 2 or 4
-	else if (remain >= 2)
+	else if (remain >= 2 + 1)
 		int_size = 1 << rng.rnd(0, 1); // size 1 or 2
 	else
 		int_size = 1;                  // size 1
 
 	// Align offset to int size. This prevents undefined behaviour when
 	// accessing unaligned memory
-	offset &= ~(int_size - 1);
+	// offset &= ~(int_size - 1);
+
+	// Align pointer to prevent undefined behaviour when accessing unaligned
+	// memory. This can increase raw_ptr up to int_size - 1 bytes. That's why
+	// we have to at least max_int_size + (max_int_size - 1) bytes remaining.
+	uintptr_t raw_ptr = (uintptr_t)input.c_str() + offset;
+	size_t mask = int_size - 1;
+	raw_ptr = (raw_ptr + mask) & ~mask;
 
 	// Helper macros
 	#define __builtin_bswap8(n) n
@@ -565,14 +575,15 @@ void Corpus::mut_add_sub(string& input, Rng& rng){
 		                                                                       \
 		/* Read bytes, interpret them as an integer with random endianness, */ \
 		/* add delta and store back those bytes */                             \
-		uint##sz##_t n = *(uint##sz##_t*)(input.c_str()+offset);               \
+		uint##sz##_t* ptr = (uint##sz##_t*)raw_ptr;                            \
+		uint##sz##_t n = *ptr;                                                 \
 		bool swap_endianness = rng.rnd(0, 1) && (sz != 8);                     \
 		if (swap_endianness)                                                   \
 		    n = bswap(sz, n);                                                  \
 		n += delta;                                                            \
 		if (swap_endianness)                                                   \
 		    n = bswap(sz, n);                                                  \
-		*(uint##sz##_t*)(input.c_str()+offset) = n;                            \
+		*ptr = n;                                                              \
 	} while (0)
 
 	// Perform mutation specifying maximum number to add or substract depending

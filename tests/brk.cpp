@@ -2,7 +2,9 @@
 #include <sys/mman.h>
 #include "common.h"
 
+#ifndef PAGE_SIZE
 const int PAGE_SIZE = 0x1000;
+#endif
 
 TEST_CASE("brk basic") {
 	uintptr_t cur_brk, new_brk;

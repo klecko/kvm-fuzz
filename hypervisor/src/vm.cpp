@@ -181,6 +181,14 @@ void Vm::setup_kvm() {
 	ioctl_chk(g_kvm_fd, KVM_GET_SUPPORTED_CPUID, cpuid);
 	ioctl_chk(m_vcpu_fd, KVM_SET_CPUID2, cpuid);
 
+	// Setup xcr0 (extended control register)
+	// kvm_xcrs xcrs;
+	// ioctl_chk(m_vcpu_fd, KVM_GET_XCRS, &xcrs);
+	// ASSERT(xcrs.nr_xcrs >= 1, "0 xcrs");
+	// ASSERT(xcrs.xcrs[0].xcr == 0, "first xcr is %x", xcrs.xcrs[0].xcr);
+	// xcrs.xcrs[0].value = XCR0_X87 | XCR0_SSE | XCR0_AVX;
+	// ioctl_chk(m_vcpu_fd, KVM_SET_XCRS, &xcrs);
+
 	// Set debug
 	set_single_step(false);
 
@@ -228,7 +236,7 @@ void Vm::setup_coverage(const string& path) {
 		// Command injection woopsie doopsie
 		printf("Basic blocks file '%s' doesn't exist. It will be created using "
 		       "angr. This can take some minutes.\n", path.c_str());
-		string cmd = "../scripts/generate_basic_blocks.py " + m_elf.path() +
+		string cmd = "./scripts/generate_basic_blocks.py " + m_elf.path() +
 		             " " + path + " " + to_hex(m_elf.load_addr());
 		ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
 		bbs.open(path);
@@ -575,7 +583,7 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 	remove_breakpoint(pc, Breakpoint::Type::RunEnd);
 
 	if (reason == RunEndReason::Crash)
-		cout << fault() << endl;
+		print_fault_info();
 	ASSERT(reason == RunEndReason::Debug, "run until end reason: %s",
 	       Vm::reason_str[reason]);
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
@@ -788,7 +796,7 @@ void Vm::read_and_set_file(const string& filename) {
 }
 
 vaddr_t Vm::resolve_symbol(const string& symbol_name) {
-	for (const symbol_t symbol : m_elf.symbols())
+	for (const symbol_t& symbol : m_elf.symbols())
 		if (symbol.name == symbol_name)
 			return symbol.value;
 	return 0;
@@ -804,134 +812,64 @@ void Vm::set_timeout(size_t microsecs) {
 	m_mmu.write<vsize_t>(m_timeout_addr, microsecs);
 }
 
-void Vm::print_instruction_pointer(int i, vaddr_t instruction_pointer) {
-	// TODO: print also source file and line
-	printf("#%d 0x%016lx", i, instruction_pointer);
-	string symbol = m_elf.addr_to_symbol_name(instruction_pointer);
-	if (symbol != "unknown")
-		printf(" at %s", symbol.c_str());
+void print_no_stacktrace(vaddr_t rip) {
+	printf("#0 0x%016lx\n", rip);
+	printf("(no stacktrace available)\n");
+}
+
+void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
+	// PC is the return address, which means it points to the instruction after
+	// the 'call' instruction. We substract 1 to that PC to get the symbol and
+	// source information of the 'call' instruction and not the instruction
+	// after it. However, we want to print the actual PC and the actual offset
+	// within the symbol.
+	symbol_t symbol;
+	bool have_symbol = elf.addr_to_symbol(pc - 1, symbol);
+	string source = elf.addr_to_source(pc - 1);
+
+	printf("#%d 0x%016lx", i, pc);
+	if (have_symbol) {
+		size_t offset = pc - symbol.value;
+		printf(" in %s + 0x%lx", symbol.name.c_str(), offset);
+	}
+	if (!source.empty())
+		printf(" at %s", source.c_str());
 	printf("\n");
 }
 
-void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
-	regs[DwarfReg::Rax] = kregs.rax;
-	regs[DwarfReg::Rdx] = kregs.rdx;
-	regs[DwarfReg::Rcx] = kregs.rdx;
-	regs[DwarfReg::Rbx] = kregs.rbx;
-	regs[DwarfReg::Rsi] = kregs.rsi;
-	regs[DwarfReg::Rdi] = kregs.rdi;
-	regs[DwarfReg::Rbp] = kregs.rbp;
-	regs[DwarfReg::Rsp] = kregs.rsp;
-	regs[DwarfReg::R8]  = kregs.r8;
-	regs[DwarfReg::R9]  = kregs.r9;
-	regs[DwarfReg::R10] = kregs.r10;
-	regs[DwarfReg::R11] = kregs.r11;
-	regs[DwarfReg::R12] = kregs.r12;
-	regs[DwarfReg::R13] = kregs.r13;
-	regs[DwarfReg::R14] = kregs.r14;
-	regs[DwarfReg::R15] = kregs.r15;
-	regs[DwarfReg::ReturnAddress] = kregs.rip;
+void Vm::print_current_stacktrace(size_t num_frames) {
+	print_stacktrace(regs(), num_frames);
 }
 
-void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames) {
-	if (!m_elf.has_dwarf())
-		return;
+void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames){
+	// Determine which elf this PC belongs to
+	const ElfParser& elf = (kregs.rip >= m_kernel.load_addr() ? m_kernel : m_elf);
 
-	vsize_t regs[DwarfReg::MAX];
-	kvm_to_dwarf_regs(kregs, regs);
+	// Get and print the stacktrace
+	vector<vaddr_t> stacktrace = elf.get_stacktrace(kregs, num_frames, m_mmu);
+	for (size_t i = 0; i < stacktrace.size(); i++) {
+		print_stacktrace_line(elf, i, stacktrace[i]);
+	}
 
-	// Allocate register table
-	Dwarf_Regtable3 regtable;
-	regtable.rt3_reg_table_size = DW_REG_TABLE_SIZE;
-	regtable.rt3_rules = (Dwarf_Regtable_Entry3_s*)alloca(
-		sizeof(Dwarf_Regtable_Entry3_s)*DW_REG_TABLE_SIZE
-	);
-
-	// Get limits
-	auto limits = m_elf.section_limits(".text");
-
-	// Loop over stack frames until we're out of limits
-	size_t i = 0;
-	print_instruction_pointer(i, regs[DwarfReg::ReturnAddress]);
-	while (regs[DwarfReg::ReturnAddress] >= limits.first &&
-	       regs[DwarfReg::ReturnAddress] < limits.second &&
-		   i < num_frames)
-	{
-		// Get register information. Some functions like malloc_printerr end
-		// with a call (noreturn), so the return address is out of bounds of
-		// the function. We substract one from the return address to avoid this.
-		m_elf.get_current_frame_regs_info(regs[DwarfReg::ReturnAddress]-1,
-		                                  &regtable);
-
-		// If return address value is undefined, we've finished
-		auto ra_value = regtable.rt3_rules[DwarfReg::ReturnAddress].dw_regnum;
-		if (ra_value == DW_FRAME_UNDEFINED_VAL)
-			break;
-
-		// First update CFA register (RSP), which is always the value of a
-		// register (usually the old RSP, but not always; this is why we have
-		// to restore every register and not just RSP) plus an offset
-		ASSERT(regtable.rt3_cfa_rule.dw_regnum < DwarfReg::MAX, "oob reg: %d",
-		       regtable.rt3_cfa_rule.dw_regnum);
-		ASSERT(regtable.rt3_cfa_rule.dw_offset_relevant != 0,
-		       "woops, CFA offset not relevant");
-		DwarfReg regnum = (DwarfReg)regtable.rt3_cfa_rule.dw_regnum;
-		regs[DwarfReg::Rsp] =
-			regs[regnum] + regtable.rt3_cfa_rule.dw_offset_or_block_len;
-
-		// Update every other register
-		for (int i = 0; i < regtable.rt3_reg_table_size; i++) {
-			Dwarf_Regtable_Entry3_s& rule = regtable.rt3_rules[i];
-			if (rule.dw_regnum == DW_FRAME_SAME_VAL ||
-			    rule.dw_regnum == DW_FRAME_UNDEFINED_VAL)
-				continue;
-			ASSERT(i < DwarfReg::MAX, "oob reg %d", i);
-
-			// Get register value
-			vaddr_t value, addr;
-			if (rule.dw_value_type == DW_EXPR_OFFSET) {
-				if (rule.dw_offset_relevant) {
-					// Value is stored at the address CFA + N
-					addr = regs[DwarfReg::Rsp] + rule.dw_offset_or_block_len;
-					value = m_mmu.read<vsize_t>(addr);
-				} else {
-					// Value is the value of the register dw_regnum
-					ASSERT(rule.dw_regnum < DwarfReg::MAX, "oob reg %d",
-					       rule.dw_regnum);
-					value = regs[rule.dw_regnum];
-					TODO
-				}
-			} else if (rule.dw_value_type == DW_EXPR_VAL_OFFSET) {
-				// Value is CFA + N
-				value = regs[DwarfReg::Rsp] + rule.dw_offset_or_block_len;
-				TODO
-			} else TODO
-
-			// Update register value
-			regs[i] = value;
+	if (stacktrace.size() == 1) {
+		printf("(no stacktrace available)\n\n");
+		printf("trying to dump stack instead\n");
+		for (size_t i = 0; i < 16; i++) {
+			size_t value = m_mmu.read<size_t>(kregs.rsp + i*sizeof(size_t));
+			printf("%016lx\n", value);
 		}
-
-		// Print instruction pointer
-		i++;
-		print_instruction_pointer(i, regs[DwarfReg::ReturnAddress]);
+		printf("\n");
 	}
 }
 
-void Vm::dump_regs() {
-	printf("rip: 0x%016llX\n", m_regs->rip);
-	printf("rax: 0x%016llX  rbx: 0x%016llX  rcx: 0x%016llX  rdx: 0x%016llX\n", m_regs->rax, m_regs->rbx, m_regs->rcx, m_regs->rdx);
-	printf("rsi: 0x%016llX  rdi: 0x%016llX  rsp: 0x%016llX  rbp: 0x%016llX\n", m_regs->rsi, m_regs->rdi, m_regs->rsp, m_regs->rbp);
-	printf("r8:  0x%016llX  r9:  0x%016llX  r10: 0x%016llX  r11: 0x%016llX\n", m_regs->r8, m_regs->r9, m_regs->r10, m_regs->r11);
-	printf("r12: 0x%016llX  r13: 0x%016llX  r14: 0x%016llX  r15: 0x%016llX\n", m_regs->r12, m_regs->r13, m_regs->r14, m_regs->r15);
-	printf("rflags: 0x%016llX\n", m_regs->rflags);
+void Vm::print_fault_info() {
+	cout << endl << m_fault << endl;
+	print_stacktrace(m_fault.regs);
+	cout << endl;
+}
 
-	/* kvm_fpu fregs;
-	ioctl_chk(vcpu.fd, KVM_GET_FPU, &regs);
-	for (int i = 0; i < 16; i++) {
-		printf("xmm%02d: %08Lf  ", i, *(long double*)&fregs.xmm[i]);
-		if ((i+1)%4 == 0)
-			printf("\n");
-	} */
+void Vm::dump_regs() {
+	cout << regs() << endl;
 }
 
 void Vm::dump_memory() const {
@@ -979,4 +917,28 @@ void Vm::dump(const string& filename) {
 		ofs.write((char*)&pair.second, sizeof(vaddr_t));
 	}
 	ofs.close();
+}
+
+ostream& operator<<(ostream& os, const kvm_regs& regs) {
+	// There's no way I write this with streams.
+	char buf[512];
+	snprintf(buf, sizeof(buf),
+	         "rip: 0x%016llx\n"
+	         "rax: 0x%016llx  rbx: 0x%016llx  rcx: 0x%016llx  rdx: 0x%016llx\n"
+	         "rsi: 0x%016llx  rdi: 0x%016llx  rsp: 0x%016llx  rbp: 0x%016llx\n"
+	         "r8:  0x%016llx  r9:  0x%016llx  r10: 0x%016llx  r11: 0x%016llx\n"
+	         "r12: 0x%016llx  r13: 0x%016llx  r14: 0x%016llx  r15: 0x%016llx\n"
+	         "rflags: 0x%016llx\n",
+	         regs.rip, regs.rax, regs.rbx, regs.rcx, regs.rdx, regs.rsi, regs.rdi,
+	         regs.rsp, regs.rbp, regs.r8, regs.r9, regs.r10, regs.r11, regs.r12,
+	         regs.r13, regs.r14, regs.r15, regs.rflags);
+	os << buf;
+
+	// printf("rip: 0x%016llx\n", regs.rip);
+	// printf("rax: 0x%016llx  rbx: 0x%016llx  rcx: 0x%016llx  rdx: 0x%016llx\n", regs.rax, regs.rbx, regs.rcx, regs.rdx);
+	// printf("rsi: 0x%016llx  rdi: 0x%016llx  rsp: 0x%016llx  rbp: 0x%016llx\n", regs.rsi, regs.rdi, regs.rsp, regs.rbp);
+	// printf("r8:  0x%016llx  r9:  0x%016llx  r10: 0x%016llx  r11: 0x%016llx\n", regs.r8, regs.r9, regs.r10, regs.r11);
+	// printf("r12: 0x%016llx  r13: 0x%016llx  r14: 0x%016llx  r15: 0x%016llx\n", regs.r12, regs.r13, regs.r14, regs.r15);
+	// printf("rflags: 0x%016llx\n", regs.rflags);
+	return os;
 }

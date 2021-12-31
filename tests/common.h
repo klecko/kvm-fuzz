@@ -6,7 +6,7 @@
 #include <sys/resource.h>
 #include "catch.hpp"
 
-const char input[] = "../tests/input_hello_world";
+const char input[] = "./tests/input_hello_world";
 
 __attribute__((warn_unused_result))
 inline int read_and_check_first_five_bytes(int fd, char* buf) {

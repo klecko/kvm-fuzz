@@ -207,7 +207,7 @@ pub const BlockAllocator = struct {
         new_len: usize,
         len_align: u29,
         ret_addr: usize,
-    ) Allocator.Error!usize {
+    ) ?usize {
         _ = self;
         _ = buf;
         _ = buf_align;
@@ -218,7 +218,7 @@ pub const BlockAllocator = struct {
     }
 
     fn free(
-        self: *HeapAllocator,
+        self: *BlockAllocator,
         buf: []u8,
         buf_align: u29,
         ret_addr: usize,

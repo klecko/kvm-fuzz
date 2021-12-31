@@ -6,7 +6,7 @@
 
 using namespace std;
 
-// Keep this the same as in the kernel!
+// Keep this the same as in the kernel
 enum Hypercall : size_t {
 	Test,
 	Print,
@@ -19,6 +19,13 @@ enum Hypercall : size_t {
 	SubmitTimeoutPointers,
 	PrintStacktrace,
 	EndRun,
+};
+
+// Keep this the same as in the kernel
+struct StacktraceRegs {
+	vaddr_t rsp;
+	vaddr_t rbp;
+	vaddr_t rip;
 };
 
 void Vm::do_hc_print(vaddr_t msg_addr) {
@@ -136,15 +143,16 @@ void Vm::do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr)
 	m_timeout_addr = timeout_addr;
 }
 
-void Vm::do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp) {
+void Vm::do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr) {
 	// For now we set just rsp, rip and rbp, which seem to be the only
 	// ones needed in most situations, and initialize the others to 0.
 	// If print_stacktrace fails, we may need to request more registers
 	// from guest.
+	StacktraceRegs stacktrace_regs = m_mmu.read<StacktraceRegs>(stacktrace_regs_addr);
 	kvm_regs regs = {
-		.rsp = rsp,
-		.rbp = rbp,
-		.rip = rip,
+		.rsp = stacktrace_regs.rsp,
+		.rbp = stacktrace_regs.rbp,
+		.rip = stacktrace_regs.rip,
 	};
 	print_stacktrace(regs);
 }
@@ -187,7 +195,7 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			do_hc_submit_timeout_pointers(m_regs->rdi, m_regs->rsi);
 			break;
 		case Hypercall::PrintStacktrace:
-			do_hc_print_stacktrace(m_regs->rdi, m_regs->rsi, m_regs->rdx);
+			do_hc_print_stacktrace(m_regs->rdi);
 			break;
 		case Hypercall::EndRun:
 			reason = (RunEndReason)m_regs->rdi;

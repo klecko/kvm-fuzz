@@ -6,7 +6,9 @@
 // mov rax, 0x1234; ret
 const uint8_t shellcode[] = "\x48\xc7\xc0\x34\x12\x00\x00\xc3";
 
+#ifndef PAGE_SIZE
 const int PAGE_SIZE = 0x1000;
+#endif
 const int prot = PROT_READ | PROT_WRITE;
 const int flags = MAP_ANON | MAP_PRIVATE;
 void* const kernel_addr = (void*)0xffffffffa1d0f000;

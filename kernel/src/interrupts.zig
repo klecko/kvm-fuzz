@@ -217,14 +217,14 @@ fn handlePageFault(frame: *InterruptFrame) void {
 
     // Create the fault and send it to the hypervisor
     const fault = hypercalls.FaultInfo{
-        .rip = frame.rip,
-        .fault_addr = fault_addr,
         .fault_type = fault_type,
+        .fault_addr = fault_addr,
         .kernel = !user,
+        .regs = x86.Regs.initFrom(frame.*),
     };
-    if (fault.kernel) {
-        panic("kernel PF: {}\nframe: {}\n", .{ fault, frame });
-    }
+    // if (fault.kernel) {
+    //     panic("kernel PF: {}\nframe: {}\n", .{ fault, frame });
+    // }
 
     // This won't return
     hypercalls.endRun(.Crash, &fault);
@@ -238,8 +238,8 @@ fn handleGeneralProtectionFault(frame: *InterruptFrame) void {
     const fault = hypercalls.FaultInfo{
         .fault_type = .GeneralProtectionFault,
         .fault_addr = 0,
-        .rip = frame.rip,
         .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+        .regs = x86.Regs.initFrom(frame.*),
     };
     hypercalls.endRun(.Crash, &fault);
 }
@@ -248,8 +248,8 @@ fn handleDivByZero(frame: *InterruptFrame) void {
     const fault = hypercalls.FaultInfo{
         .fault_type = .DivByZero,
         .fault_addr = 0,
-        .rip = frame.rip,
         .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+        .regs = x86.Regs.initFrom(frame.*),
     };
     hypercalls.endRun(.Crash, &fault);
 }
@@ -258,8 +258,8 @@ fn handleStackSegmentFault(frame: *InterruptFrame) void {
     const fault = hypercalls.FaultInfo{
         .fault_type = .StackSegmentFault,
         .fault_addr = 0,
-        .rip = frame.rip,
         .kernel = mem.safe.isAddressInKernelRange(frame.rip),
+        .regs = x86.Regs.initFrom(frame.*),
     };
     hypercalls.endRun(.Crash, &fault);
 }

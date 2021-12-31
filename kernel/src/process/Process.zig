@@ -39,6 +39,8 @@ min_brk: usize,
 
 limits: Limits,
 
+// Registers saved when scheduling
+// TODO revisar
 user_regs: UserRegs,
 
 // // Top of the stack
@@ -51,25 +53,7 @@ var next_pid: linux.pid_t = 1234;
 
 const Limits = @import("syscalls/prlimit.zig").Limits;
 
-pub const UserRegs = struct {
-    rax: usize,
-    rbx: usize,
-    rcx: usize,
-    rdx: usize,
-    rbp: usize,
-    rsi: usize,
-    rdi: usize,
-    r8: usize,
-    r9: usize,
-    r10: usize,
-    r11: usize,
-    r12: usize,
-    r13: usize,
-    r14: usize,
-    r15: usize,
-    rip: usize,
-    rsp: usize,
-};
+pub const UserRegs = x86.Regs;
 
 pub const State = union(enum) {
     active,
@@ -224,7 +208,7 @@ pub noinline fn handleSyscall(
         .gettid => self.handle_sys_gettid(),
         .getppid => self.handle_sys_getppid(),
         .getpgid => self.handle_sys_getpgid(arg0),
-        .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2),
+        .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2, regs),
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
         .set_tid_address,

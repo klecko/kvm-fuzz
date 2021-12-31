@@ -50,7 +50,11 @@ pub fn handle_sys_futex(
     const op = futex_op & ~@as(i32, linux.FUTEX.PRIVATE_FLAG);
     const arg = switch (op) {
         // These interpret the argument as a timeout, and may be null
-        linux.FUTEX.WAIT, linux.FUTEX.WAIT_BITSET, linux.FUTEX.LOCK_PI, linux.FUTEX.WAIT_REQUEUE_PI => VariantArg{ .timeout = UserPtr(*linux.timespec).fromFlatMaybeNull(arg3) },
+        linux.FUTEX.WAIT,
+        linux.FUTEX.WAIT_BITSET,
+        linux.FUTEX.LOCK_PI,
+        linux.FUTEX.WAIT_REQUEUE_PI,
+        => VariantArg{ .timeout = UserPtr(*linux.timespec).fromFlatMaybeNull(arg3) },
         // These interpret the argument as val2
         linux.FUTEX.CMP_REQUEUE,
         linux.FUTEX.WAKE_OP,
@@ -60,7 +64,11 @@ pub fn handle_sys_futex(
     };
     const uaddr2 = switch (op) {
         // These must have a uaddr2
-        linux.FUTEX.CMP_REQUEUE, linux.FUTEX.WAKE_OP, linux.FUTEX.CMP_REQUEUE_PI, linux.FUTEX.WAIT_REQUEUE_PI => try UserPtr(*i32).fromFlat(arg4),
+        linux.FUTEX.CMP_REQUEUE,
+        linux.FUTEX.WAKE_OP,
+        linux.FUTEX.CMP_REQUEUE_PI,
+        linux.FUTEX.WAIT_REQUEUE_PI,
+        => try UserPtr(*i32).fromFlat(arg4),
         else => null,
     };
     const val3 = cast(i32, arg5);

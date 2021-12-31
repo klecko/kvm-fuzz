@@ -6,6 +6,7 @@
 #include <stats.h>
 #include "common.h"
 #include "fault.h"
+#include "vm.h"
 #include "coverage.h"
 
 // Used for mutating inputs. We don't use glibc rand() because it uses locks
@@ -48,7 +49,6 @@ class Rng {
 		}
 };
 
-
 class Corpus {
 public:
 	static const int MIN_MUTATIONS = 1;
@@ -80,8 +80,8 @@ public:
 	// `mutated_inputs[id]`
 	const std::string& get_new_input(int id, Rng& rng, Stats& stats);
 
-	// Report a new crash
-	void report_crash(int id, const FaultInfo& fault);
+	// Report a new crash on a given vm
+	void report_crash(int id, Vm& vm);
 
 	// Report coverage of a run
 	void report_coverage(int id, const Coverage& cov);

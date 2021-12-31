@@ -3,6 +3,7 @@ const common = @import("common.zig");
 const print = common.print;
 const hypercalls = @import("hypercalls.zig");
 const mem = @import("mem/mem.zig");
+const x86 = @import("x86/x86.zig");
 const StackTrace = std.builtin.StackTrace;
 
 // https://github.com/ziglang/zig/issues/7962
@@ -32,20 +33,23 @@ fn panicFmtErrorReturnTrace(comptime format: []const u8, args: anytype, error_re
         }
     }
 
-    print("dumping stacktrace\n", .{});
-    var it = std.debug.StackIterator.init(@returnAddress(), null);
-    while (it.next()) |addr| {
-        print("\t{x}\n", .{addr});
-        if (!mem.safe.isAddressInKernelRange(addr))
-            break;
-    }
+    // We don't need to bother to print the stacktrace. As we are sending a
+    // fault to the hypervisor, it will print it for us. Besides, the hypervisor
+    // has access to debug info so it can print prettier stacktraces :')
+    // print("dumping stacktrace\n", .{});
+    // var it = std.debug.StackIterator.init(@returnAddress(), null);
+    // while (it.next()) |addr| {
+    //     print("\t{x}\n", .{addr});
+    //     if (!mem.safe.isAddressInKernelRange(addr))
+    //         break;
+    // }
 
     // Send a fault to the hypervisor so the run stops and we can debug
     const fault = hypercalls.FaultInfo{
         .fault_type = .AssertionFailed,
-        .rip = 0,
         .fault_addr = 0,
         .kernel = true,
+        .regs = x86.Regs.initFrom(hypercalls.StackTraceRegs.fromCurrent()),
     };
     hypercalls.endRun(.Crash, &fault);
 }

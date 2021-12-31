@@ -3,7 +3,6 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <limits>
-#include <libelf.h>
 #include "elf_parser.h"
 #include "utils.h"
 
@@ -111,9 +110,9 @@ ElfParser::ElfParser(const string& elf_path)
 		for (i = 0; i < n_syms; i++) {
 			symbol_t symbol = {
 				.name       = string(sec_strtab + syms[i].st_name),
-				.type       = ELF_ST_TYPE(syms[i].st_info),
-				.binding    = ELF_ST_BIND(syms[i].st_info),
-				.visibility = ELF_ST_VISIBILITY(syms[i].st_other),
+				.type       = (uint8_t)ELF_ST_TYPE(syms[i].st_info),
+				.binding    = (uint8_t)ELF_ST_BIND(syms[i].st_info),
+				.visibility = (uint8_t)ELF_ST_VISIBILITY(syms[i].st_other),
 				.shndx      = syms[i].st_shndx,
 				.value      = syms[i].st_value,
 				.size       = syms[i].st_size
@@ -136,21 +135,7 @@ ElfParser::ElfParser(const string& elf_path)
 		m_dependencies.push_back(line.substr(pos1, pos2-pos1));
 	}
 
-	// libdwarf stuff.
-	// TODO: This is leaky, and unsafe when this object is copied
-	// Get libdwarf handler from memory-loaded elf
-	Dwarf_Error err;
-	int ret;
-	m_dwarf_elf = elf_memory((char*)m_data, st.st_size);
-	ASSERT(m_dwarf_elf, "error reading elf from memory");
-	ret = dwarf_elf_init(m_dwarf_elf, DW_DLC_READ, nullptr, nullptr,
-	                     &m_dwarf, &err);
-	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
-
-	// Get data
-	ret = dwarf_get_fde_list_eh(m_dwarf, &m_dwarf_cie_data, &m_dwarf_cie_count,
-		&m_dwarf_fde_data, &m_dwarf_fde_count, &err);
-	m_has_dwarf = (ret == DW_DLV_OK);
+	m_debug = ElfDebug(m_data, st.st_size);
 }
 
 const uint8_t* ElfParser::data() const {
@@ -239,38 +224,70 @@ pair<vaddr_t, vaddr_t> ElfParser::symbol_limits(const string& name) const {
 	ASSERT(false, "not found symbol: %s", name.c_str());
 }
 
-string ElfParser::addr_to_symbol_name(vaddr_t addr) const {
+bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
 	for (const symbol_t& symbol : symbols()) {
 		if (addr >= symbol.value && addr < symbol.value + symbol.size) {
-			return symbol.name + " + " + to_string(addr - symbol.value);
+			result = symbol;
+			return true;
 		}
 	}
-	return "unknown";
+	return false;
 }
 
-bool ElfParser::has_dwarf() {
-	return m_has_dwarf;
+bool ElfParser::has_dwarf() const {
+	return m_debug.has();
 }
 
-void ElfParser::get_current_frame_regs_info(vaddr_t instruction_pointer,
-                                            Dwarf_Regtable3* regtable)
+
+void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
+	regs[DwarfReg::Rax] = kregs.rax;
+	regs[DwarfReg::Rdx] = kregs.rdx;
+	regs[DwarfReg::Rcx] = kregs.rdx;
+	regs[DwarfReg::Rbx] = kregs.rbx;
+	regs[DwarfReg::Rsi] = kregs.rsi;
+	regs[DwarfReg::Rdi] = kregs.rdi;
+	regs[DwarfReg::Rbp] = kregs.rbp;
+	regs[DwarfReg::Rsp] = kregs.rsp;
+	regs[DwarfReg::R8]  = kregs.r8;
+	regs[DwarfReg::R9]  = kregs.r9;
+	regs[DwarfReg::R10] = kregs.r10;
+	regs[DwarfReg::R11] = kregs.r11;
+	regs[DwarfReg::R12] = kregs.r12;
+	regs[DwarfReg::R13] = kregs.r13;
+	regs[DwarfReg::R14] = kregs.r14;
+	regs[DwarfReg::R15] = kregs.r15;
+	regs[DwarfReg::ReturnAddress] = kregs.rip;
+}
+
+vector<vaddr_t> ElfParser::get_stacktrace(const kvm_regs& kregs, size_t num_frames,
+                                          Mmu& mmu) const
 {
-	ASSERT(m_has_dwarf, "attempt to use non existing dwarf info");
+	vector<vaddr_t> stacktrace;
 
-	// Get Frame Description Entry for instruction pointer
-	Dwarf_Error err;
-	Dwarf_Fde fde;
-	int ret = dwarf_get_fde_at_pc(m_dwarf_fde_data, instruction_pointer, &fde,
-		nullptr, nullptr, &err);
-	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+	// Transform to dwarf format
+	vsize_t regs[DwarfReg::MAX];
+	kvm_to_dwarf_regs(kregs, regs);
 
-	// Get regs information
-	Dwarf_Addr row_pc;
-	ret = dwarf_get_fde_info_for_all_regs3(fde, instruction_pointer, regtable,
-		&row_pc, &err);
-	ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err));
+	// Get limits
+	auto limits = section_limits(".text");
+
+	// Loop over stack frames until we're out of limits
+	size_t i = 0;
+	stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
+	while (i < num_frames &&
+	       m_debug.next_frame(regs, mmu) &&
+	       regs[DwarfReg::ReturnAddress] >= limits.first &&
+	       regs[DwarfReg::ReturnAddress] < limits.second)
+	{
+		stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
+	}
+
+	return stacktrace;
 }
 
+string ElfParser::addr_to_source(vaddr_t addr) const {
+	return m_debug.addr_to_source(addr);
+}
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;
 } */

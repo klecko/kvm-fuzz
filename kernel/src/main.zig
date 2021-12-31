@@ -33,7 +33,11 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     // const allocator = mem.heap.page_allocator;
     // const allocator = mem.heap.heap_allocator;
     // const allocator = mem.heap.block_allocator;
-    const allocator = mem.heap.gpa_allocator;
+    // const allocator = mem.heap.gpa_allocator;
+    const allocator = if (std.debug.runtime_safety)
+        mem.heap.gpa_allocator
+    else
+        mem.heap.block_allocator;
 
     fs.file_manager.init(allocator, info.num_files);
 

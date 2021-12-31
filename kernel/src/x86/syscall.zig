@@ -26,27 +26,30 @@ export fn handleSyscall(
 }
 
 fn syscallEntry() callconv(.Naked) void {
+    // Syscall places the return address into rcx, and rflags into r11.
+    // We'll push a 0 for those registers.
     asm volatile (
     // Save user stack and set kernel stack
         \\mov %%rsp, (user_stack)
         \\mov (kernel_stack), %%rsp
 
         // Push registers
-        \\push (user_stack)
-        \\push %%rcx
+        \\push %%r11 // rflags
+        \\push %%rcx // rip
         \\push %%r15
         \\push %%r14
         \\push %%r13
         \\push %%r12
-        \\push %%r11
+        \\push $0    // overwritten by rflags
         \\push %%r10
         \\push %%r9
         \\push %%r8
+        \\push %%rbp
+        \\push (user_stack) // rsp
         \\push %%rdi
         \\push %%rsi
-        \\push %%rbp
         \\push %%rdx
-        \\push %%rcx
+        \\push $0    // overwritten by rip
         \\push %%rbx
         \\push %%rax
 
@@ -56,7 +59,7 @@ fn syscallEntry() callconv(.Naked) void {
         // Push syscall number as 7th argument for the handler
         \\push %%rax
 
-        // The forth argument is set in r10. We need to move it to rcx to conform to
+        // The fourth argument is set in r10. We need to move it to rcx to conform to
         // C ABI. Arguments should be in: rdi, rsi, rdx, rcx, r8, r9, stack.
         \\mov %%r10, %%rcx
 
@@ -68,14 +71,19 @@ fn syscallEntry() callconv(.Naked) void {
         \\pop %%rbx
 
         // Restore registers
-        // Don't restore rax, which now contains the return value
-        \\pop %%rbx
+        \\pop %%rbx // don't restore rax, which now contains the return value
         \\pop %%rbx
         \\pop %%rcx
         \\pop %%rdx
-        \\pop %%rbp
         \\pop %%rsi
         \\pop %%rdi
+        // We don't restore rsp yet, as we have more things in the stack we need.
+        // We also can't ignore this value and just load from user_stack because
+        // this value may have been overwritten. So just save it and restore it
+        // later.
+        \\pop %%rbp
+        \\mov %%rbp, (user_stack)
+        \\pop %%rbp
         \\pop %%r8
         \\pop %%r9
         \\pop %%r10
@@ -84,12 +92,11 @@ fn syscallEntry() callconv(.Naked) void {
         \\pop %%r13
         \\pop %%r14
         \\pop %%r15
-        // Guest rip must be in rcx
-        \\pop %%rcx
+        \\pop %%rcx // Guest rip must be in rcx
+        \\pop %%r11 // Guest rflags must be in r11
 
         // Restore user stack
-        \\pop %%rsp
-        // \\mov (user_stack), %%rsp
+        \\mov (user_stack), %%rsp
 
         // Return
         \\sysretq

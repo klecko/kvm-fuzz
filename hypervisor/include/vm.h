@@ -105,6 +105,10 @@ public:
 	// finish with RunEndReason::Timeout.
 	void set_timeout(size_t microsecs);
 
+	void print_current_stacktrace(size_t num_frames=-1);
+	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
+	void print_fault_info();
+
 	void dump_regs();
 	void dump_memory() const;
 	void dump_memory(psize_t len) const;
@@ -172,8 +176,6 @@ private:
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
 	void handle_breakpoint(RunEndReason& reason);
 	void handle_hook();
-	void print_instruction_pointer(int i, vaddr_t instruction_pointer);
-	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
@@ -187,7 +189,7 @@ private:
 	void do_hc_submit_file_pointers(size_t n, vaddr_t buf_addr,
 	                                vaddr_t length_addr);
 	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
-	void do_hc_print_stacktrace(vaddr_t rsp, vaddr_t rip, vaddr_t rbp);
+	void do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
 	                   uint64_t instructions_executed);
 

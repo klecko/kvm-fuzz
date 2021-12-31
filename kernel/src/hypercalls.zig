@@ -12,7 +12,7 @@ pub const Hypercall = enum(c_int) {
     GetFileName,
     SubmitFilePointers,
     SubmitTimeoutPointers,
-    PrintStacktrace,
+    PrintStackTrace,
     EndRun,
 };
 
@@ -46,11 +46,13 @@ pub const MemInfo = extern struct {
 };
 
 // Keep this the same as in the hypervisor
+
+// Keep this the same as in the hypervisor
 pub const FaultInfo = extern struct {
     fault_type: Type,
-    rip: usize,
     fault_addr: usize,
     kernel: bool,
+    regs: x86.Regs,
 
     pub const Type = enum(c_int) {
         Read,
@@ -76,8 +78,25 @@ pub const FaultInfo = extern struct {
         try std.fmt.format(
             writer,
             "Fault{{ .fault_type = {s}, .rip = 0x{x}, .fault_addr = 0x{x}, .kernel = {} }}",
-            .{ @tagName(self.fault_type), self.rip, self.fault_addr, self.kernel },
+            .{ @tagName(self.fault_type), self.regs.rip, self.fault_addr, self.kernel },
         );
+    }
+};
+
+// Keep this the same as in the hypervisor
+pub const StackTraceRegs = struct {
+    rsp: usize,
+    rbp: usize,
+    rip: usize,
+
+    pub fn fromCurrent() StackTraceRegs {
+        return .{
+            .rip = getRip(),
+            .rbp = @frameAddress(),
+            .rsp = asm volatile ("mov %%rsp, %[ret]"
+                : [ret] "=r" (-> usize),
+            ),
+        };
     }
 };
 
@@ -91,8 +110,7 @@ const RunEndReason = enum(c_int) {
 
 fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
     if (@enumToInt(hc) != n) {
-        @compileError("woops, hypercall " ++ @tagName(hc) ++
-            " has wrong value");
+        @compileError("woops, hypercall " ++ @tagName(hc) ++ " has wrong value");
     }
 }
 comptime {
@@ -147,10 +165,20 @@ comptime {
         \\  mov $8, %rax
         \\  jmp hypercall
         \\
+        \\.global _printStackTrace
+        \\_printStackTrace:
+        \\  mov $9, %rax
+        \\  jmp hypercall
+        \\
         \\.global _endRun
         \\_endRun:
         \\	mov $10, %rax
         \\	jmp hypercall
+        \\
+        \\.global getRip
+        \\getRip:
+        \\movq (%rsp), %rax
+        \\ret
     );
     checkEquals(.Print, 1);
     checkEquals(.GetMemInfo, 2);
@@ -160,6 +188,7 @@ comptime {
     checkEquals(.GetFileName, 6);
     checkEquals(.SubmitFilePointers, 7);
     checkEquals(.SubmitTimeoutPointers, 8);
+    checkEquals(.PrintStackTrace, 9);
     checkEquals(.EndRun, 10);
 }
 
@@ -172,12 +201,20 @@ pub extern fn getFileLen(n: usize) usize;
 pub extern fn getFileName(n: usize, buf: [*]u8) void;
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
+extern fn _printStackTrace(stacktrace_regs: *StackTraceRegs) void;
 extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
+extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
     for (s) |c| {
         printChar(c);
     }
+}
+
+pub fn printStackTrace(stacktrace_regs: ?*StackTraceRegs) void {
+    // If we weren't given regs, use current ones
+    const arg = stacktrace_regs orelse &StackTraceRegs.fromCurrent();
+    _printStackTrace(arg);
 }
 
 const pmm = @import("mem/mem.zig").pmm;

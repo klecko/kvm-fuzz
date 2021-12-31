@@ -129,7 +129,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			// Check RunEndReason
 			if (reason == Vm::RunEndReason::Crash) {
 				stats.crashes++;
-				corpus.report_crash(id, runner.fault());
+				corpus.report_crash(id, runner);
 			} else if (reason == Vm::RunEndReason::Timeout) {
 				stats.timeouts++;
 			} else if (reason != Vm::RunEndReason::Exit) {
@@ -226,7 +226,7 @@ int main(int argc, char** argv) {
 		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)
-			cout << vm.fault() << endl;
+			vm.print_fault_info();
 		printf("Run ended with reason %s\n", Vm::reason_str[reason]);
 		// vm.dump("libtiff-data");
 		return 0;
