@@ -11,19 +11,21 @@
 #include <unistd.h>
 #include <string.h>
 
+// These are now set by the build script.
+
 // If disabled, input file will be chose from the initial corpus but it will
 // not be mutated
-#define ENABLE_MUTATIONS
+// #define ENABLE_MUTATIONS
 
 // Enables KVM dirty log ring, available from Linux 5.11. If disabled, the
 // usual bitmap is used
-//#define ENABLE_KVM_DIRTY_LOG_RING
+// #define ENABLE_KVM_DIRTY_LOG_RING
 
 // Enables breakpoints-based code coverage. A breakpoint is placed at the start
 // of every basic block. When an input hits a breakpoint, it is removed and the
 // input is added to the corpus. This provides basic block coverage instead of
 // edge coverage, but is MUCH cheaper than Intel PT
-#define ENABLE_COVERAGE_BREAKPOINTS
+// #define ENABLE_COVERAGE_BREAKPOINTS
 
 // Enables Intel PT for code coverage. Currently, KVM-PT is used for tracing
 // and libxdc for decoding. There are some performance issues :P

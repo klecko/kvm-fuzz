@@ -1,6 +1,8 @@
 #ifndef _VM_H
 #define _VM_H
 
+// #define ENABLE_COVERAGE_INTEL_PT
+
 #include <vector>
 #include <unordered_map>
 #include <set>

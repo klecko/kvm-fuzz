@@ -197,6 +197,16 @@ void Vm::setup_kvm() {
 }
 
 #if defined(ENABLE_COVERAGE_INTEL_PT)
+typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
+typedef void  (*bb_callback_t)(void*, uint64_t, uint64_t);
+typedef void  (*edge_callback_t)(void*, uint64_t, uint64_t);
+
+template<typename M>
+inline page_fetcher_t cast_page_fetcher(M ptr) {
+	// Make clang happy
+	return *reinterpret_cast<page_fetcher_t*>(&ptr);
+}
+
 void Vm::setup_coverage() {
 	// Get coverage range. Elf should have been loaded by now
 	auto limits = m_elf.section_limits(".text");
@@ -215,14 +225,11 @@ void Vm::setup_coverage() {
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE, 0);
 
 	// libxdc
-	typedef void* (*page_fetcher_t)(void*, uint64_t, bool*);
-	typedef void  (*bb_callback_t)(void*, uint64_t, uint64_t);
-	typedef void  (*edge_callback_t)(void*, uint64_t, uint64_t);
 	uint64_t filter[4][2] = {0};
 	filter[0][0] = filter0.a;
 	filter[0][1] = filter0.b;
 	void* bitmap = m_coverage.bitmap();
-	m_vmx_pt_decoder = libxdc_init(filter, (page_fetcher_t)&Vm::fetch_page,
+	m_vmx_pt_decoder = libxdc_init(filter, cast_page_fetcher(&Vm::fetch_page),
 	                               this, bitmap, COVERAGE_BITMAP_SIZE);
 	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, nullptr);
 	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, nullptr);

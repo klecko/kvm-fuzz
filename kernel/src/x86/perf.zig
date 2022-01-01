@@ -17,20 +17,29 @@ var current_timer: usize = 0;
 var timer_timeout: usize = std.math.maxInt(usize);
 
 const CountMode = struct {
-    const None: usize = 0;
     const Kernel: usize = (1 << 0);
     const User: usize = (1 << 1);
+    const All: usize = Kernel | User;
 };
 
-pub fn init() void {
-    if (build_options.enable_instruction_count) {
-        // Set performance counter CTR0 (which counts number of instructions)
-        // to only count when in user mode
-        x86.wrmsr(.FIXED_CTR_CTRL, CountMode.User);
+fn initInstructionCount() void {
+    const count_mode = switch (build_options.instruction_count) {
+        .kernel => CountMode.Kernel,
+        .user => CountMode.User,
+        .all => CountMode.All,
+        .none => return,
+    };
 
-        // Enable CTR0
-        x86.wrmsr(.PERF_GLOBAL_CTRL, 1 << 32);
-    }
+    // Set performance counter CTR0 (which counts number of instructions)
+    // to count when in given mode
+    x86.wrmsr(.FIXED_CTR_CTRL, count_mode);
+
+    // Enable CTR0
+    x86.wrmsr(.PERF_GLOBAL_CTRL, 1 << 32);
+}
+
+pub fn init() void {
+    initInstructionCount();
 
     hypercalls.submitTimeoutPointers(&current_timer, &timer_timeout);
 
@@ -38,11 +47,7 @@ pub fn init() void {
 }
 
 pub fn instructionsExecuted() usize {
-    if (build_options.enable_instruction_count) {
-        return x86.rdmsr(.FIXED_CTR0);
-    } else {
-        return 0;
-    }
+    return if (build_options.instruction_count != .none) x86.rdmsr(.FIXED_CTR0) else 0;
 }
 
 pub fn tick() void {
