@@ -1,6 +1,6 @@
 #include <libelf.h>
 #include <iostream>
-#include <dwarf.h>
+#include <libdwarf/dwarf.h>
 #include "mmu.h"
 #include "elf_debug.h"
 #include "common.h"
@@ -159,9 +159,7 @@ bool get_die_limits(Dwarf_Die die, Dwarf_Addr* low_pc, Dwarf_Addr* high_pc) {
 		case Dwarf_Form_Class::DW_FORM_CLASS_ADDRESS:
 			break;
 		default:
-			const char* class_name = nullptr;
-			dwarf_get_FORM_CLASS_name(return_class, &class_name);
-			ASSERT(false, "TODO return class: '%s'", class_name);
+			ASSERT(false, "TODO return class %d", return_class);
 	}
 
 	return true;

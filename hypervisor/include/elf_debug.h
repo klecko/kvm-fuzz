@@ -1,7 +1,7 @@
 #ifndef _ELF_DEBUG_H
 #define _ELF_DEBUG_H
 
-#include <libdwarf.h>
+#include <libdwarf/libdwarf.h>
 #include <vector>
 #include "common.h"
 
