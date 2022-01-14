@@ -6,7 +6,6 @@
 #include "elf_parser.h"
 #include "utils.h"
 
-#define PAGE_SIZE 0x1000
 #define PAGE_CEIL(addr) (((addr) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 
 using namespace std;

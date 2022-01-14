@@ -834,7 +834,7 @@ void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
 	bool have_symbol = elf.addr_to_symbol(pc - 1, symbol);
 	string source = elf.addr_to_source(pc - 1);
 
-	printf("#%d 0x%016lx", i, pc);
+	printf("#%lu 0x%016lx", i, pc);
 	if (have_symbol) {
 		size_t offset = pc - symbol.value;
 		printf(" in %s + 0x%lx", symbol.name.c_str(), offset);

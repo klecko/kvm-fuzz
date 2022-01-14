@@ -402,7 +402,7 @@ const vector<Corpus::mutation_strat_t> Corpus::mut_strats_reduce = {
 };
 
 void Corpus::mutate_input(int id, Rng& rng){
-	static_assert(MIN_MUTATIONS <= MAX_MUTATIONS);
+	static_assert(MIN_MUTATIONS <= MAX_MUTATIONS, "invalid range");
 	static_assert(MAX_MUTATIONS != 0, "MAX_MUTATIONS must be positive. To "
 	              "disable mutations undef ENABLE_MUTATIONS instead.");
 #ifndef ENABLE_MUTATIONS
