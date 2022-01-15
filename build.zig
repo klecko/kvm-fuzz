@@ -190,7 +190,10 @@ fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode:
     // Maybe the best would be that tests call syscalls directly, instead of
     // relying on the linked libc.
 
-    const target = std_target;
+    // Use baseline cpu model so it doesn't generate AVX512 or other not supported
+    // x86 extensions
+    var target = std_target;
+    target.cpu_model = .baseline;
 
     exe.setTarget(target);
     exe.setBuildMode(std_mode);
