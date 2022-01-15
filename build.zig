@@ -92,7 +92,10 @@ fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) vo
     ) orelse .breakpoints;
     switch (coverage) {
         .breakpoints => exe.defineCMacro("ENABLE_COVERAGE_BREAKPOINTS", null),
-        .intelpt => exe.defineCMacro("ENABLE_COVERAGE_INTEL_PT", null),
+        .intelpt => {
+            exe.defineCMacro("ENABLE_COVERAGE_INTEL_PT", null);
+            exe.linkSystemLibrary("xdc");
+        },
         .none => {},
     }
 
@@ -170,7 +173,6 @@ fn buildHypervisor(b: *std.build.Builder, std_target: CrossTarget, std_mode: std
     });
     exe.linkLibC();
     exe.linkLibCpp();
-    exe.linkSystemLibrary("xdc");
     exe.linkSystemLibrary("dwarf");
     exe.linkSystemLibrary("elf");
     exe.linkSystemLibrary("crypto");
