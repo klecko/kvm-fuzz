@@ -148,7 +148,7 @@ void Vm::setup_kvm() {
 	kvm_sregs sregs;
 	ioctl_chk(m_vcpu_fd, KVM_GET_SREGS, &sregs);
 	sregs.cr3  = Mmu::PAGE_TABLE_PADDR;
-	sregs.cr4  = CR4_PAE | CR4_OSXMMEXCPT | CR4_OSFXSR;
+	sregs.cr4  = CR4_PAE | CR4_OSXMMEXCPT | CR4_OSFXSR | CR4_OSXSAVE;
 	sregs.cr0  = CR0_PE | CR0_MP | CR0_ET| CR0_NE | CR0_WP | CR0_AM | CR0_PG;
 	sregs.efer = EFER_NXE | EFER_LME | EFER_LMA | EFER_SCE;
 
@@ -182,12 +182,12 @@ void Vm::setup_kvm() {
 	ioctl_chk(m_vcpu_fd, KVM_SET_CPUID2, cpuid);
 
 	// Setup xcr0 (extended control register)
-	// kvm_xcrs xcrs;
-	// ioctl_chk(m_vcpu_fd, KVM_GET_XCRS, &xcrs);
-	// ASSERT(xcrs.nr_xcrs >= 1, "0 xcrs");
-	// ASSERT(xcrs.xcrs[0].xcr == 0, "first xcr is %x", xcrs.xcrs[0].xcr);
-	// xcrs.xcrs[0].value = XCR0_X87 | XCR0_SSE | XCR0_AVX;
-	// ioctl_chk(m_vcpu_fd, KVM_SET_XCRS, &xcrs);
+	kvm_xcrs xcrs;
+	ioctl_chk(m_vcpu_fd, KVM_GET_XCRS, &xcrs);
+	ASSERT(xcrs.nr_xcrs >= 1, "0 xcrs");
+	ASSERT(xcrs.xcrs[0].xcr == 0, "first xcr is %x", xcrs.xcrs[0].xcr);
+	xcrs.xcrs[0].value |= XCR0_X87 | XCR0_SSE | XCR0_AVX;
+	ioctl_chk(m_vcpu_fd, KVM_SET_XCRS, &xcrs);
 
 	// Set debug
 	set_single_step(false);

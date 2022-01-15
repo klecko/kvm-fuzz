@@ -185,17 +185,17 @@ bool is_mapped(void* page) {
 
 TEST_CASE("munmap not mappped") {
 	// We've got a mapped page, a hole of an unmapped page, and another page
-	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
-	REQUIRE(p1 != MAP_FAILED);
-	uint8_t* p2 = (uint8_t*)mmap(p1 + 2*PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
-	REQUIRE(p2 == p1 + 2*PAGE_SIZE);
+	uint8_t* p = (uint8_t*)mmap(nullptr, 3*PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p != MAP_FAILED);
+	REQUIRE(munmap(p + PAGE_SIZE, PAGE_SIZE) == 0);
 
 	// Munmap the three pages
-	REQUIRE(munmap(p1, 3*PAGE_SIZE) == 0);
+	REQUIRE(munmap(p, 3*PAGE_SIZE) == 0);
 
-	// Make sure both pages have actually been unmapped
-	REQUIRE(!is_mapped(p1));
-	REQUIRE(!is_mapped(p1 + 2*PAGE_SIZE));
+	// Make sure the three pages have actually been unmapped
+	REQUIRE(!is_mapped(p));
+	REQUIRE(!is_mapped(p + 1*PAGE_SIZE));
+	REQUIRE(!is_mapped(p + 2*PAGE_SIZE));
 }
 
 TEST_CASE("mmap partial") {
@@ -216,20 +216,18 @@ TEST_CASE("mmap partial") {
 
 TEST_CASE("mmap partial2") {
 	// We've got a mapped page, a hole of an unmapped page, and another page
-	uint8_t* p1 = (uint8_t*)mmap(nullptr, PAGE_SIZE, prot, flags, -1, 0);
+	uint8_t* p1 = (uint8_t*)mmap(nullptr, 3*PAGE_SIZE, prot, flags, -1, 0);
 	REQUIRE(p1 != MAP_FAILED);
-	uint8_t* p2 = (uint8_t*)mmap(p1 + 2*PAGE_SIZE, PAGE_SIZE, prot, flags | MAP_FIXED, -1, 0);
-	REQUIRE(p2 == p1 + 2*PAGE_SIZE);
+	REQUIRE(munmap(p1 + PAGE_SIZE, PAGE_SIZE) == 0);
 
 	// Mapping 3 pages here shouldn't map the page in the middle
-	uint8_t* p3 = (uint8_t*)mmap(p1, 3*PAGE_SIZE, prot, flags, -1, 0);
-	REQUIRE(p3 != MAP_FAILED);
-	REQUIRE(p3 != p1);
+	uint8_t* p2 = (uint8_t*)mmap(p1, 3*PAGE_SIZE, prot, flags, -1, 0);
+	REQUIRE(p2 != MAP_FAILED);
+	REQUIRE(p2 != p1);
 	REQUIRE(!is_mapped(p1 + PAGE_SIZE));
 
 	REQUIRE(munmap(p1, PAGE_SIZE) == 0);
-	REQUIRE(munmap(p2, PAGE_SIZE) == 0);
-	REQUIRE(munmap(p3, 3*PAGE_SIZE) == 0);
+	REQUIRE(munmap(p2, 3*PAGE_SIZE) == 0);
 }
 
 TEST_CASE("mmap partial fixed") {

@@ -125,6 +125,7 @@ const handle_sys_writev = @import("syscalls/write.zig").handle_sys_writev;
 const handle_sys_lseek = @import("syscalls/lseek.zig").handle_sys_lseek;
 const handle_sys_stat = @import("syscalls/stat.zig").handle_sys_stat;
 const handle_sys_fstat = @import("syscalls/stat.zig").handle_sys_fstat;
+const handle_sys_fstatat = @import("syscalls/stat.zig").handle_sys_fstatat;
 const handle_sys_uname = @import("syscalls/uname.zig").handle_sys_uname;
 const handle_sys_readlink = @import("syscalls/readlink.zig").handle_sys_readlink;
 const handle_sys_mmap = @import("syscalls/mmap.zig").handle_sys_mmap;
@@ -169,6 +170,8 @@ pub noinline fn handleSyscall(
 ) usize {
     log.debug("--> [{}] syscall {s}\n", .{ self.pid, @tagName(syscall) });
 
+    // TODO define a syscall handler type that takes all arguments, and put
+    // every handler into an array
     const ret = switch (syscall) {
         .arch_prctl => self.handle_sys_arch_prctl(arg0, arg1),
         .access => self.handle_sys_access(arg0, arg1),
@@ -181,6 +184,7 @@ pub noinline fn handleSyscall(
         .lseek => self.handle_sys_lseek(arg0, arg1, arg2),
         .stat => self.handle_sys_stat(arg0, arg1),
         .fstat => self.handle_sys_fstat(arg0, arg1),
+        .fstatat => self.handle_sys_fstatat(arg0, arg1, arg2, arg3),
         .dup => self.handle_sys_dup(arg0),
         .dup2 => self.handle_sys_dup2(arg0, arg1),
         .socket => self.handle_sys_socket(arg0, arg1, arg2),

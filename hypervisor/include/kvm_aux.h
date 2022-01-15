@@ -66,13 +66,13 @@ struct kvm_dirty_gfn {
 #define EFER_LMA (1U << 10)
 #define EFER_NXE (1U << 11)
 
-// #define XCR0_X87 (1U << 0)
-// #define XCR0_SSE (1U << 1)
-// #define XCR0_AVX (1U << 2)
-// #define XCR0_OPMASK (1U << 5)
-// #define XCR0_ZMM_HI256 (1U << 6)
-// #define XCR0_HI16_ZMM (1U << 6)
-// #define XCR0_AVX512 (XCR0_OPMASK | XCR0_ZMM_HI256 | XCR0_HI16_ZMM)
+#define XCR0_X87 (1U << 0)
+#define XCR0_SSE (1U << 1)
+#define XCR0_AVX (1U << 2)
+#define XCR0_OPMASK (1U << 5)
+#define XCR0_ZMM_HI256 (1U << 6)
+#define XCR0_HI16_ZMM (1U << 6)
+#define XCR0_AVX512 (XCR0_OPMASK | XCR0_ZMM_HI256 | XCR0_HI16_ZMM)
 
 /* x86-64 specific MSRs */
 #define MSR_EFER             0xc0000080 /* extended feature register */

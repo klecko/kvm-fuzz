@@ -196,12 +196,11 @@ int main(int argc, char** argv) {
 		vm.read_and_set_file(path);
 	}
 
-	// Run until main before forking or running single input
-	vaddr_t main_addr = vm.resolve_symbol("main");
-	if (main_addr)
-		vm.run_until(vm.resolve_symbol("main"), stats);
-	else
-		vm.run_until(vm.elf().entry(), stats);
+	// Run until main or elf entry point before forking or running single input
+	vaddr_t fork_addr = vm.resolve_symbol("main");
+	if (!fork_addr)
+		fork_addr = vm.elf().entry();
+	vm.run_until(fork_addr, stats);
 
 	// Reset timer so it starts counting from 0, and set specified timeout
 	vm.reset_timer();

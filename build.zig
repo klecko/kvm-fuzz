@@ -11,7 +11,7 @@ fn shouldStrip(mode: std.builtin.Mode) bool {
 
 fn buildKernel(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
     // Custom x86_64 freestanding target for the kernel
-    const target = std.zig.CrossTarget.parse(.{
+    const target = CrossTarget.parse(.{
         .arch_os_abi = "x86_64-freestanding-none",
         .cpu_features = "x86_64-mmx-sse-sse2+soft_float",
     }) catch unreachable;
@@ -182,13 +182,13 @@ fn buildHypervisor(b: *std.build.Builder, std_target: CrossTarget, std_mode: std
 fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
     const exe = b.addExecutable("tests", null);
 
-    // TODO zig cc is broken in zig 0.9.0
-    // Musl is needed for statically linked binaries
-    var target = std_target;
-    target.abi = .musl;
-    // target.cpu_model = .baseline;
-    // target.parseCpuArch
-    // std.Target.Cpu.baseline
+    // It would be great to link this binary statically. We'd need to link with
+    // musl instead of glibc, but musl breaks tests. For example, musl implements
+    // brk as `return -ENOMEM;` (https://www.openwall.com/lists/musl/2013/12/21/1).
+    // Maybe the best would be that tests call syscalls directly, instead of
+    // relying on the linked libc.
+
+    const target = std_target;
 
     exe.setTarget(target);
     exe.setBuildMode(std_mode);
@@ -211,7 +211,6 @@ fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode:
         "-std=c++11",
         "-Wall",
     });
-    exe.linkage = .static;
     exe.linkLibC();
     exe.linkLibCpp();
     exe.strip = true;

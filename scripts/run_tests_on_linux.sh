@@ -6,4 +6,4 @@ function socket_test() {
 
 socket_test &
 
-echo "hello" | ./tests/tests
+echo "hello" | ./zig-out/bin/tests

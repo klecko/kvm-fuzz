@@ -22,7 +22,7 @@ __attribute__((warn_unused_result))
 inline int read_and_check_next_seven_bytes(int fd, char* buf) {
 	if (read(fd, buf, 7) != 7)
 		return -1;
-	buf[8] = 0;
+	buf[7] = 0;
 	if (strcmp(buf, " world1") != 0)
 		return -2;
 	return 0;
