@@ -109,15 +109,25 @@ pub const IRQNumber = struct {
 /// Number of IDT entries.
 pub const N_IDT_ENTRIES = 256;
 
+/// The entry point of every interrupt handler. This is where the CPU will jump
+/// to when a given interrupt occurs.
+const interrupt_handlers_entry_points = blk: {
+    var tmp: [N_IDT_ENTRIES]interrupts.InterruptHandlerEntryPoint = undefined;
+    inline for (tmp) |*entry_point, i| {
+        entry_point.* = interrupts.getInterruptHandlerEntryPoint(i);
+    }
+    break :blk tmp;
+};
+
 /// The IDT itself.
 var idt: [N_IDT_ENTRIES]InterruptDescriptor = undefined;
 
 pub fn init() void {
     // Initialize IDT
-    inline for (idt) |*entry, i| {
+    for (idt) |*entry, i| {
         const gate_type: InterruptDescriptor.GateType = if (i < 32) .Trap else .Interrupt;
-        const interrupt_handler = interrupts.getInterruptHandlerEntryPoint(i);
-        const interrupt_stack = if (i == ExceptionNumber.DoubleFault) 1 else 0;
+        const interrupt_handler = interrupt_handlers_entry_points[i];
+        const interrupt_stack = if (i == ExceptionNumber.DoubleFault) @as(u3, 1) else 0;
         entry.* = InterruptDescriptor.init(interrupt_handler, interrupt_stack, gate_type);
     }
 

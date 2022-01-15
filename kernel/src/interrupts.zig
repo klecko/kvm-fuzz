@@ -55,6 +55,15 @@ pub const InterruptFrame = struct {
     ) !void {
         _ = options;
         _ = fmt;
+
+        // Printing the frame somehow gets compiled to a 13.4KB function, taking
+        // 8.8% of the binary size in memory at the time of writing this. Don't
+        // print the frame in release mode so we don't bloat the binary.
+        if (@import("builtin").mode != .Debug) {
+            try writer.writeAll("(frame omitted, only displayed in debug mode)");
+            return;
+        }
+
         // zig fmt: off
         try std.fmt.format(
             writer,

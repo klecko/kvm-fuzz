@@ -226,7 +226,7 @@ pub noinline fn handleSyscall(
         },
         .exit => self.handle_sys_exit(arg0, regs),
         .exit_group => self.handle_sys_exit_group(arg0, regs),
-        else => panic("unhandled syscall: {}\n", .{syscall}),
+        else => panic("unhandled syscall: {s}\n", .{@tagName(syscall)}),
     } catch |err| linux.errorToErrno(err);
 
     log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ self.pid, @tagName(syscall), ret });
