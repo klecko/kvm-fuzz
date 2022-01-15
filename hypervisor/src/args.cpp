@@ -9,108 +9,175 @@
 #include <thread>
 #include <fstream>
 #include <sstream>
+#include <getopt.h>
 #include "args.h"
-#include "cxxopts.hpp"
 #include "utils.h"
 
 using namespace std;
 
-#ifdef DEBUG
-#define DEFAULT_NUM_THREADS 1
-#else
-#define DEFAULT_NUM_THREADS thread::hardware_concurrency()
-#endif
-
-size_t parse_memory(const string& s) {
+bool parse_memory(const string& s, size_t& result) {
 	size_t i = 0;
-	size_t value = stoi(s, &i);
+	result = stoi(s, &i);
 	switch (s[i]) {
 		case 'G':
-			value *= 1024;
+			result *= 1024;
 		case 'M':
-			value *= 1024;
+			result *= 1024;
 		case 'K':
-			value *= 1024;
+			result *= 1024;
 		case 0:
 			break;
 		default:
-			throw cxxopts::OptionParseException("invalid memory: " + s);
+			return false;
 	}
-	return value;
+	return true;
 }
 
+
+#ifdef DEBUG
+const uint Args::DEFAULT_NUM_THREADS = 1;
+#else
+const uint Args::DEFAULT_NUM_THREADS = std::thread::hardware_concurrency();
+#endif
+
+void print_usage() {
+	printf(
+	"kvm-fuzz: fuzz x86_64 closed-source applications with hardware acceleration\n\n"
+
+	"Usage:\n"
+	"  kvm-fuzz [ options ] -- /path/to/fuzzed_binary [ args ]\n\n"
+
+	"Available options:\n"
+	"      --minimize-corpus         Set corpus minimization mode\n"
+	"      --minimize-crashes        Set crashes minimization mode\n"
+	"  -j, --jobs n                  Number of threads to use (default: %u)\n"
+	"  -m, --memory arg              Virtual machine memory limit (default: 8M)\n"
+	"  -t, --timeout ms              Timeout for each in run in milliseconds, or 0\n"
+	"                                for no timeout (default: 2)\n"
+	"  -k, --kernel path             Kernel path (default: ./kernel/kernel)\n"
+	"  -i, --input dir               Input folder (initial corpus) (default: ./in)\n"
+	"  -o, --output dir              Output folder (corpus, crashes, etc) (default:\n"
+	"                                ./out)\n"
+	"  -f, --file path               Memory loaded files for the target. Set once\n"
+	"                                for each file.\n"
+	"  -b, --basic-blocks path       Path to file containing a list of basic blocks\n"
+	"                                for code coverage. Default value is\n"
+	"                                ./basic_blocks/<BinaryMD5Hash>.txt\n"
+	"  -s, --single-run [=path]      Perform a single run, optionally specifying an\n"
+	"                                input file\n"
+	"  -h, --help                    Print usage\n"
+	, Args::DEFAULT_NUM_THREADS);
+}
+
+enum LongOptions {
+	MinimizeCorpus = 0x100,
+	MinimizeCrashes,
+};
+
 bool Args::parse(int argc, char** argv) {
-	// Fuck 80 chars limit.
-	try {
-		cxxopts::Options cmd("kvm-fuzz", "kvm-fuzz: fuzz x86_64 closed-source applications with hardware acceleration\n");
-		cmd.add_options("Available")
-			("minimize-corpus", "Set corpus minimization mode", cxxopts::value<bool>(minimize_corpus))
-			("minimize-crashes", "Set crashes minimization mode", cxxopts::value<bool>(minimize_crashes))
-			("j,jobs", "Number of threads to use", cxxopts::value<int>(jobs)->default_value(to_string(DEFAULT_NUM_THREADS)), "n")
-			("m,memory", "Virtual machine memory limit", cxxopts::value<string>()->default_value("8M"))
-			("t,timeout", "Timeout for each in run in milliseconds, or 0 for no timeout", cxxopts::value<size_t>(timeout)->default_value("2"), "ms")
-			("k,kernel", "Kernel path", cxxopts::value<string>(kernel_path)->default_value("./kernel/kernel"), "path")
-			("i,input", "Input folder (initial corpus)", cxxopts::value<string>(input_dir)->default_value("./in"), "dir")
-			("o,output", "Output folder (corpus, crashes, etc)", cxxopts::value<string>(output_dir)->default_value("./out"), "dir")
-			("f,file", "Memory loaded files for the target. Set once for each file, or as a list: -f file1,file2", cxxopts::value<vector<string>>(memory_files), "path")
-			("b,basic-blocks", "Path to file containing a list of basic blocks for code coverage. Default value is ./basic_blocks/<BinaryMD5Hash>.txt", cxxopts::value<string>(basic_blocks_path), "path")
-			("s,single-run", "Perform a single run, optionally specifying an input file", cxxopts::value<string>(single_run_input_path)->implicit_value("none"), "path")
-			("binary", "File to run", cxxopts::value<string>(binary_path))
-			("args", "Args passed to binary", cxxopts::value<vector<string>>(binary_argv))
-			("h,help", "Print usage")
-		;
+	option long_options[] = {
+		{"minimize-corpus", no_argument, nullptr, LongOptions::MinimizeCorpus},
+		{"minimize-crashes", no_argument, nullptr, LongOptions::MinimizeCrashes},
+		{"jobs", required_argument, nullptr, 'j'},
+		{"memory", required_argument, nullptr, 'm'},
+		{"timeout", required_argument, nullptr, 't'},
+		{"kernel", required_argument, nullptr, 'k'},
+		{"input", required_argument, nullptr, 'i'},
+		{"output", required_argument, nullptr, 'o'},
+		{"file", required_argument, nullptr, 'f'},
+		{"basic-blocks", required_argument, nullptr, 'b'},
+		{"single-run", optional_argument, nullptr, 's'},
+		{"help", no_argument, nullptr, 'h'},
+		{0, 0, 0, 0},
+	};
 
-		// Set positional arguments
-		cmd.parse_positional({"binary", "args"});
-
-		// Set custom usage help and width
-		cmd.custom_help("[ options ]")
-		   .positional_help("-- /path/to/fuzzed_binary [ args ]")
-		   .set_width(80);
-
-		auto options = cmd.parse(argc, argv);
-
-		// Display help
-		if (options.count("help") || !options.count("binary") ||
-		   (minimize_corpus && minimize_crashes))
-		{
-			cout << cmd.help() << endl;
-			return false;
+	int opt;
+	while ((opt = getopt_long(argc, argv, "j:m:t:k:i:o:f:b:s::h", long_options, nullptr)) > 0) {
+		switch (opt) {
+			case LongOptions::MinimizeCorpus:
+				minimize_corpus = true;
+				break;
+			case LongOptions::MinimizeCrashes:
+				minimize_crashes = true;
+				break;
+			case 'j':
+				if ((sscanf(optarg, "%u", &jobs) < 1) || (jobs == 0)) {
+					print_usage();
+					return false;
+				}
+				break;
+			case 'm':
+				if (!parse_memory(optarg, memory)) {
+					print_usage();
+					return false;
+				}
+				break;
+			case 't':
+				if (sscanf(optarg, "%lu", &timeout) < 1) {
+					print_usage();
+					return false;
+				}
+				break;
+			case 'k':
+				kernel_path = optarg;
+				break;
+			case 'i':
+				input_dir = optarg;
+				break;
+			case 'o':
+				output_dir = optarg;
+				break;
+			case 'f':
+				memory_files.push_back(optarg);
+				break;
+			case 'b':
+				basic_blocks_path = optarg;
+				break;
+			case 's':
+				single_run = true;
+				if (optarg)
+					single_run_input_path = optarg;
+				break;
+			case 'h':
+			case '?':
+			default:
+				print_usage();
+				return false;
 		}
+	}
 
-		// Parse special arguments
-		memory = parse_memory(options["memory"].as<string>());
-
-		// Add binary path to argv
-		binary_argv.insert(binary_argv.begin(), binary_path);
-
-		// Set default basic block file
-		if (basic_blocks_path.empty()) {
-			create_folder("./basic_blocks");
-			string md5 = md5_file(binary_path);
-			basic_blocks_path = "./basic_blocks/" + md5 + ".txt";
-		}
-
-		if (options.count("single-run")) {
-			// Option was specified. If there is no input file given, just
-			// clear that argument
-			single_run = true;
-			if (single_run_input_path == "none")
-				single_run_input_path.clear();
-		} else {
-			single_run = false;
-		}
-
-		// Convert timeout to microsecs, or set it to maximum value if it was 0
-		if (timeout == 0)
-			timeout = numeric_limits<size_t>::max();
-		else
-			timeout *= 1000;
-
-	} catch (cxxopts::OptionException& e) {
-		cout << "error: " << e.what() << endl;
+	// Positional arguments: binary_path and binary_argv
+	int i = optind;
+	if (i == argc) {
+		printf("Missing fuzzed binary path\n\n");
+		print_usage();
 		return false;
 	}
+
+	binary_path = argv[i];
+	for (; i < argc; i++) {
+		binary_argv.push_back(argv[i]);
+	}
+
+	// Check mode
+	if (minimize_corpus && minimize_crashes) {
+		printf("You can't specify both --minimize-corpus and --minimize-crashes.\n\n");
+		print_usage();
+		return false;
+	}
+
+	// Default value for basic blocks path
+	if (basic_blocks_path.empty()) {
+		create_folder("./basic_blocks");
+		string md5 = md5_file(binary_path);
+		basic_blocks_path = "./basic_blocks/" + md5 + ".txt";
+	}
+
+	// Convert timeout to microsecs, or set it to maximum value if it was 0
+	if (timeout == 0)
+		timeout = numeric_limits<size_t>::max();
+	else
+		timeout *= 1000;
 
 	return true;
 }

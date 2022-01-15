@@ -5,22 +5,26 @@
 #include <vector>
 
 struct Args {
-	int jobs;
-	size_t memory;
-	size_t timeout;
-	std::string kernel_path;
-	std::string input_dir;
-	std::string output_dir;
+	static const uint DEFAULT_NUM_THREADS;
+
+	uint jobs = DEFAULT_NUM_THREADS;
+	size_t memory = 8*1024*1024;
+	size_t timeout = 2;
+	std::string kernel_path = "./zig-out/bin/kernel";
+	std::string input_dir = "./in";
+	std::string output_dir = "./out";
 	std::vector<std::string> memory_files;
 	std::string binary_path;
 	std::vector<std::string> binary_argv;
 	std::string basic_blocks_path;
-	bool single_run;
+	bool single_run = false;
 	std::string single_run_input_path;
-	bool minimize_corpus;
-	bool minimize_crashes;
+	bool minimize_corpus = false;
+	bool minimize_crashes = false;
 
+	// Args(int argc, char** argv);
 	bool parse(int argc, char** argv);
+	// bool parse_old(int argc, char** argv);
 };
 
 #endif
