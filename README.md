@@ -121,7 +121,7 @@ We can see we are spending 24% of the time mutating inputs. In order to improve 
 ```
 $ rm in/*
 $ cp /bin/parallel in
-$ zig-out/bin/kvm-fuzz -m 16M -t 5 -- test_bins/readelf-static -a input
+$ zig-out/bin/kvm-fuzz -m 16M -t 5 -- /bin/readelf -a input
 [...]
 [3.001] cases: 88147, mips: 16667.261, fcps: 31502.726, cov: 3030, corpus: 238/5874.473KB, unique crashes: 0 (total: 0), timeouts: 4, no new cov for: 0.000
         vm exits: 1.014 (hc: 1.000, cov: 0.000, debug: 0.014), reset pages: 94.269
@@ -131,9 +131,9 @@ $ zig-out/bin/kvm-fuzz -m 16M -t 5 -- test_bins/readelf-static -a input
 We can see some extra performance (31k fcps now vs 11k fcps before)
 
 ## Another fuzzing example
-Let's fuzz the toy program `vuln.c`, found [here](https://gist.github.com/klecko/cb8e04c1ec1c147fce87a206067676c3). It reads the contents of a file, and if it passes some simple checks (the file starts with `GOTTAGOFAST!`), then it crashes. Let's compile it statically for extra perf, set a small string as seed, and start fuzzing:
+Let's fuzz the toy program `vuln.c`, found [here](https://gist.github.com/klecko/cb8e04c1ec1c147fce87a206067676c3). It reads the contents of a file, and if it passes some simple checks (the file starts with `GOTTAGOFAST!`), then it crashes. Let's compile it statically for extra perf, and with debug info so we can have source information printed with stacktraces. Set a small string as seed, and start fuzzing:
 ```
-$ gcc vuln.c -static -o vuln
+$ gcc vuln.c -static -g -o vuln
 $ rm in/*
 $ echo AAAAAAAAA > in/1
 $ zig-out/bin/kvm-fuzz -- ./vuln input
@@ -169,8 +169,8 @@ r8:  0x0000000000498600  r9:  0x0000000000000009  r10: 0x0000000000000000  r11: 
 r12: 0x0000000000402f80  r13: 0x0000000000000000  r14: 0x00000000004c0018  r15: 0x0000000000000000
 rflags: 0x0000000000010246
 
-#0 0x0000000000401dc3 in vuln + 0xde
-#1 0x0000000000401ed9 in main + 0x10b
+#0 0x0000000000401dc3 in vuln + 0xde at /home/klecko/kvm-fuzz/vuln.c:15
+#1 0x0000000000401ed9 in main + 0x10b at /home/klecko/kvm-fuzz/vuln.c:40
 #2 0x0000000000402710 in __libc_start_main + 0x490
 #3 0x0000000000401bee in _start + 0x2e
 ```
