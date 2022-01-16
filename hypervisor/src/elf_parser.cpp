@@ -270,22 +270,29 @@ vector<vaddr_t> ElfParser::get_stacktrace(const kvm_regs& kregs, size_t num_fram
 	// Get limits
 	auto limits = section_limits(".text");
 
-	// Loop over stack frames until we're out of limits
+	// Loop over stack frames until we're out of limits. For PIE binaries we
+	// have to play with the address the elf is loaded at (m_base). ElfDebug
+	// expects input ReturnAddress relative to 0, while output ReturnAddress is
+	// the real one, relative to m_base. Therefore, we have to save the output
+	// ReturnAddress, but then we have to substract it m_base before passing it
+	// back again to next_frame(). For non PIE binaries, m_base is 0.
 	size_t i = 0;
-	stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
-	while (i < num_frames &&
-	       m_debug.next_frame(regs, mmu) &&
-	       regs[DwarfReg::ReturnAddress] >= limits.first &&
-	       regs[DwarfReg::ReturnAddress] < limits.second)
-	{
+	do {
 		stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
-	}
+		regs[DwarfReg::ReturnAddress] -= m_base;
+	} while (
+		i < num_frames &&
+		m_debug.next_frame(regs, mmu) &&
+		regs[DwarfReg::ReturnAddress] >= limits.first &&
+		regs[DwarfReg::ReturnAddress] < limits.second
+	);
 
 	return stacktrace;
 }
 
 string ElfParser::addr_to_source(vaddr_t addr) const {
-	return m_debug.addr_to_source(addr);
+	// Substract m_base for PIE binaries.
+	return m_debug.addr_to_source(addr - m_base);
 }
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;
