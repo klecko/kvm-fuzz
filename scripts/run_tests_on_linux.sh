@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 function socket_test() {
 	sleep 1
 	echo "hello" | nc localhost 12345
