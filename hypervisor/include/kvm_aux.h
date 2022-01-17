@@ -4,6 +4,7 @@
 #include <linux/kvm.h>
 
 // too recent to be in linux/kvm.h
+#ifndef KVM_CAP_DIRTY_LOG_RING
 #define KVM_CAP_DIRTY_LOG_RING 192
 #define KVM_DIRTY_LOG_PAGE_OFFSET 64
 #define KVM_DIRTY_GFN_F_DIRTY           (1 << 0)
@@ -15,6 +16,7 @@ struct kvm_dirty_gfn {
 	__u32 slot; /* as_id | slot_id */
 	__u64 offset;
 };
+#endif
 
 /* 64-bit page * entry bits */
 #define PDE64_PRESENT 1
