@@ -169,6 +169,7 @@ fn buildHypervisor(b: *std.build.Builder, std_target: CrossTarget, std_mode: std
     }, &.{
         "-std=c++11",
         "-pthread",
+        "-fno-exceptions",
         "-Wall",
     });
     exe.linkLibC();
