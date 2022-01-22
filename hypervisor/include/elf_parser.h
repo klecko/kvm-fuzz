@@ -62,7 +62,7 @@ struct segment_t {
 	vsize_t filesize;
 	vsize_t memsize;
 	vsize_t align;
-	void* data;
+	const void* data;
 };
 
 struct section_t {
@@ -76,7 +76,7 @@ struct section_t {
 	uint32_t info;
 	vsize_t addralign;
 	vsize_t entsize;
-	void* data;
+	const void* data;
 };
 
 struct symbol_t {
@@ -96,15 +96,19 @@ struct relocation_t {
 
 class ElfParser {
 	public:
+		// Create an elf parser, loading file from disk
 		ElfParser(const std::string& elf_path);
+
+		// Create an elf parser from data in memory
+		ElfParser(const std::string& elf_path, const void* data, vsize_t size);
 		const uint8_t* data() const;
-		void set_base(vaddr_t base);
-		vaddr_t base() const;
+		vsize_t size() const;
+		void set_load_addr(vaddr_t load_addr);
+		vaddr_t load_addr() const;
 		vaddr_t initial_brk() const;
 		phinfo_t phinfo() const;
 		uint16_t type() const;
 		vaddr_t entry() const;
-		vaddr_t load_addr() const;
 		std::string path() const;
 		//std::string abs_path() const;
 		std::string interpreter() const;
@@ -116,20 +120,36 @@ class ElfParser {
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
 
+		bool has_dwarf() const;
 		bool addr_to_symbol(vaddr_t addr, symbol_t& result) const;
 		std::string addr_to_source(vaddr_t addr) const;
-		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs, size_t num_frames, Mmu& mmu) const;
-		bool has_dwarf() const;
+		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs,
+		                                    size_t num_frames, Mmu& mmu) const;
 
+		static std::vector<std::pair<vaddr_t, const ElfParser*>> get_stacktrace(
+			const std::vector<const ElfParser*>& elfs,
+			const kvm_regs& kregs, size_t num_frames, Mmu& mmu
+		);
 
 	private:
-		uint8_t* m_data;
-		vaddr_t m_base;
+		const uint8_t* m_data;
+		vsize_t m_size;
+
+		// The load address of the binary, which is the lowest base address of
+		// its loadable segments. For PIE binaries, it is 0 at first, and it
+		// can be changed using `set_load_addr()`. For non-PIE binaries, it is
+		// a fixed address (i.e. 0x400000) and it can not be changed.
+		vaddr_t m_load_addr;
+
+		// The initial brk address, which is the address of the next page after
+		// the last loadable segments.
 		vaddr_t m_initial_brk;
+
 		phinfo_t m_phinfo;
 		uint16_t m_type;
 		vaddr_t m_entry;
-		vaddr_t m_load_addr;
+
+
 		std::string m_path;
 		std::string m_interpreter;
 		std::vector<section_t> m_sections;
@@ -140,5 +160,7 @@ class ElfParser {
 
 		// libdwarf stuff
 		ElfDebug m_debug;
+
+		void init();
 };
 #endif

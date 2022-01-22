@@ -56,6 +56,16 @@ pub fn fileContent(filename: []const u8) ?[]u8 {
     return file_contents.get(filename);
 }
 
+pub fn filenameFromFileContent(file_content: []const u8) ?[]const u8 {
+    var iter = file_contents.iterator();
+    while (iter.next()) |entry| {
+        if (entry.value_ptr.ptr == file_content.ptr) {
+            return entry.key_ptr.*;
+        }
+    }
+    return null;
+}
+
 const OpenError = Allocator.Error || error{FileNotFound};
 
 /// Open a regular file

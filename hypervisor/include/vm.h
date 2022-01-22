@@ -34,13 +34,20 @@ public:
 		Unknown = -1,
 	};
 
+	typedef void (*hook_handler_t)(Vm& vm);
+
 	struct Breakpoint {
 		enum Type : uint8_t {
 			RunEnd = 1 << 0,
 			Coverage = 1 << 1,
 			Hook = 1 << 2,
 		};
+
+		// This is an OR of one or more Types
 		uint8_t type;
+
+		// The original byte at memory, which we must reset when removing the
+		// breakpoint.
 		uint8_t original_byte;
 	};
 
@@ -83,6 +90,8 @@ public:
 	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	void set_hook(vaddr_t addr, hook_handler_t hook_handler);
+	void remove_hook(vaddr_t addr);
 	void set_breakpoints_dirty(bool dirty);
 
 	// Associate `filename` with `content` to emulate file operations in the
@@ -132,12 +141,16 @@ private:
 	ElfParser  m_elf;
 	ElfParser  m_kernel;
 	ElfParser* m_interpreter;
+	std::unordered_map<std::string, ElfParser> m_libraries;
 	std::vector<std::string> m_argv;
 	Mmu  m_mmu;
 	bool m_running;
 
 	// Breakpoints indexed by the address they are placed at
 	std::unordered_map<vaddr_t, Breakpoint> m_breakpoints;
+
+	// Hook handlers indexed by address
+	std::unordered_map<vaddr_t, hook_handler_t> m_hook_handlers;
 
 	// Whether setting or removing a breakpoint should dirty memory
 	bool m_breakpoints_dirty;
@@ -175,7 +188,6 @@ private:
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
 	void handle_breakpoint(RunEndReason& reason);
-	void handle_hook();
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
@@ -190,6 +202,8 @@ private:
 	                                vaddr_t length_addr);
 	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
 	void do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr);
+	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
+	                        vaddr_t load_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
 	                   uint64_t instructions_executed);
 

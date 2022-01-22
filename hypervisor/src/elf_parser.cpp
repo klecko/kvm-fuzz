@@ -11,8 +11,7 @@
 using namespace std;
 
 ElfParser::ElfParser(const string& elf_path)
-	: m_base(0)
-	, m_path(elf_path)
+	: m_path(elf_path)
 {
 	const char* cpath = m_path.c_str();
 
@@ -21,10 +20,25 @@ ElfParser::ElfParser(const string& elf_path)
 	int fd = open(cpath, O_RDONLY);
 	ERROR_ON(fd < 0, "elf %s: open", cpath);
 	ERROR_ON(fstat(fd, &st) < 0, "elf %s: fstat", cpath);
+	m_size = st.st_size;
 
-	m_data = (uint8_t*)mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	m_data = (uint8_t*)mmap(nullptr, m_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	ERROR_ON(m_data == MAP_FAILED, "elf %s: mmap", cpath);
 	close(fd);
+
+	init();
+}
+
+ElfParser::ElfParser(const string& elf_path, const void* data, vsize_t size)
+	: m_path(elf_path)
+	, m_data((const uint8_t*)data)
+	, m_size(size)
+{
+	init();
+}
+
+void ElfParser::init() {
+	const char* cpath = m_path.c_str();
 
 	Elf_Ehdr* ehdr = (Elf_Ehdr*)m_data;
 	Elf_Phdr* phdr = (Elf_Phdr*)(m_data + ehdr->e_phoff);
@@ -74,6 +88,10 @@ ElfParser::ElfParser(const string& elf_path)
 			m_interpreter = string((char*)segment.data);
 	}
 
+	// If this is a PIE binary, make sure its load address is 0 at first
+	if (m_type == ET_DYN)
+		ASSERT(m_load_addr == 0, "PIE %s binary with load addr %p", cpath, m_load_addr);
+
 	// Get sections
 	Elf_Shdr* sh_strtab = &shdr[ehdr->e_shstrndx];
 	const char* strtab = (char*)m_data + sh_strtab->sh_offset;
@@ -121,7 +139,7 @@ ElfParser::ElfParser(const string& elf_path)
 	}
 
 	// Get dependencies using ldd
-	string ldd_result = exec_cmd("ldd " + elf_path + " 2>&1");
+	string ldd_result = exec_cmd("ldd " + m_path + " 2>&1");
 	vector<string> lines = split_string(ldd_result, "\n");
 	for (const string& line : lines) {
 		size_t pos1 = line.find("=> ");
@@ -134,20 +152,25 @@ ElfParser::ElfParser(const string& elf_path)
 		m_dependencies.push_back(line.substr(pos1, pos2-pos1));
 	}
 
-	m_debug = ElfDebug(m_data, st.st_size);
+	m_debug = ElfDebug(m_data, m_size);
 }
 
 const uint8_t* ElfParser::data() const {
 	return m_data;
 }
 
-void ElfParser::set_base(vaddr_t base) {
-	vaddr_t diff = base - m_base;
-	m_base = base;
+vsize_t ElfParser::size() const {
+	return m_size;
+}
+
+void ElfParser::set_load_addr(vaddr_t load_addr) {
+	ASSERT(m_type == ET_DYN, "setting load_addr to not PIE binary %s", m_path.c_str());
+
+	vaddr_t diff = load_addr - m_load_addr;
+	m_load_addr = load_addr;
 
 	// Update all virtual addresses accordingly
 	m_entry       += diff;
-	m_load_addr   += diff;
 	m_initial_brk += diff;
 	for (segment_t& segment : m_segments) {
 		segment.vaddr += diff;
@@ -161,8 +184,8 @@ void ElfParser::set_base(vaddr_t base) {
 	}
 }
 
-vaddr_t ElfParser::base() const {
-	return m_base;
+vaddr_t ElfParser::load_addr() const {
+	return m_load_addr;
 }
 
 vaddr_t ElfParser::initial_brk() const {
@@ -179,10 +202,6 @@ uint16_t ElfParser::type() const {
 
 vaddr_t ElfParser::entry() const {
 	return m_entry;
-}
-
-vaddr_t ElfParser::load_addr() const {
-	return m_load_addr;
 }
 
 string ElfParser::path() const {
@@ -223,6 +242,10 @@ pair<vaddr_t, vaddr_t> ElfParser::symbol_limits(const string& name) const {
 	ASSERT(false, "not found symbol: %s", name.c_str());
 }
 
+bool ElfParser::has_dwarf() const {
+	return m_debug.has();
+}
+
 bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
 	for (const symbol_t& symbol : symbols()) {
 		if (addr >= symbol.value && addr < symbol.value + symbol.size) {
@@ -233,10 +256,12 @@ bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
 	return false;
 }
 
-bool ElfParser::has_dwarf() const {
-	return m_debug.has();
+string ElfParser::addr_to_source(vaddr_t addr) const {
+	// Substract load address for PIE binaries.
+	if (m_type == ET_DYN)
+		addr -= m_load_addr;
+	return m_debug.addr_to_source(addr);
 }
-
 
 void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
 	regs[DwarfReg::Rax] = kregs.rax;
@@ -271,17 +296,18 @@ vector<vaddr_t> ElfParser::get_stacktrace(const kvm_regs& kregs, size_t num_fram
 	auto limits = section_limits(".text");
 
 	// Loop over stack frames until we're out of limits. For PIE binaries we
-	// have to play with the address the elf is loaded at (m_base). ElfDebug
-	// expects input ReturnAddress relative to 0, while output ReturnAddress is
-	// the real one, relative to m_base. Therefore, we have to save the output
-	// ReturnAddress, but then we have to substract it m_base before passing it
-	// back again to next_frame(). For non PIE binaries, m_base is 0.
+	// have to take into account the address the elf is loaded at. ElfDebug
+	// expects input ReturnAddress relative to the load address, while output
+	// ReturnAddress is the absolute one. Therefore, we have to save the output
+	// ReturnAddress, but then we have to substract it the load address before
+	// passing it back again to next_frame().
 	size_t i = 0;
 	do {
 		stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
-		regs[DwarfReg::ReturnAddress] -= m_base;
+		if (m_type == ET_DYN)
+			regs[DwarfReg::ReturnAddress] -= m_load_addr;
 	} while (
-		i < num_frames &&
+		++i < num_frames &&
 		m_debug.next_frame(regs, mmu) &&
 		regs[DwarfReg::ReturnAddress] >= limits.first &&
 		regs[DwarfReg::ReturnAddress] < limits.second
@@ -290,10 +316,46 @@ vector<vaddr_t> ElfParser::get_stacktrace(const kvm_regs& kregs, size_t num_fram
 	return stacktrace;
 }
 
-string ElfParser::addr_to_source(vaddr_t addr) const {
-	// Substract m_base for PIE binaries.
-	return m_debug.addr_to_source(addr - m_base);
+const ElfParser* elf_with_addr_in_text(const vector<const ElfParser*>& elfs, vaddr_t addr) {
+	for (const ElfParser* elf : elfs) {
+		auto range = elf->section_limits(".text");
+		if (range.first <= addr && addr < range.second)
+			return elf;
+	}
+	return nullptr;
 }
+
+vector<pair<vaddr_t, const ElfParser*>> ElfParser::get_stacktrace(
+	const vector<const ElfParser*>& elfs,
+	const kvm_regs& kregs, size_t num_frames, Mmu& mmu
+) {
+	vector<pair<vaddr_t, const ElfParser*>> stacktrace;
+
+	// Transform to dwarf format
+	vsize_t regs[DwarfReg::MAX];
+	kvm_to_dwarf_regs(kregs, regs);
+
+	// For each frame, get the elf it belongs to and use its DWARF info to
+	// get the next frame.
+	size_t i = 0;
+	const ElfParser* elf = nullptr;
+	do {
+		elf = elf_with_addr_in_text(elfs, regs[DwarfReg::ReturnAddress]);
+		if (!elf)
+			break;
+		stacktrace.push_back({regs[DwarfReg::ReturnAddress], elf});
+		if (elf->type() == ET_DYN)
+			regs[DwarfReg::ReturnAddress] -= elf->load_addr();
+	} while (
+		++i < num_frames &&
+		elf->m_debug.next_frame(regs, mmu)
+	);
+
+	return stacktrace;
+}
+
+
+
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;
 } */

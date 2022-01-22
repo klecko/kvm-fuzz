@@ -198,7 +198,7 @@ pub noinline fn handleSyscall(
         .getcwd => self.handle_sys_getcwd(arg0, arg1),
         .chdir => self.handle_sys_chdir(arg0),
         .readlink => self.handle_sys_readlink(arg0, arg1, arg2),
-        .mmap => self.handle_sys_mmap(arg0, arg1, arg2, arg3, arg4, arg5),
+        .mmap => self.handle_sys_mmap(arg0, arg1, arg2, arg3, arg4, arg5, regs),
         .mprotect => self.handle_sys_mprotect(arg0, arg1, arg2),
         .munmap => self.handle_sys_munmap(arg0, arg1),
         .prlimit64 => self.handle_sys_prlimit(arg0, arg1, arg2, arg3),

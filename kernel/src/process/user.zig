@@ -92,7 +92,7 @@ fn setupUserStack(
         makeAuxv(elf.AT_PHENT, info.phinfo.e_phentsize),
         makeAuxv(elf.AT_PHNUM, info.phinfo.e_phnum),
         makeAuxv(elf.AT_PAGESZ, std.mem.page_size),
-        makeAuxv(elf.AT_BASE, info.interp_base),
+        makeAuxv(elf.AT_BASE, info.interp_start),
         makeAuxv(elf.AT_FLAGS, 0),
         makeAuxv(elf.AT_ENTRY, info.elf_entry),
         makeAuxv(elf.AT_RANDOM, random_bytes_addr),

@@ -298,6 +298,13 @@ string Mmu::read_string(vaddr_t addr) {
 	return result;
 }
 
+string Mmu::read_string_length(vaddr_t addr, vsize_t len) {
+	string result;
+	result.resize(len);
+	read_mem(&result[0], addr, len);
+	return result;
+}
+
 void Mmu::set_flags(vaddr_t addr, vsize_t len, uint64_t flags) {
 	if (len == 0)
 		return;

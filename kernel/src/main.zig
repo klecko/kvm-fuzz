@@ -40,6 +40,7 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
         mem.heap.block_allocator;
 
     fs.file_manager.init(allocator, info.num_files);
+    hypercalls.setInterpreterRange(info.interp_start, info.interp_end);
 
     var process = Process.initial(allocator, &info) catch unreachable;
     scheduler.init(allocator, &process);

@@ -53,10 +53,12 @@ Vm::Vm(const Vm& other)
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
 	, m_interpreter(other.m_interpreter)
+	, m_libraries(other.m_libraries)
 	, m_argv(other.m_argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints(other.m_breakpoints)
+	, m_hook_handlers(other.m_hook_handlers)
 	, m_breakpoints_dirty(other.m_breakpoints_dirty)
 	, m_file_contents(other.m_file_contents)
 	, m_instructions_executed(other.m_instructions_executed)
@@ -273,7 +275,7 @@ void Vm::load_elfs() {
 
 	// Now, user elf. Assign base address if it's DYN (PIE) and load it
 	if (m_elf.type() == ET_DYN)
-		m_elf.set_base(Mmu::ELF_ADDR);
+		m_elf.set_load_addr(Mmu::ELF_ADDR);
 	dbgprintf("Loading elf at 0x%lx\n", m_elf.load_addr());
 	m_mmu.load_elf(m_elf.segments(), false);
 
@@ -282,7 +284,7 @@ void Vm::load_elfs() {
 	if (!interpreter_path.empty()) {
 		m_interpreter = new ElfParser(interpreter_path);
 		ASSERT(m_interpreter->type() == ET_DYN, "interpreter not ET_DYN?");
-		m_interpreter->set_base(Mmu::INTERPRETER_ADDR);
+		m_interpreter->set_load_addr(Mmu::INTERPRETER_ADDR);
 		dbgprintf("Loading interpreter %s at 0x%lx\n",
 		          m_interpreter->path().c_str(), m_interpreter->load_addr());
 		m_mmu.load_elf(m_interpreter->segments(), false);
@@ -523,12 +525,14 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 
 	// If it's a hook handle it, then remove breakpoint, single step and set
 	// breakpoint again
-	if (m_breakpoints[addr].type & Breakpoint::Type::Hook) {
-		handle_hook();
+	if (bp.type & Breakpoint::Type::Hook) {
+		hook_handler_t hook_handler = m_hook_handlers[addr];
+		ASSERT(hook_handler, "hook breakpoint without hook handler at %p", addr);
+		hook_handler(*this);
 		remove_breakpoint(addr, Breakpoint::Hook);
 		Stats dummy;
 		RunEndReason reason = single_step(dummy);
-		ASSERT(reason == RunEndReason::Debug, "run end reason: %d", reason);
+		ASSERT(reason == RunEndReason::Debug, "run end reason: %s", reason_str[reason]);
 		set_breakpoint(addr, Breakpoint::Hook);
 
 		// single_step sets m_running to false. Set it to true again
@@ -538,50 +542,12 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
 	// If it's a coverage breakpoint, add address to basic block hits and
 	// remove it
-	if (m_breakpoints[addr].type & Breakpoint::Type::Coverage) {
+	if (bp.type & Breakpoint::Type::Coverage) {
 		remove_breakpoint(addr, Breakpoint::Coverage);
 		m_coverage.add(addr);
 	}
 #endif
 
-}
-
-// This is just for debugging
-void Vm::handle_hook() {
-	thread_local int n_malloc = 0;
-	thread_local int n_free = 0;
-	vaddr_t addr = m_regs->rip;
-	if (addr == 0x4ba130) { //resolve_symbol("__free")) {
-		n_free++;
-		//print_stacktrace(*m_regs, 1);
-		// if (m_regs->rdi != 0) {
-		// 	printf("free: 0x%lx\n", m_regs->rdi);
-		// 	auto it = m_allocations.begin();
-		// 	for (; it != m_allocations.end() && *it != m_regs->rdi; ++it);
-		// 	if (it != m_allocations.end())
-		// 		m_allocations.erase(it);
-		// 	else {
-		// 		printf("woo 0x%lx\n", m_regs->rdi);
-		// 		print_stacktrace(*m_regs);
-		// 	}
-		// }
-	} else { //if (addr == resolve_symbol("__libc_malloc")) {
-		n_malloc++;
-		//print_stacktrace(*m_regs, 1);
-		// vaddr_t ret_addr = m_mmu.read<vaddr_t>(m_regs->rsp);
-		// Stats dummy;
-		// remove_breakpoint(addr, Breakpoint::Hook);
-		// run_until(ret_addr, dummy);
-		// set_breakpoint(addr, Breakpoint::Hook);
-		// if (m_regs->rax != 0)
-		// 	m_allocations.push_back(m_regs->rax);
-		// string sym = m_elf.addr_to_symbol_name(addr);
-		// printf("%s: 0x%lx\n", sym.c_str(), m_regs->rax);
-		//print_stacktrace(*m_regs);
-	} /* else {
-		printf("what 0x%lx\n", addr);
-	} */
-	//printf("0x%lx %d %d\n", m_allocations.size(), n_malloc, n_free);
 }
 
 void Vm::run_until(vaddr_t pc, Stats& stats) {
@@ -768,6 +734,18 @@ bool Vm::try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 	return true;
 }
 
+void Vm::set_hook(vaddr_t addr, hook_handler_t hook_handler) {
+	ASSERT(!m_hook_handlers.count(addr), "hook handler for %p already exists", addr);
+	set_breakpoint(addr, Breakpoint::Type::Hook);
+	m_hook_handlers[addr] = hook_handler;
+}
+
+void Vm::remove_hook(vaddr_t addr) {
+	ASSERT(m_hook_handlers.count(addr), "hook handler for %p doesn't exist", addr);
+	remove_breakpoint(addr, Breakpoint::Type::Hook);
+	m_hook_handlers.erase(addr);
+}
+
 void Vm::set_breakpoints_dirty(bool dirty) {
 	m_breakpoints_dirty = dirty;
 }
@@ -849,16 +827,22 @@ void Vm::print_current_stacktrace(size_t num_frames) {
 }
 
 void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames){
-	// Determine which elf this PC belongs to
-	const ElfParser& elf = (kregs.rip >= m_kernel.load_addr() ? m_kernel : m_elf);
-
-	// Get and print the stacktrace
-	vector<vaddr_t> stacktrace = elf.get_stacktrace(kregs, num_frames, m_mmu);
-	for (size_t i = 0; i < stacktrace.size(); i++) {
-		print_stacktrace_line(elf, i, stacktrace[i]);
+	// List of all the elfs
+	std::vector<const ElfParser*> elfs = {&m_elf, &m_kernel};
+	if (m_interpreter)
+		elfs.push_back(m_interpreter);
+	for (const auto& library : m_libraries) {
+		elfs.push_back(&library.second);
 	}
 
-	if (stacktrace.size() == 1) {
+	// Get and print the stacktrace
+	vector<pair<vaddr_t, const ElfParser*>> stacktrace =
+		ElfParser::get_stacktrace(elfs, kregs, num_frames, m_mmu);
+	for (size_t i = 0; i < stacktrace.size(); i++) {
+		print_stacktrace_line(*stacktrace[i].second, i, stacktrace[i].first);
+	}
+
+	if (stacktrace.size() <= 1) {
 		printf("(no stacktrace available)\n\n");
 		printf("trying to dump stack instead\n");
 		for (size_t i = 0; i < 16; i++) {

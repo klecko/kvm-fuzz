@@ -1,6 +1,8 @@
 const std = @import("std");
 const x86 = @import("x86/x86.zig");
 const linux = @import("linux.zig");
+const fs = @import("fs/fs.zig");
+const printFmt = @import("common.zig").print;
 
 pub const Hypercall = enum(c_int) {
     Test,
@@ -13,6 +15,7 @@ pub const Hypercall = enum(c_int) {
     SubmitFilePointers,
     SubmitTimeoutPointers,
     PrintStackTrace,
+    LoadLibrary,
     EndRun,
 };
 
@@ -28,12 +31,11 @@ pub const VmInfo = extern struct {
     elf_path: [linux.PATH_MAX]u8,
     brk: usize,
     num_files: usize,
-    unused1: usize,
-    unused2: usize,
     user_entry: usize,
     elf_entry: usize,
     elf_load_addr: usize,
-    interp_base: usize,
+    interp_start: usize,
+    interp_end: usize,
     phinfo: phinfo_t,
     term: linux.termios,
 };
@@ -170,9 +172,14 @@ comptime {
         \\  mov $9, %rax
         \\  jmp hypercall
         \\
+        \\.global loadLibrary
+        \\loadLibrary:
+        \\  mov $10, %rax
+        \\  jmp hypercall
+        \\
         \\.global _endRun
         \\_endRun:
-        \\	mov $10, %rax
+        \\	mov $11, %rax
         \\	jmp hypercall
         \\
         \\.global getRip
@@ -189,7 +196,8 @@ comptime {
     checkEquals(.SubmitFilePointers, 7);
     checkEquals(.SubmitTimeoutPointers, 8);
     checkEquals(.PrintStackTrace, 9);
-    checkEquals(.EndRun, 10);
+    checkEquals(.LoadLibrary, 10);
+    checkEquals(.EndRun, 11);
 }
 
 // pub extern fn test(arg: usize) void;
@@ -203,12 +211,33 @@ pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _printStackTrace(stacktrace_regs: *StackTraceRegs) void;
 extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
+extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
     for (s) |c| {
         printChar(c);
     }
+}
+
+var interpreter_range = struct {
+    start: usize = 0,
+    end: usize = 0,
+}{};
+
+pub fn setInterpreterRange(start: usize, end: usize) void {
+    interpreter_range.start = start;
+    interpreter_range.end = end;
+}
+
+pub fn maybeLoadLibrary(mmap_addr: usize, mmap_file: []const u8, rip: usize) void {
+    // Check if mmap syscall was called from the interpreter
+    if (!(interpreter_range.start <= rip and rip < interpreter_range.end))
+        return;
+
+    // Get the filename of the library and tell the hypervisor to load it
+    const filename = fs.file_manager.filenameFromFileContent(mmap_file) orelse return;
+    loadLibrary(filename.ptr, filename.len, mmap_addr);
 }
 
 pub fn printStackTrace(stacktrace_regs: ?*StackTraceRegs) void {

@@ -80,6 +80,9 @@ public:
 	// Read a null-terminated string from `addr`
 	std::string read_string(vaddr_t addr);
 
+	// Read a string of length `len` from `addr`
+	std::string read_string_length(vaddr_t addr, vsize_t len);
+
 	// Set flags to given memory region in the page table
 	void set_flags(vaddr_t addr, vsize_t len, uint64_t flags);
 

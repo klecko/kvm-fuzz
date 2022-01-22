@@ -5,6 +5,7 @@ const common = @import("../../common.zig");
 const panic = common.panic;
 const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
+const hypercalls = @import("../../hypercalls.zig");
 const log = std.log.scoped(.sys_mmap);
 const cast = std.zig.c_translation.cast;
 
@@ -25,6 +26,7 @@ fn sys_mmap(
     flags: i32,
     fd: linux.fd_t,
     offset: usize,
+    regs: *Process.UserRegs,
 ) !usize {
     log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x})\n", .{ addr, length, prot, flags, fd, offset });
 
@@ -111,6 +113,9 @@ fn sys_mmap(
             perms.write = false;
             self.space.setRangePerms(ret, length_aligned, perms) catch unreachable;
         }
+
+        // Check if we are being called from the interpreter and tell the hypervisor
+        hypercalls.maybeLoadLibrary(ret, file.buf, regs.rip);
     }
 
     return ret;
@@ -124,6 +129,7 @@ pub fn handle_sys_mmap(
     arg3: usize,
     arg4: usize,
     arg5: usize,
+    regs: *Process.UserRegs,
 ) !usize {
     const addr = arg0;
     const length = arg1;
@@ -131,7 +137,7 @@ pub fn handle_sys_mmap(
     const flags = cast(i32, arg3);
     const fd = cast(linux.fd_t, arg4);
     const offset = arg5;
-    return sys_mmap(self, addr, length, prot, flags, fd, offset);
+    return sys_mmap(self, addr, length, prot, flags, fd, offset, regs);
 }
 
 fn sys_munmap(self: *Process, addr: usize, length: usize) !void {

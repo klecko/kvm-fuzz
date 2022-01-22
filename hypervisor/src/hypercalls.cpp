@@ -18,6 +18,7 @@ enum Hypercall : size_t {
 	SubmitFilePointers,
 	SubmitTimeoutPointers,
 	PrintStacktrace,
+	LoadLibrary,
 	EndRun,
 };
 
@@ -62,12 +63,11 @@ struct VmInfo {
 	char elf_path[PATH_MAX];
 	vaddr_t brk;
 	vsize_t num_files;
-	vaddr_t constructors;
-	vsize_t num_constructors;
 	vaddr_t user_entry;
 	vaddr_t elf_entry;
 	vaddr_t elf_load_addr;
-	vaddr_t interp_base;
+	vaddr_t interp_start;
+	vaddr_t interp_end;
 	phinfo_t phinfo;
 	struct termios term;
 };
@@ -76,30 +76,19 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	// Get absolute elf path, brk and other stuff
 	VmInfo info;
 	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
-	info.brk = m_elf.initial_brk();
-	info.num_files = m_file_contents.size();
-
-	info.constructors = 0;
-	info.num_constructors = 0;
-	for (section_t& section : m_kernel.sections()) {
-		if (section.name == ".ctors") {
-			info.constructors = section.addr;
-			info.num_constructors = section.size / sizeof(vaddr_t);
-			break;
-		}
-	}
-
+	info.brk           = m_elf.initial_brk();
+	info.num_files     = m_file_contents.size();
 	info.user_entry    = (m_interpreter ? m_interpreter->entry() : m_elf.entry());
 	info.elf_entry     = m_elf.entry();
 	info.elf_load_addr = m_elf.load_addr();
-	info.interp_base   = (m_interpreter ? m_interpreter->base() : 0);
+	info.interp_start  = (m_interpreter ? m_interpreter->load_addr() : 0);
+	info.interp_end    = (m_interpreter ? info.interp_start + m_interpreter->size() : 0);
 	info.phinfo        = m_elf.phinfo();
 
-	// Make sure our struct termios corresponds to the struct termios2
-	// that is used by the kernel
+	// Make sure our struct termios corresponds to the one used by the kernel
 	#if !defined(_HAVE_STRUCT_TERMIOS_C_ISPEED) ||   \
 	    !defined(_HAVE_STRUCT_TERMIOS_C_OSPEED)
-	#error struct termios in hypervisor is not struct termios2 in the kernel?
+	#error struct termios in hypervisor doesn't have ispeed and ospeed?
 	#endif
 	tcgetattr(STDOUT_FILENO, &info.term);
 
@@ -157,6 +146,25 @@ void Vm::do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr) {
 	print_stacktrace(regs);
 }
 
+void Vm::do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
+                            vaddr_t load_addr)
+{
+	string filename = m_mmu.read_string_length(filename_ptr, filename_len);
+	const file_t& file = m_file_contents.at(filename);
+
+	// string preffix = "/lib/x86_64-linux-gnu/";
+	// if (filename.substr(0, preffix.size()) == preffix)
+		// filename = filename.replace(0, preffix.size(), "/usr/lib/debug/lib/x86_64-linux-gnu/");
+
+	if (!m_libraries.count(filename)) {
+		ElfParser elf(filename, file.data, file.length);
+		elf.set_load_addr(load_addr);
+		printf("Loaded library %s at 0x%lx (%lu symbols)\n", filename.c_str(),
+		       elf.load_addr(), elf.symbols().size());
+		m_libraries.insert({filename, move(elf)});
+	}
+}
+
 void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
                        uint64_t instr_executed)
 {
@@ -196,6 +204,9 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			break;
 		case Hypercall::PrintStacktrace:
 			do_hc_print_stacktrace(m_regs->rdi);
+			break;
+		case Hypercall::LoadLibrary:
+			do_hc_load_library(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
 		case Hypercall::EndRun:
 			reason = (RunEndReason)m_regs->rdi;
