@@ -10,40 +10,74 @@ using namespace std;
 // If this errmsg produces "Dwarf_Error is NULL", that's because ret is DW_DLV_NO_ENTRY
 #define DWARF_CHECK(ret, err) ASSERT(ret == DW_DLV_OK, "%s", dwarf_errmsg(err))
 
-ElfDebug::ElfDebug() : m_has_dwarf(false) {}
+ElfDebug::ElfDebug()
+	: m_elf(nullptr)
+	, m_dwarf(nullptr)
+	, m_cie_data(nullptr)
+	, m_fde_data(nullptr)
+	, m_cie_count(0)
+	, m_fde_count(0)
+{}
 
-ElfDebug::ElfDebug(const uint8_t* data, size_t size) {
-	// TODO: This is leaky, and unsafe when this object is copied
+ElfDebug::ElfDebug(const uint8_t* data, size_t size) : ElfDebug() {
+	m_elf = elf_memory((char*)data, size);
+	ASSERT(m_elf, "error reading elf from memory");
 
 	// Get libdwarf handler from memory-loaded elf
 	Dwarf_Error err = nullptr;
-	int ret;
-	m_dwarf_elf = elf_memory((char*)data, size);
-	ASSERT(m_dwarf_elf, "error reading elf from memory");
-	ret = dwarf_elf_init(m_dwarf_elf, DW_DLC_READ, nullptr, nullptr,
-						 &m_dwarf, &err);
-	if (ret == DW_DLV_NO_ENTRY) {
-		m_has_dwarf = false;
+	int ret = dwarf_elf_init(m_elf, DW_DLC_READ, nullptr, nullptr,
+	                         &m_dwarf, &err);
+	if (ret == DW_DLV_NO_ENTRY)
 		return;
-	}
 	DWARF_CHECK(ret, err);
 
-	// Get data
-	ret = dwarf_get_fde_list_eh(m_dwarf, &m_dwarf_cie_data, &m_dwarf_cie_count,
-		&m_dwarf_fde_data, &m_dwarf_fde_count, &err);
+	// Get data associated with frames
+	ret = dwarf_get_fde_list_eh(m_dwarf, &m_cie_data, &m_cie_count,
+		&m_fde_data, &m_fde_count, &err);
 	if (ret == DW_DLV_NO_ENTRY) {
-		ret = dwarf_get_fde_list(m_dwarf, &m_dwarf_cie_data, &m_dwarf_cie_count,
-			&m_dwarf_fde_data, &m_dwarf_fde_count, &err);
+		ret = dwarf_get_fde_list(m_dwarf, &m_cie_data, &m_cie_count,
+			&m_fde_data, &m_fde_count, &err);
 	}
-	m_has_dwarf = (ret == DW_DLV_OK);
+}
+
+ElfDebug::ElfDebug(ElfDebug&& other) : ElfDebug() {
+	swap(*this, other);
+}
+
+ElfDebug::~ElfDebug() {
+	if (m_cie_data)
+		dwarf_fde_cie_list_dealloc(m_dwarf, m_cie_data, m_cie_count,
+		                           m_fde_data, m_fde_count);
+	if (m_dwarf)
+		dwarf_finish(m_dwarf, nullptr);
+	if (m_elf)
+		elf_end(m_elf);
+}
+
+void swap(ElfDebug& first, ElfDebug& second) {
+	swap(first.m_elf, second.m_elf);
+	swap(first.m_dwarf, second.m_dwarf);
+	swap(first.m_cie_data, second.m_cie_data);
+	swap(first.m_cie_count, second.m_cie_count);
+	swap(first.m_fde_data, second.m_fde_data);
+	swap(first.m_fde_count, second.m_fde_count);
+}
+
+ElfDebug& ElfDebug::operator=(ElfDebug&& other) {
+	swap(*this, other);
+	return *this;
 }
 
 bool ElfDebug::has() const {
-	return m_has_dwarf;
+	return m_dwarf != nullptr;
+}
+
+bool ElfDebug::has_frames() const {
+	return m_cie_data != nullptr;
 }
 
 bool ElfDebug::next_frame(vaddr_t regs[DwarfReg::MAX], Mmu& mmu) const {
-	if (!m_has_dwarf)
+	if (!has_frames())
 		return false;
 
 	// Allocate register table
@@ -114,13 +148,13 @@ bool ElfDebug::next_frame(vaddr_t regs[DwarfReg::MAX], Mmu& mmu) const {
 bool ElfDebug::get_current_frame_regs_info(vaddr_t instruction_pointer,
                                            Dwarf_Regtable3* regtable) const
 {
-	if (!m_has_dwarf)
+	if (!has_frames())
 		return false;
 
 	// Get Frame Description Entry for instruction pointer
 	Dwarf_Error err = nullptr;
 	Dwarf_Fde fde;
-	int ret = dwarf_get_fde_at_pc(m_dwarf_fde_data, instruction_pointer, &fde,
+	int ret = dwarf_get_fde_at_pc(m_fde_data, instruction_pointer, &fde,
 		nullptr, nullptr, &err);
 	if (ret != DW_DLV_OK)
 		return false;
@@ -167,15 +201,16 @@ bool get_die_limits(Dwarf_Die die, Dwarf_Addr* low_pc, Dwarf_Addr* high_pc) {
 
 string ElfDebug::addr_to_source(vaddr_t pc) const {
 	string result;
-	Dwarf_Unsigned next_cu_header;
-	Dwarf_Half header_cu_type;
+	if (!has())
+		return result;
+
 	bool found = false;
 	Dwarf_Error err;
 
 	// Iterate compilation unit headers
 	while (dwarf_next_cu_header_d(
 		m_dwarf, is_info, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-		nullptr, nullptr, &next_cu_header, &header_cu_type, &err
+		nullptr, nullptr, nullptr, nullptr, &err
 	) == DW_DLV_OK && !found) {
 		// Get the cu die
 		Dwarf_Die cu_die = 0;
@@ -191,14 +226,17 @@ string ElfDebug::addr_to_source(vaddr_t pc) const {
 		dwarf_dealloc(m_dwarf, cu_die, DW_DLA_DIE);
 	}
 
+	// Reset state
 	while (dwarf_next_cu_header_d(
 		m_dwarf, is_info, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-		nullptr, nullptr, &next_cu_header, &header_cu_type, &err
+		nullptr, nullptr, nullptr, nullptr, &err
 	) == DW_DLV_OK) {}
 	return result;
 }
 
 bool ElfDebug::die_has_pc(Dwarf_Die die, Dwarf_Addr pc) const {
+	ASSERT(has(), "die_has_pc without dwarf");
+
 	// Attempt to get limits with highpc, lowpc
 	Dwarf_Addr low_pc = DW_DLV_BADADDR, high_pc = DW_DLV_BADADDR;
 	if (get_die_limits(die, &low_pc, &high_pc)) {
@@ -311,15 +349,15 @@ string ElfDebug::get_source_str_from_line(Dwarf_Line line) const {
 	return result_src + ":" + result_lineno;
 }
 
-/*
 // Currently we are using ELF symbols for this, instead of DWARF info.
 
-static string lookup_symbol_cu(Dwarf_Debug dbg, Dwarf_Addr pc, Dwarf_Die cu_die) {
+string ElfDebug::get_symbol_cu_die(Dwarf_Die cu_die, Dwarf_Addr pc) const {
+	string result;
 	Dwarf_Die child_die;
 
 	// Get the CU DIE first child
 	if (dwarf_child(cu_die, &child_die, nullptr) != DW_DLV_OK)
-		return nknown;
+		return result;
 
 	// Iterate every child
 	do {
@@ -335,18 +373,17 @@ static string lookup_symbol_cu(Dwarf_Debug dbg, Dwarf_Addr pc, Dwarf_Die cu_die)
 		if (!get_die_limits(child_die, &low_pc, &high_pc))
 			continue;
 
-		if (!(pc >= low_pc && pc < high_pc))
+		if (!(low_pc <= pc && pc < high_pc))
 			continue;
 
 		// We got our symbol. Return its name.
 		char* die_name = nullptr;
-		if (dwarf_diename(child_die, &die_name, nullptr) != DW_DLV_OK)
-			return "unknown symbol name";
-		return string(die_name);
+		if (dwarf_diename(child_die, &die_name, nullptr) == DW_DLV_OK)
+			result = string(die_name);
+		break;
 
-	} while (dwarf_siblingof_b(dbg, child_die, is_info, &child_die, nullptr) == DW_DLV_OK);
+	} while (dwarf_siblingof_b(m_dwarf, child_die, is_info, &child_die, nullptr) == DW_DLV_OK);
 
-	return unknown;
+	return result;
 }
 
-*/

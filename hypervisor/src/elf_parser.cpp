@@ -11,8 +11,86 @@
 using namespace std;
 
 ElfParser::ElfParser(const string& elf_path)
-	: m_path(elf_path)
+	: m_owns_data(true)
+	, m_data(nullptr)
+	, m_path(elf_path)
+	, m_debug_elf(nullptr)
 {
+	if (m_path.empty())
+		return;
+
+	load_file();
+	init();
+}
+
+ElfParser::ElfParser(const string& elf_path, const uint8_t* data, size_t size)
+	: m_owns_data(false)
+	, m_data(data)
+	, m_size(size)
+	, m_path(elf_path)
+	, m_debug_elf(nullptr)
+{
+	init();
+}
+
+ElfParser::ElfParser(const ElfParser& other)
+	: m_owns_data(other.m_owns_data)
+	, m_size(other.m_size)
+	, m_load_addr(other.m_load_addr)
+	, m_initial_brk(other.m_initial_brk)
+	, m_phinfo(other.m_phinfo)
+	, m_type(other.m_type)
+	, m_entry(other.m_entry)
+	, m_path(other.m_path)
+	, m_interpreter(other.m_interpreter)
+	, m_sections(other.m_sections)
+	, m_segments(other.m_segments)
+	, m_symbols(other.m_symbols)
+	, m_debug_elf(other.m_debug_elf ? new ElfParser(*other.m_debug_elf) : nullptr)
+{
+	if (other.m_owns_data)
+		load_file();
+	else
+		m_data = other.m_data;
+
+	m_debug = ElfDebug(m_data, m_size);
+}
+
+ElfParser::ElfParser(ElfParser&& other) : ElfParser() {
+	swap(*this, other);
+}
+
+ElfParser::~ElfParser() {
+	if (m_data && m_owns_data)
+		ERROR_ON(munmap((void*)m_data, m_size) != 0, "munmap");
+	if (m_debug_elf)
+		delete m_debug_elf;
+}
+
+void swap(ElfParser& first, ElfParser& second) {
+	swap(first.m_owns_data, second.m_owns_data);
+	swap(first.m_data, second.m_data);
+	swap(first.m_size, second.m_size);
+	swap(first.m_load_addr, second.m_load_addr);
+	swap(first.m_initial_brk, second.m_initial_brk);
+	swap(first.m_phinfo, second.m_phinfo);
+	swap(first.m_type, second.m_type);
+	swap(first.m_entry, second.m_entry);
+	swap(first.m_path, second.m_path);
+	swap(first.m_interpreter, second.m_interpreter);
+	swap(first.m_sections, second.m_sections);
+	swap(first.m_segments, second.m_segments);
+	swap(first.m_symbols, second.m_symbols);
+	swap(first.m_debug, second.m_debug);
+	swap(first.m_debug_elf, second.m_debug_elf);
+}
+
+ElfParser& ElfParser::operator=(ElfParser other) {
+	swap(*this, other);
+	return *this;
+}
+
+void ElfParser::load_file() {
 	const char* cpath = m_path.c_str();
 
 	// Load file into memory
@@ -25,16 +103,6 @@ ElfParser::ElfParser(const string& elf_path)
 	m_data = (uint8_t*)mmap(nullptr, m_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	ERROR_ON(m_data == MAP_FAILED, "elf %s: mmap", cpath);
 	close(fd);
-
-	init();
-}
-
-ElfParser::ElfParser(const string& elf_path, const void* data, vsize_t size)
-	: m_path(elf_path)
-	, m_data((const uint8_t*)data)
-	, m_size(size)
-{
-	init();
 }
 
 void ElfParser::init() {
@@ -90,9 +158,10 @@ void ElfParser::init() {
 
 	// If this is a PIE binary, make sure its load address is 0 at first
 	if (m_type == ET_DYN)
-		ASSERT(m_load_addr == 0, "PIE %s binary with load addr %p", cpath, m_load_addr);
+		ASSERT(m_load_addr == 0, "PIE %s binary with load addr 0x%lx", cpath, m_load_addr);
 
 	// Get sections
+	string debug_link;
 	Elf_Shdr* sh_strtab = &shdr[ehdr->e_shstrndx];
 	const char* strtab = (char*)m_data + sh_strtab->sh_offset;
 	for (i = 0; i < ehdr->e_shnum; i++) {
@@ -110,6 +179,9 @@ void ElfParser::init() {
 			.data      = m_data + section.offset
 		};
 		m_sections.push_back(section);
+
+		if (section.name == ".gnu_debuglink")
+			debug_link = string((const char*)section.data);
 	}
 
 	// Get symbols
@@ -138,21 +210,24 @@ void ElfParser::init() {
 		}
 	}
 
-	// Get dependencies using ldd
-	string ldd_result = exec_cmd("ldd " + m_path + " 2>&1");
-	vector<string> lines = split_string(ldd_result, "\n");
-	for (const string& line : lines) {
-		size_t pos1 = line.find("=> ");
-		if (pos1 == string::npos)
-			continue;
-		pos1 += 3;
-		size_t pos2 = line.find(" ", pos1); // assume path doesn't have spaces :')
-		if (pos2 == string::npos)
-			continue;
-		m_dependencies.push_back(line.substr(pos1, pos2-pos1));
-	}
-
 	m_debug = ElfDebug(m_data, m_size);
+
+	// Load debug elf if it was specified and it exists
+	if (!debug_link.empty()) {
+		const char* cpath = m_path.c_str();
+		const char* path_filename = basename(cpath);
+		size_t length_dirname = path_filename - cpath;
+		string path_dirname(cpath, length_dirname);
+		string debug_link_path = "/usr/lib/debug/" + path_dirname + debug_link;
+		if (access(debug_link_path.c_str(), R_OK) == 0) {
+			m_debug_elf = new ElfParser(debug_link_path);
+
+			// Move debug elf symbols to our symbols
+			m_symbols.insert(m_symbols.end(), m_debug_elf->m_symbols.begin(),
+			                 m_debug_elf->m_symbols.end());
+			m_debug_elf->m_symbols.clear();
+		}
+	}
 }
 
 const uint8_t* ElfParser::data() const {
@@ -182,6 +257,9 @@ void ElfParser::set_load_addr(vaddr_t load_addr) {
 	for (symbol_t& symbol : m_symbols) {
 		symbol.value += diff;
 	}
+
+	if (m_debug_elf)
+		m_debug_elf->set_load_addr(load_addr);
 }
 
 vaddr_t ElfParser::load_addr() const {
@@ -224,10 +302,6 @@ vector<symbol_t> ElfParser::symbols() const {
 	return m_symbols;
 }
 
-vector<string> ElfParser::dependencies() const {
-	return m_dependencies;
-}
-
 pair<vaddr_t, vaddr_t> ElfParser::section_limits(const string& name) const {
 	for (const section_t& section : sections())
 		if (section.name == name)
@@ -242,8 +316,24 @@ pair<vaddr_t, vaddr_t> ElfParser::symbol_limits(const string& name) const {
 	ASSERT(false, "not found symbol: %s", name.c_str());
 }
 
-bool ElfParser::has_dwarf() const {
-	return m_debug.has();
+vector<string> ElfParser::get_dependencies() const {
+	vector<string> result;
+
+	// Run ldd and parse its output
+	string ldd_result = exec_cmd("ldd " + m_path + " 2>&1");
+	vector<string> lines = split_string(ldd_result, "\n");
+	for (const string& line : lines) {
+		size_t pos1 = line.find("=> ");
+		if (pos1 == string::npos)
+			continue;
+		pos1 += 3;
+		size_t pos2 = line.find(" ", pos1); // assume path doesn't have spaces :')
+		if (pos2 == string::npos)
+			continue;
+		result.push_back(line.substr(pos1, pos2-pos1));
+	}
+
+	return result;
 }
 
 bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
@@ -260,7 +350,13 @@ string ElfParser::addr_to_source(vaddr_t addr) const {
 	// Substract load address for PIE binaries.
 	if (m_type == ET_DYN)
 		addr -= m_load_addr;
-	return m_debug.addr_to_source(addr);
+	string src = m_debug.addr_to_source(addr);
+
+	// If we failed and we've got a debug elf, attempt again with its debug info
+	if (src.empty() && m_debug_elf) {
+		src = m_debug_elf->m_debug.addr_to_source(addr);
+	}
+	return src;
 }
 
 void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {
@@ -353,8 +449,6 @@ vector<pair<vaddr_t, const ElfParser*>> ElfParser::get_stacktrace(
 
 	return stacktrace;
 }
-
-
 
 /* vector<relocation_t> ElfParser::relocations() const {
 	return m_relocations;

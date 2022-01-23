@@ -149,15 +149,13 @@ void Vm::do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr) {
 void Vm::do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
                             vaddr_t load_addr)
 {
+	// Kernel is telling us that the guest loader is mmaping a file.
+	// Get the memory-loaded file, create an ElfParser from it and add it to
+	// our list of loaded libraries.
 	string filename = m_mmu.read_string_length(filename_ptr, filename_len);
 	const file_t& file = m_file_contents.at(filename);
-
-	// string preffix = "/lib/x86_64-linux-gnu/";
-	// if (filename.substr(0, preffix.size()) == preffix)
-		// filename = filename.replace(0, preffix.size(), "/usr/lib/debug/lib/x86_64-linux-gnu/");
-
 	if (!m_libraries.count(filename)) {
-		ElfParser elf(filename, file.data, file.length);
+		ElfParser elf(filename, (const uint8_t*)file.data, file.length);
 		elf.set_load_addr(load_addr);
 		printf("Loaded library %s at 0x%lx (%lu symbols)\n", filename.c_str(),
 		       elf.load_addr(), elf.symbols().size());

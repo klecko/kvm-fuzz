@@ -57,6 +57,8 @@ public:
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
 
+	~Vm();
+
 	kvm_regs& regs();
 	kvm_regs regs() const;
 	Mmu& mmu();

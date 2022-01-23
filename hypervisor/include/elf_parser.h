@@ -96,11 +96,24 @@ struct relocation_t {
 
 class ElfParser {
 	public:
-		// Create an elf parser, loading file from disk
-		ElfParser(const std::string& elf_path);
+		// Create an elf parser, loading file from disk. This object owns the
+		// memory and is responsible of freeing it.
+		ElfParser(const std::string& elf_path = "");
 
-		// Create an elf parser from data in memory
-		ElfParser(const std::string& elf_path, const void* data, vsize_t size);
+		// Create and elf parser, using data from memory. Caller owns the memory,
+		// which should be alive while this object is alive. Elf path is still
+		// needed for getting dependencies and loading associated debug elf if
+		// specified.
+		ElfParser(const std::string& elf_path, const uint8_t* data, size_t size);
+
+		// Copy and move constructor, and destructor
+		ElfParser(const ElfParser& other);
+		ElfParser(ElfParser&& other);
+		~ElfParser();
+
+		friend void swap(ElfParser& first, ElfParser& second);
+		ElfParser& operator=(ElfParser other);
+
 		const uint8_t* data() const;
 		vsize_t size() const;
 		void set_load_addr(vaddr_t load_addr);
@@ -115,12 +128,13 @@ class ElfParser {
 		std::vector<segment_t> segments() const;
 		std::vector<section_t> sections() const;
 		std::vector<symbol_t> symbols() const;
-		std::vector<std::string> dependencies() const;
 		//std::vector<relocation_t> relocations() const;
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
 
-		bool has_dwarf() const;
+		// Get dynamic libraries dependencies using ldd
+		std::vector<std::string> get_dependencies() const;
+
 		bool addr_to_symbol(vaddr_t addr, symbol_t& result) const;
 		std::string addr_to_source(vaddr_t addr) const;
 		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs,
@@ -132,6 +146,7 @@ class ElfParser {
 		);
 
 	private:
+		bool m_owns_data;
 		const uint8_t* m_data;
 		vsize_t m_size;
 
@@ -149,18 +164,23 @@ class ElfParser {
 		uint16_t m_type;
 		vaddr_t m_entry;
 
-
 		std::string m_path;
 		std::string m_interpreter;
 		std::vector<section_t> m_sections;
 		std::vector<segment_t> m_segments;
 		std::vector<symbol_t> m_symbols;
-		std::vector<std::string> m_dependencies;
 		//std::vector<relocation_t> m_relocations;
 
-		// libdwarf stuff
+		// Debug information of this binary
 		ElfDebug m_debug;
 
+		// Some binaries have the debug information in another binary, which we
+		// call the debug elf. We are just interested in its symbols, which are
+		// moved to ours, and its debug info.
+		ElfParser* m_debug_elf;
+
+		void load_file();
 		void init();
 };
+
 #endif

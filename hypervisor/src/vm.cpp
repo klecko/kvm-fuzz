@@ -52,7 +52,7 @@ Vm::Vm(const Vm& other)
 	: m_vm_fd(create_vm())
 	, m_elf(other.m_elf)
 	, m_kernel(other.m_kernel)
-	, m_interpreter(other.m_interpreter)
+	, m_interpreter(other.m_interpreter ? new ElfParser(*other.m_interpreter) : nullptr)
 	, m_libraries(other.m_libraries)
 	, m_argv(other.m_argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
@@ -103,6 +103,11 @@ Vm::Vm(const Vm& other)
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
+}
+
+Vm::~Vm() {
+	if (m_interpreter)
+		delete m_interpreter;
 }
 
 int Vm::create_vm() {
@@ -261,7 +266,7 @@ void Vm::setup_coverage(const string& path) {
 	}
 	bbs.close();
 	ASSERT(count > 0, "no basic block read from %s", path.c_str());
-	printf("Read %lu basic blocks\n", count);
+	printf("Read %lu basic blocks from %s\n", count, path.c_str());
 }
 #endif
 
@@ -291,7 +296,7 @@ void Vm::load_elfs() {
 	}
 
 	// Read and load elf dependencies as memory-loaded files
-	for (const string& path : m_elf.dependencies()) {
+	for (const string& path : m_elf.get_dependencies()) {
 		read_and_set_file(path);
 	}
 }
@@ -527,7 +532,7 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	// breakpoint again
 	if (bp.type & Breakpoint::Type::Hook) {
 		hook_handler_t hook_handler = m_hook_handlers[addr];
-		ASSERT(hook_handler, "hook breakpoint without hook handler at %p", addr);
+		ASSERT(hook_handler, "hook breakpoint without hook handler at 0x%lx", addr);
 		hook_handler(*this);
 		remove_breakpoint(addr, Breakpoint::Hook);
 		Stats dummy;
@@ -735,13 +740,13 @@ bool Vm::try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 }
 
 void Vm::set_hook(vaddr_t addr, hook_handler_t hook_handler) {
-	ASSERT(!m_hook_handlers.count(addr), "hook handler for %p already exists", addr);
+	ASSERT(!m_hook_handlers.count(addr), "hook handler for 0x%lx already exists", addr);
 	set_breakpoint(addr, Breakpoint::Type::Hook);
 	m_hook_handlers[addr] = hook_handler;
 }
 
 void Vm::remove_hook(vaddr_t addr) {
-	ASSERT(m_hook_handlers.count(addr), "hook handler for %p doesn't exist", addr);
+	ASSERT(m_hook_handlers.count(addr), "hook handler for 0x%lx doesn't exist", addr);
 	remove_breakpoint(addr, Breakpoint::Type::Hook);
 	m_hook_handlers.erase(addr);
 }
@@ -797,11 +802,6 @@ void Vm::set_timeout(size_t microsecs) {
 	m_mmu.write<vsize_t>(m_timeout_addr, microsecs);
 }
 
-void print_no_stacktrace(vaddr_t rip) {
-	printf("#0 0x%016lx\n", rip);
-	printf("(no stacktrace available)\n");
-}
-
 void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
 	// PC is the return address, which means it points to the instruction after
 	// the 'call' instruction. We substract 1 to that PC to get the symbol and
@@ -815,10 +815,12 @@ void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
 	printf("#%lu 0x%016lx", i, pc);
 	if (have_symbol) {
 		size_t offset = pc - symbol.value;
-		printf(" in %s + 0x%lx", symbol.name.c_str(), offset);
+		printf(" %s + 0x%lx", symbol.name.c_str(), offset);
 	}
 	if (!source.empty())
 		printf(" at %s", source.c_str());
+	else
+		printf(" from %s", elf.path().c_str());
 	printf("\n");
 }
 
@@ -839,7 +841,9 @@ void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames){
 	vector<pair<vaddr_t, const ElfParser*>> stacktrace =
 		ElfParser::get_stacktrace(elfs, kregs, num_frames, m_mmu);
 	for (size_t i = 0; i < stacktrace.size(); i++) {
-		print_stacktrace_line(*stacktrace[i].second, i, stacktrace[i].first);
+		vaddr_t pc = stacktrace[i].first;
+		const ElfParser& elf = *stacktrace[i].second;
+		print_stacktrace_line(elf, i, pc);
 	}
 
 	if (stacktrace.size() <= 1) {
