@@ -230,6 +230,10 @@ void ElfParser::init() {
 	}
 }
 
+bool ElfParser::has_data() const {
+	return m_data != nullptr;
+}
+
 const uint8_t* ElfParser::data() const {
 	return m_data;
 }
@@ -334,6 +338,13 @@ vector<string> ElfParser::get_dependencies() const {
 	}
 
 	return result;
+}
+
+vaddr_t ElfParser::resolve_symbol(const string& symbol_name) const {
+	for (const symbol_t& symbol : m_symbols)
+		if (symbol.name == symbol_name)
+			return symbol.value;
+	return 0;
 }
 
 bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {

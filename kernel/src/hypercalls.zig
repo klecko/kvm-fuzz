@@ -10,8 +10,7 @@ pub const Hypercall = enum(c_int) {
     GetMemInfo,
     GetKernelBrk,
     GetInfo,
-    GetFileLen,
-    GetFileName,
+    GetFileInfo,
     SubmitFilePointers,
     SubmitTimeoutPointers,
     PrintStackTrace,
@@ -147,39 +146,34 @@ comptime {
         \\  mov $4, %rax
         \\  jmp hypercall
         \\
-        \\.global getFileLen
-        \\getFileLen:
+        \\.global getFileInfo
+        \\getFileInfo:
         \\  mov $5, %rax
-        \\  jmp hypercall
-        \\
-        \\.global getFileName
-        \\getFileName:
-        \\  mov $6, %rax
         \\  jmp hypercall
         \\
         \\.global submitFilePointers
         \\submitFilePointers:
-        \\  mov $7, %rax
+        \\  mov $6, %rax
         \\  jmp hypercall
         \\
         \\.global submitTimeoutPointers
         \\submitTimeoutPointers:
-        \\  mov $8, %rax
+        \\  mov $7, %rax
         \\  jmp hypercall
         \\
         \\.global _printStackTrace
         \\_printStackTrace:
-        \\  mov $9, %rax
+        \\  mov $8, %rax
         \\  jmp hypercall
         \\
         \\.global loadLibrary
         \\loadLibrary:
-        \\  mov $10, %rax
+        \\  mov $9, %rax
         \\  jmp hypercall
         \\
         \\.global _endRun
         \\_endRun:
-        \\	mov $11, %rax
+        \\	mov $10, %rax
         \\	jmp hypercall
         \\
         \\.global getRip
@@ -191,13 +185,12 @@ comptime {
     checkEquals(.GetMemInfo, 2);
     checkEquals(.GetKernelBrk, 3);
     checkEquals(.GetInfo, 4);
-    checkEquals(.GetFileLen, 5);
-    checkEquals(.GetFileName, 6);
-    checkEquals(.SubmitFilePointers, 7);
-    checkEquals(.SubmitTimeoutPointers, 8);
-    checkEquals(.PrintStackTrace, 9);
-    checkEquals(.LoadLibrary, 10);
-    checkEquals(.EndRun, 11);
+    checkEquals(.GetFileInfo, 5);
+    checkEquals(.SubmitFilePointers, 6);
+    checkEquals(.SubmitTimeoutPointers, 7);
+    checkEquals(.PrintStackTrace, 8);
+    checkEquals(.LoadLibrary, 9);
+    checkEquals(.EndRun, 10);
 }
 
 // pub extern fn test(arg: usize) void;
@@ -206,7 +199,10 @@ pub extern fn getMemInfo(info: *MemInfo) void;
 pub extern fn getKernelBrk() usize;
 pub extern fn getInfo(info: *VmInfo) void;
 pub extern fn getFileLen(n: usize) usize;
-pub extern fn getFileName(n: usize, buf: [*]u8) void;
+
+// Returns path in `path_buf` and file length in `length_ptr`
+pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
+
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _printStackTrace(stacktrace_regs: *StackTraceRegs) void;

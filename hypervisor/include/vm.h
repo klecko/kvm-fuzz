@@ -10,18 +10,13 @@
 #include "kvm_aux.h"
 #include "fault.h"
 #include "coverage.h"
+#include "files.h"
+#include "elfs.h"
 #ifdef ENABLE_COVERAGE_INTEL_PT
 #include <libxdc.h>
 #endif
 
 void init_kvm();
-
-struct file_t {
-	const void* data;
-	size_t length;
-	vaddr_t guest_data_addr;
-	vaddr_t guest_length_addr;
-};
 
 class Vm {
 public:
@@ -57,8 +52,6 @@ public:
 	// Copy constructor: creates a copy of `other` and allows using method reset
 	Vm(const Vm& other);
 
-	~Vm();
-
 	kvm_regs& regs();
 	kvm_regs regs() const;
 	Mmu& mmu();
@@ -80,7 +73,7 @@ public:
 	// as a copy of `other`
 	void reset(const Vm& other, Stats& stats);
 
-	void set_input(const std::string& input);
+	void set_input(FileRef input);
 
 	RunEndReason run(Stats& stats);
 
@@ -102,12 +95,13 @@ public:
 	// submits a buffer, or immediately if it already submitted one.
 	// If `check` is set, make sure a buffer was already provided so `content`
 	// is immediately copied.
-	void set_file(const std::string& filename, const std::string& content,
-	              bool check = false);
+	// void set_file(const std::string& filename, const std::string& content,
+	//               bool check = false);
+	void set_shared_file(const std::string& filename, std::string content, bool check=false);
 
-	void read_and_set_file(const std::string& filename);
+	void read_and_set_shared_file(const std::string& filename, bool check=false);
 
-	vaddr_t resolve_symbol(const std::string& symbol_name);
+	void set_file(const std::string& filename, FileRef content, bool check=false);
 
 	// Reset the timer inside the VM
 	void reset_timer();
@@ -138,13 +132,13 @@ private:
 	libxdc_t*  m_vmx_pt_decoder;
 #endif
 
+	static SharedFiles s_shared_files;
+	static Elfs s_elfs;
+
+	FileRefsByPath m_files;
+
 	Coverage   m_coverage;
 
-	ElfParser  m_elf;
-	ElfParser  m_kernel;
-	ElfParser* m_interpreter;
-	std::unordered_map<std::string, ElfParser> m_libraries;
-	std::vector<std::string> m_argv;
 	Mmu  m_mmu;
 	bool m_running;
 
@@ -156,10 +150,6 @@ private:
 
 	// Whether setting or removing a breakpoint should dirty memory
 	bool m_breakpoints_dirty;
-
-	// Files contents indexed by filename. Kernel will synchronize with this
-	// on startup
-	std::unordered_map<std::string, file_t> m_file_contents;
 
 	FaultInfo m_fault;
 
@@ -173,16 +163,13 @@ private:
 	vaddr_t m_timer_addr;
 	vaddr_t m_timeout_addr;
 
-	// This is just for debugging
-	std::vector<vaddr_t> m_allocations;
-
 	int create_vm();
 	void setup_kvm();
 	void load_elfs();
 #ifdef ENABLE_COVERAGE_INTEL_PT
 	void update_coverage(Stats& stats);
 #endif
-	void setup_kernel_execution();
+	void setup_kernel_execution(const std::vector<std::string>& argv);
 	void set_regs_dirty();
 	void set_sregs_dirty();
 	void set_instructions_executed(uint64_t instr_executed);
@@ -190,6 +177,12 @@ private:
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
 	void handle_breakpoint(RunEndReason& reason);
+	void maybe_write_file_to_guest(
+		const std::string& filename,
+		const GuestFile& file,
+		bool check
+	);
+	std::pair<std::string, GuestFile> get_file_entry(size_t n);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
@@ -198,8 +191,7 @@ private:
 	void do_hc_get_mem_info(vaddr_t mem_info_addr);
 	vaddr_t do_hc_get_kernel_brk();
 	void do_hc_get_info(vaddr_t info_addr);
-	vsize_t do_hc_get_file_len(size_t n);
-	void do_hc_get_file_name(size_t n, vaddr_t buf_addr);
+	void do_hc_get_file_info(size_t n, vaddr_t path_buf_addr, vaddr_t length_addr);
 	void do_hc_submit_file_pointers(size_t n, vaddr_t buf_addr,
 	                                vaddr_t length_addr);
 	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);

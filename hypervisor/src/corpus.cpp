@@ -105,9 +105,9 @@ string Corpus::seed_filename(size_t i) const {
 	return m_seeds_filenames[i];
 }
 
-const string& Corpus::element(size_t i) const {
+FileRef Corpus::element(size_t i) const {
 	ASSERT(i < m_corpus.size(), "OOB i: %lu", i);
-	return m_corpus[i];
+	return FileRef::from_string(m_corpus[i]);
 }
 
 string Corpus::corpus_filename(size_t i) {
@@ -213,7 +213,7 @@ void Corpus::set_mode_crashes_min(const vector<FaultInfo>& faults) {
 	}
 }
 
-const string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
+FileRef Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	// Copy a random input to slot `id`, mutate it and return a
 	// constant reference to it
 	ASSERT(m_mode != Mode::Unknown, "mode not set");
@@ -228,7 +228,7 @@ const string& Corpus::get_new_input(int id, Rng& rng, Stats& stats){
 	cycles = rdtsc2();
 	mutate_input(id, rng);
 	stats.mut2_cycles += rdtsc2() - cycles;
-	return m_mutated_inputs[id];
+	return FileRef::from_string(m_mutated_inputs[id]);
 }
 
 void Corpus::report_crash(int id, Vm& vm) {

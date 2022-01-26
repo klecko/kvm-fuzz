@@ -13,8 +13,7 @@ enum Hypercall : size_t {
 	GetMemInfo,
 	GetKernelBrk,
 	GetInfo,
-	GetFileLen,
-	GetFileName,
+	GetFileInfo,
 	SubmitFilePointers,
 	SubmitTimeoutPointers,
 	PrintStacktrace,
@@ -55,7 +54,7 @@ void Vm::do_hc_get_mem_info(vaddr_t mem_info_addr) {
 }
 
 vaddr_t Vm::do_hc_get_kernel_brk() {
-	return m_kernel.initial_brk();
+	return s_elfs.kernel().initial_brk();
 }
 
 // Keep this the same as in the kernel
@@ -75,15 +74,17 @@ struct VmInfo {
 void Vm::do_hc_get_info(vaddr_t info_addr) {
 	// Get absolute elf path, brk and other stuff
 	VmInfo info;
-	ERROR_ON(!realpath(m_elf.path().c_str(), info.elf_path), "elf realpath");
-	info.brk           = m_elf.initial_brk();
-	info.num_files     = m_file_contents.size();
-	info.user_entry    = (m_interpreter ? m_interpreter->entry() : m_elf.entry());
-	info.elf_entry     = m_elf.entry();
-	info.elf_load_addr = m_elf.load_addr();
-	info.interp_start  = (m_interpreter ? m_interpreter->load_addr() : 0);
-	info.interp_end    = (m_interpreter ? info.interp_start + m_interpreter->size() : 0);
-	info.phinfo        = m_elf.phinfo();
+	ElfParser& elf = s_elfs.elf();
+	ElfParser* interpreter = s_elfs.interpreter();
+	ERROR_ON(!realpath(elf.path().c_str(), info.elf_path), "elf realpath");
+	info.brk           = elf.initial_brk();
+	info.num_files     = s_shared_files.size() + m_files.size();
+	info.user_entry    = (interpreter ? interpreter->entry() : elf.entry());
+	info.elf_entry     = elf.entry();
+	info.elf_load_addr = elf.load_addr();
+	info.interp_start  = (interpreter ? interpreter->load_addr() : 0);
+	info.interp_end    = (interpreter ? info.interp_start + interpreter->size() : 0);
+	info.phinfo        = elf.phinfo();
 
 	// Make sure our struct termios corresponds to the one used by the kernel
 	#if !defined(_HAVE_STRUCT_TERMIOS_C_ISPEED) ||   \
@@ -95,36 +96,47 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	m_mmu.write(info_addr, info);
 }
 
-vsize_t Vm::do_hc_get_file_len(size_t n) {
-	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
-	auto it = m_file_contents.begin();
-	advance(it, n);
-	dbgprintf("kernel got file length for file %s: %lu\n", it->first.c_str(),
-	          it->second.length);
-	return it->second.length;
+pair<string, GuestFile> Vm::get_file_entry(size_t n) {
+	ASSERT(n < s_shared_files.size() + m_files.size(), "OOB n: %lu", n);
+	if (n < s_shared_files.size())
+		return s_shared_files.entry_at_pos(n);
+	else
+		return m_files.entry_at_pos(n - s_shared_files.size());
 }
 
-void Vm::do_hc_get_file_name(size_t n, vaddr_t buf_addr) {
-	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
-	auto it = m_file_contents.begin();
-	advance(it, n);
-	m_mmu.write_mem(buf_addr, it->first.c_str(), it->first.size() + 1);
+void Vm::do_hc_get_file_info(size_t n, vaddr_t path_buf_addr, vaddr_t length_addr) {
+	auto file_entry = get_file_entry(n);
+	FileRef file = file_entry.second.data;
+	const string& path = file_entry.first;
+	m_mmu.write_mem(path_buf_addr, path.c_str(), path.length() + 1);
+	m_mmu.write<vsize_t>(length_addr, file.length);
 }
 
 void Vm::do_hc_submit_file_pointers(size_t n, vaddr_t data_addr,
                                     vaddr_t length_addr) {
-	// Save pointers and write the data and the length to them. This will be
-	// repeated each time `set_file` is called
-	ASSERT(n < m_file_contents.size(), "OOB n: %lu", n);
-	auto it = m_file_contents.begin();
-	advance(it, n);
-	file_t& file_info = it->second;
-	file_info.guest_data_addr = data_addr;
-	file_info.guest_length_addr = length_addr;
-	m_mmu.write_mem(data_addr, file_info.data, file_info.length);
-	m_mmu.write<size_t>(length_addr, file_info.length);
-	dbgprintf("kernel set pointers for file %s: 0x%lx 0x%lx\n",
-	          it->first.c_str(), data_addr, length_addr);
+	// Make sure ptrs weren't submitted yet
+	auto file_entry = get_file_entry(n);
+	GuestPtrs current_ptrs = file_entry.second.guest;
+	ASSERT(current_ptrs.data_addr == 0 && current_ptrs.length_addr == 0,
+	       "double submite_file_pointers for %s?", file_entry.first.c_str());
+
+	// Submit given ptrs
+	GuestPtrs ptrs = {
+		.data_addr = data_addr,
+		.length_addr = length_addr,
+	};
+	if (n < s_shared_files.size()) {
+		s_shared_files.set_guest_ptrs_at_pos(n, ptrs);
+	} else {
+		m_files.set_guest_ptrs_at_pos(n - s_shared_files.size(), ptrs);
+	}
+
+	// Write the file data and length to given ptrs
+	FileRef file = file_entry.second.data;
+	m_mmu.write_mem(data_addr, file.ptr, file.length);
+	m_mmu.write<vsize_t>(length_addr, file.length);
+	dbgprintf("kernel set pointers for file '%s': 0x%lx 0x%lx\n",
+	          file_entry.first.c_str(), data_addr, length_addr);
 }
 
 void Vm::do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr) {
@@ -150,17 +162,8 @@ void Vm::do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
                             vaddr_t load_addr)
 {
 	// Kernel is telling us that the guest loader is mmaping a file.
-	// Get the memory-loaded file, create an ElfParser from it and add it to
-	// our list of loaded libraries.
 	string filename = m_mmu.read_string_length(filename_ptr, filename_len);
-	const file_t& file = m_file_contents.at(filename);
-	if (!m_libraries.count(filename)) {
-		ElfParser elf(filename, (const uint8_t*)file.data, file.length);
-		elf.set_load_addr(load_addr);
-		printf("Loaded library %s at 0x%lx (%lu symbols)\n", filename.c_str(),
-		       elf.load_addr(), elf.symbols().size());
-		m_libraries.insert({filename, move(elf)});
-	}
+	s_elfs.set_library_load_addr(filename, load_addr);
 }
 
 void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
@@ -188,11 +191,8 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::GetInfo:
 			do_hc_get_info(m_regs->rdi);
 			break;
-		case Hypercall::GetFileLen:
-			ret = do_hc_get_file_len(m_regs->rdi);
-			break;
-		case Hypercall::GetFileName:
-			do_hc_get_file_name(m_regs->rdi, m_regs->rsi);
+		case Hypercall::GetFileInfo:
+			do_hc_get_file_info(m_regs->rdi, m_regs->rsi, m_regs->rdx);
 			break;
 		case Hypercall::SubmitFilePointers:
 			do_hc_submit_file_pointers(m_regs->rdi, m_regs->rsi, m_regs->rdx);

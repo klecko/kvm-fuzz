@@ -27,13 +27,12 @@ void init_kvm() {
 #endif
 }
 
+SharedFiles Vm::s_shared_files;
+Elfs Vm::s_elfs;
+
 Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
        const vector<string>& argv)
 	: m_vm_fd(create_vm())
-	, m_elf(binary_path)
-	, m_kernel(kernel_path)
-	, m_interpreter(nullptr)
-	, m_argv(argv)
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
 	, m_breakpoints_dirty(false)
@@ -42,30 +41,25 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_timer_addr(0)
 	, m_timeout_addr(0)
 {
+	s_elfs.init(binary_path, kernel_path);
 	load_elfs();
 	setup_kvm();
-	setup_kernel_execution();
+	setup_kernel_execution(argv);
 	printf("Ready to run!\n");
 }
 
 Vm::Vm(const Vm& other)
 	: m_vm_fd(create_vm())
-	, m_elf(other.m_elf)
-	, m_kernel(other.m_kernel)
-	, m_interpreter(other.m_interpreter ? new ElfParser(*other.m_interpreter) : nullptr)
-	, m_libraries(other.m_libraries)
-	, m_argv(other.m_argv)
+	, m_files(other.m_files)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
 	, m_breakpoints(other.m_breakpoints)
 	, m_hook_handlers(other.m_hook_handlers)
 	, m_breakpoints_dirty(other.m_breakpoints_dirty)
-	, m_file_contents(other.m_file_contents)
 	, m_instructions_executed(other.m_instructions_executed)
 	, m_instructions_executed_prev(other.m_instructions_executed_prev)
 	, m_timer_addr(other.m_timer_addr)
 	, m_timeout_addr(other.m_timeout_addr)
-	, m_allocations(other.m_allocations)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -83,6 +77,7 @@ Vm::Vm(const Vm& other)
 	// Copy MSRs
 	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*8;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	memset(msrs, 0, sz);
 	msrs->nmsrs = 8;
 	msrs->entries[0].index = MSR_LSTAR;
 	msrs->entries[1].index = MSR_STAR;
@@ -103,11 +98,6 @@ Vm::Vm(const Vm& other)
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
-}
-
-Vm::~Vm() {
-	if (m_interpreter)
-		delete m_interpreter;
 }
 
 int Vm::create_vm() {
@@ -247,11 +237,12 @@ void Vm::setup_coverage() {
 void Vm::setup_coverage(const string& path) {
 	ifstream bbs(path);
 	if (!bbs.good()) {
+		ElfParser& elf = s_elfs.elf();
 		// Command injection woopsie doopsie
 		printf("Basic blocks file '%s' doesn't exist. It will be created using "
 		       "angr. This can take some minutes.\n", path.c_str());
-		string cmd = "./scripts/generate_basic_blocks.py " + m_elf.path() +
-		             " " + path + " " + to_hex(m_elf.load_addr());
+		string cmd = "./scripts/generate_basic_blocks.py " + elf.path() +
+		             " " + path + " " + to_hex(elf.load_addr());
 		ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
 		bbs.open(path);
 	}
@@ -270,46 +261,46 @@ void Vm::setup_coverage(const string& path) {
 }
 #endif
 
+
 void Vm::load_elfs() {
 	// First, the kernel
-	// Check it's static and no PIE and load it
-	ASSERT(m_kernel.type() == ET_EXEC, "Kernel is PIE?");
-	ASSERT(m_kernel.interpreter().empty(), "Kernel is dynamically linked");
-	dbgprintf("Loading kernel at 0x%lx\n", m_kernel.load_addr());
-	m_mmu.load_elf(m_kernel.segments(), true);
+	const ElfParser& kernel = s_elfs.kernel();
+	dbgprintf("Loading kernel at 0x%lx\n", kernel.load_addr());
+	m_mmu.load_elf(kernel.segments(), true);
 
-	// Now, user elf. Assign base address if it's DYN (PIE) and load it
-	if (m_elf.type() == ET_DYN)
-		m_elf.set_load_addr(Mmu::ELF_ADDR);
-	dbgprintf("Loading elf at 0x%lx\n", m_elf.load_addr());
-	m_mmu.load_elf(m_elf.segments(), false);
+	// Now, user elf. Assign load address if it's DYN (PIE) and load it
+	ElfParser& elf = s_elfs.elf();
+	if (elf.type() == ET_DYN)
+		elf.set_load_addr(Mmu::ELF_ADDR);
+	dbgprintf("Loading elf at 0x%lx\n", elf.load_addr());
+	m_mmu.load_elf(elf.segments(), false);
 
-	// Check if user elf has interpreter
-	string interpreter_path = m_elf.interpreter();
-	if (!interpreter_path.empty()) {
-		m_interpreter = new ElfParser(interpreter_path);
-		ASSERT(m_interpreter->type() == ET_DYN, "interpreter not ET_DYN?");
-		m_interpreter->set_load_addr(Mmu::INTERPRETER_ADDR);
+	// If user elf has interpreter, assign load address and load it
+	ElfParser* interpreter = s_elfs.interpreter();
+	if (interpreter) {
+		interpreter->set_load_addr(Mmu::INTERPRETER_ADDR);
 		dbgprintf("Loading interpreter %s at 0x%lx\n",
-		          m_interpreter->path().c_str(), m_interpreter->load_addr());
-		m_mmu.load_elf(m_interpreter->segments(), false);
+		          interpreter->path().c_str(), interpreter->load_addr());
+		m_mmu.load_elf(interpreter->segments(), false);
 	}
 
-	// Read and load elf dependencies as memory-loaded files
-	for (const string& path : m_elf.get_dependencies()) {
-		read_and_set_file(path);
+	// Set elf dependencies as memory-loaded files, and add them to the list
+	// of libraries. ElfParsers are created from the data located in s_shared_files.
+	for (const string& library_path : elf.get_dependencies()) {
+		GuestFile file = s_shared_files.set_file(library_path);
+		s_elfs.add_library(library_path, file.data);
 	}
 }
 
-void Vm::setup_kernel_execution() {
+void Vm::setup_kernel_execution(const vector<string>& argv) {
 	m_regs->rsp = m_mmu.alloc_kernel_stack();
 	m_regs->rflags = 2; // TODO: what about IOPL
-	m_regs->rip = m_kernel.entry();
+	m_regs->rip = s_elfs.kernel().entry();
 
 	// Let's write argv to kernel stack, so he can then write it to user stack
 	// Write argv strings saving pointers to each arg
 	vector<vaddr_t> argv_addrs;
-	for (const string& arg : m_argv) {
+	for (const string& arg : argv) {
 		m_regs->rsp -= arg.size() + 1;
 		m_mmu.write_mem(m_regs->rsp, arg.c_str(), arg.size()+1);
 		argv_addrs.push_back(m_regs->rsp);
@@ -326,8 +317,8 @@ void Vm::setup_kernel_execution() {
 	}
 
 	// Setup args for kmain
-	m_regs->rdi = m_argv.size(); // argc
-	m_regs->rsi = m_regs->rsp;   // argv
+	m_regs->rdi = argv.size(); // argc
+	m_regs->rsi = m_regs->rsp; // argv
 	set_regs_dirty();
 }
 
@@ -357,7 +348,7 @@ Mmu& Vm::mmu() {
 }
 
 ElfParser& Vm::elf() {
-	return m_elf;
+	return s_elfs.elf();
 }
 
 psize_t Vm::memsize() const {
@@ -415,11 +406,9 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// Indicate we have dirtied registers
 	set_regs_dirty();
 	set_sregs_dirty();
-
-	m_allocations = other.m_allocations;
 }
 
-void Vm::set_input(const string& input) {
+void Vm::set_input(FileRef input) {
 	// Set input as a file which the guest will open and read, making sure
 	// the kernel has already submitted a buffer so the input is copied to its
 	// memory.
@@ -755,41 +744,36 @@ void Vm::set_breakpoints_dirty(bool dirty) {
 	m_breakpoints_dirty = dirty;
 }
 
-void Vm::set_file(const string& filename, const string& content, bool check) {
-	bool existed = m_file_contents.count(filename);
-	file_t& file = m_file_contents[filename];
-	file.data    = (const void*)content.c_str();
-	file.length  = content.size();
-	if (existed) {
-		// File already existed. If kernel submitted its pointers, write
-		// file data and length into kernel memory. Note this should be done
-		// before guest opens the file.
-		ASSERT(!check || file.guest_data_addr, "kernel didn't submit ptr for "
-		       "file %s", filename.c_str());
-		if (file.guest_data_addr) {
-			m_mmu.write_mem(file.guest_data_addr, file.data, file.length);
-			m_mmu.write<vaddr_t>(file.guest_length_addr, file.length);
-		}
+void Vm::read_and_set_shared_file(const std::string& filename, bool check) {
+	set_shared_file(filename, read_file(filename), check);
+}
+
+void Vm::set_shared_file(const string& filename, string content, bool check) {
+	GuestFile file = s_shared_files.set_file(filename, move(content));
+	maybe_write_file_to_guest(filename, file, check);
+}
+
+void Vm::set_file(const string& filename, FileRef content, bool check) {
+	GuestFile file = m_files.set_file(filename, content);
+	maybe_write_file_to_guest(filename, file, check);
+}
+
+void Vm::maybe_write_file_to_guest(
+	const string& filename,
+	const GuestFile& file,
+	bool check
+) {
+	if (file.guest.data_addr) {
+		// File already existed and kernel submitted its pointers. Write file
+		// data and length into kernel memory. Note this should be done before
+		// guest opens the file.
+		m_mmu.write_mem(file.guest.data_addr, file.data.ptr, file.data.length);
+		m_mmu.write<vaddr_t>(file.guest.length_addr, file.data.length);
 	} else {
-		// File didn't exist. Set pointers to 0, and wait for guest
-		// kernel to do hc_set_file_pointers.
-		file.guest_data_addr = 0;
-		file.guest_length_addr = 0;
-	};
-}
-
-void Vm::read_and_set_file(const string& filename) {
-	static vector<string> file_contents;
-	string content = read_file(filename);
-	set_file(filename, content);
-	file_contents.push_back(move(content));
-}
-
-vaddr_t Vm::resolve_symbol(const string& symbol_name) {
-	for (const symbol_t& symbol : m_elf.symbols())
-		if (symbol.name == symbol_name)
-			return symbol.value;
-	return 0;
+		// File didn't exist or kernel didn't submit its pointers with
+		// hc_set_file_pointers yet.
+		ASSERT(!check, "kernel didn't submit ptrs for file '%s'", filename.c_str());
+	}
 }
 
 void Vm::reset_timer() {
@@ -830,12 +814,7 @@ void Vm::print_current_stacktrace(size_t num_frames) {
 
 void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames){
 	// List of all the elfs
-	std::vector<const ElfParser*> elfs = {&m_elf, &m_kernel};
-	if (m_interpreter)
-		elfs.push_back(m_interpreter);
-	for (const auto& library : m_libraries) {
-		elfs.push_back(&library.second);
-	}
+	std::vector<const ElfParser*> elfs = s_elfs.all_elfs();
 
 	// Get and print the stacktrace
 	vector<pair<vaddr_t, const ElfParser*>> stacktrace =
@@ -881,12 +860,14 @@ void Vm::vm_err(const string& msg) {
 	//dump_memory();
 
 	// Dump current input file to mem
-	ofstream os("crash");
-	file_t& buf = m_file_contents["input"];
-	os.write((char*)buf.data, buf.length);
-	assert(os.good());
-	cout << "Dumped crash file of size " << buf.length << endl;
-	os.close();
+	if (m_files.exists("input")) {
+		FileRef file = m_files.file_content("input");
+		ofstream os("crash");
+		os.write((const char*)file.ptr, file.length);
+		assert(os.good());
+		cout << "Dumped crash file of size " << file.length << endl;
+		os.close();
+	}
 
 	die("%s\n", msg.c_str());
 }
@@ -895,7 +876,7 @@ void Vm::dump(const string& filename) {
 	m_mmu.dump_memory(m_mmu.size(), filename + ".dump");
 
 	unordered_map<paddr_t, vaddr_t> memory_map;
-	auto limits = m_elf.section_limits(".text");
+	auto limits = s_elfs.elf().section_limits(".text");
 	paddr_t paddr;
 	for (vaddr_t vaddr = limits.first & PTL1_MASK;
 	     vaddr < PAGE_CEIL(limits.second);

@@ -114,6 +114,7 @@ class ElfParser {
 		friend void swap(ElfParser& first, ElfParser& second);
 		ElfParser& operator=(ElfParser other);
 
+		bool has_data() const;
 		const uint8_t* data() const;
 		vsize_t size() const;
 		void set_load_addr(vaddr_t load_addr);
@@ -135,6 +136,7 @@ class ElfParser {
 		// Get dynamic libraries dependencies using ldd
 		std::vector<std::string> get_dependencies() const;
 
+		vaddr_t resolve_symbol(const std::string& symbol_name) const;
 		bool addr_to_symbol(vaddr_t addr, symbol_t& result) const;
 		std::string addr_to_source(vaddr_t addr) const;
 		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs,

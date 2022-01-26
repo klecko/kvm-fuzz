@@ -160,6 +160,8 @@ fn buildHypervisor(b: *std.build.Builder, std_target: CrossTarget, std_mode: std
         "hypervisor/src/corpus.cpp",
         "hypervisor/src/elf_debug.cpp",
         "hypervisor/src/elf_parser.cpp",
+        "hypervisor/src/elfs.cpp",
+        "hypervisor/src/files.cpp",
         "hypervisor/src/hypercalls.cpp",
         "hypervisor/src/main.cpp",
         "hypervisor/src/mmu.cpp",

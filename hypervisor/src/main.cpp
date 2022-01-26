@@ -111,7 +111,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 		while (_rdtsc() - cycles_init < 50000000) {
 			// Get new input
 			cycles = rdtsc1();
-			const string& input = corpus.get_new_input(id, rng, stats);
+			FileRef input = corpus.get_new_input(id, rng, stats);
 			local_stats.mut_cycles += rdtsc1() - cycles;
 
 			// Update input
@@ -188,16 +188,16 @@ int main(int argc, char** argv) {
 		} else {
 			file = string(corpus.max_input_size(), 'a');
 		}
-		vm.set_file("input", file);
+		vm.set_file("input", FileRef::from_string(file));
 	}
 
 	// Other memory-loaded files should be set here as well
 	for (const string& path : args.memory_files) {
-		vm.read_and_set_file(path);
+		vm.read_and_set_shared_file(path);
 	}
 
 	// Run until main or elf entry point before forking or running single input
-	vaddr_t fork_addr = vm.resolve_symbol("main");
+	vaddr_t fork_addr = vm.elf().resolve_symbol("main");
 	if (!fork_addr)
 		fork_addr = vm.elf().entry();
 	vm.run_until(fork_addr, stats);
@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
 		} else {
 			printf("Performing single run with input file '%s', length %lu\n",
 				   args.single_run_input_path.c_str(), file.size());
-			vm.set_input(file);
+			vm.set_input(FileRef::from_string(file));
 		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)

@@ -16,23 +16,26 @@ pub fn init(allocator: Allocator, num_files: usize) void {
     file_contents = std.StringHashMap([]u8).init(allocator);
 
     // Temporary buffer for the filename
-    var filename_tmp: [linux.PATH_MAX]u8 = undefined;
+    var filename_buf: [linux.PATH_MAX]u8 = undefined;
 
     // TODO: this might not work because pointers are changed while inserting
     // items
     var i: usize = 0;
     while (i < num_files) : (i += 1) {
-        // Get the filename into the tmp buffer, calculate its length,
-        // allocate a buffer and copy the filename.
-        hypercalls.getFileName(i, &filename_tmp);
-        const filename_len = std.mem.indexOfScalar(u8, &filename_tmp, 0).?;
-        var filename = allocator.alloc(u8, filename_len) catch unreachable;
-        std.mem.copy(u8, filename, filename_tmp[0..filename_len]);
+        // Get the filename and the file length
+        var size: usize = undefined;
+        hypercalls.getFileInfo(i, &filename_buf, &size);
 
-        // Get the file size, allocate a buffer, insert it into file_contents
+        log.info("file {}: length {}\n", .{ i, size });
+
+        // Calculate filename length, allocate a buffer and copy it
+        const filename_len = std.mem.indexOfScalar(u8, &filename_buf, 0).?;
+        var filename = allocator.alloc(u8, filename_len) catch unreachable;
+        std.mem.copy(u8, filename, filename_buf[0..filename_len]);
+
+        // Allocate a buffer for the file, insert it into file_contents
         // and submit buf and length pointers to the hypervisor, which will
         // fill the buffer with the file content.
-        const size = hypercalls.getFileLen(i);
         var buf = allocator.alloc(u8, size) catch unreachable;
         file_contents.put(filename, buf) catch unreachable;
         const length_ptr = &file_contents.getPtr(filename).?.*.len;
