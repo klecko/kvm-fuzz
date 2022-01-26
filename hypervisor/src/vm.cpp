@@ -266,14 +266,14 @@ void Vm::load_elfs() {
 	// First, the kernel
 	const ElfParser& kernel = s_elfs.kernel();
 	dbgprintf("Loading kernel at 0x%lx\n", kernel.load_addr());
-	m_mmu.load_elf(kernel.segments(), true);
+	m_mmu.load_elf(kernel.segments(), ElfType::Kernel);
 
 	// Now, user elf. Assign load address if it's DYN (PIE) and load it
 	ElfParser& elf = s_elfs.elf();
 	if (elf.type() == ET_DYN)
 		elf.set_load_addr(Mmu::ELF_ADDR);
 	dbgprintf("Loading elf at 0x%lx\n", elf.load_addr());
-	m_mmu.load_elf(elf.segments(), false);
+	m_mmu.load_elf(elf.segments(), ElfType::User);
 
 	// If user elf has interpreter, assign load address and load it
 	ElfParser* interpreter = s_elfs.interpreter();
@@ -281,7 +281,7 @@ void Vm::load_elfs() {
 		interpreter->set_load_addr(Mmu::INTERPRETER_ADDR);
 		dbgprintf("Loading interpreter %s at 0x%lx\n",
 		          interpreter->path().c_str(), interpreter->load_addr());
-		m_mmu.load_elf(interpreter->segments(), false);
+		m_mmu.load_elf(interpreter->segments(), ElfType::User);
 	}
 
 	// Set elf dependencies as memory-loaded files, and add them to the list
@@ -412,7 +412,7 @@ void Vm::set_input(FileRef input) {
 	// Set input as a file which the guest will open and read, making sure
 	// the kernel has already submitted a buffer so the input is copied to its
 	// memory.
-	set_file("input", input, true);
+	set_file("input", input, CheckCopied::Yes);
 
 	// If our target received the input in a buffer instead of using open and
 	// read, we may want to write it to the guest memory, instead of using
@@ -645,7 +645,7 @@ uint8_t Vm::set_breakpoint_to_memory(vaddr_t addr) {
 	uint8_t val;
 	if (m_breakpoints_dirty) {
 		val = m_mmu.read<uint8_t>(addr);
-		m_mmu.write<uint8_t>(addr, 0xCC, false);
+		m_mmu.write<uint8_t>(addr, 0xCC, CheckPerms::No);
 	} else {
 		uint8_t* p = m_mmu.get(addr);
 		val = *p;
@@ -659,7 +659,7 @@ void Vm::remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte) {
 	uint8_t val;
 	if (m_breakpoints_dirty) {
 		val = m_mmu.read<uint8_t>(addr);
-		m_mmu.write<uint8_t>(addr, original_byte, false);
+		m_mmu.write<uint8_t>(addr, original_byte, CheckPerms::No);
 	} else {
 		uint8_t* p = m_mmu.get(addr);
 		val = *p;
@@ -744,16 +744,16 @@ void Vm::set_breakpoints_dirty(bool dirty) {
 	m_breakpoints_dirty = dirty;
 }
 
-void Vm::read_and_set_shared_file(const std::string& filename, bool check) {
+void Vm::read_and_set_shared_file(const string& filename, CheckCopied check) {
 	set_shared_file(filename, read_file(filename), check);
 }
 
-void Vm::set_shared_file(const string& filename, string content, bool check) {
+void Vm::set_shared_file(const string& filename, string content, CheckCopied check) {
 	GuestFile file = s_shared_files.set_file(filename, move(content));
 	maybe_write_file_to_guest(filename, file, check);
 }
 
-void Vm::set_file(const string& filename, FileRef content, bool check) {
+void Vm::set_file(const string& filename, FileRef content, CheckCopied check) {
 	GuestFile file = m_files.set_file(filename, content);
 	maybe_write_file_to_guest(filename, file, check);
 }
@@ -761,7 +761,7 @@ void Vm::set_file(const string& filename, FileRef content, bool check) {
 void Vm::maybe_write_file_to_guest(
 	const string& filename,
 	const GuestFile& file,
-	bool check
+	CheckCopied check
 ) {
 	if (file.guest.data_addr) {
 		// File already existed and kernel submitted its pointers. Write file
@@ -772,7 +772,8 @@ void Vm::maybe_write_file_to_guest(
 	} else {
 		// File didn't exist or kernel didn't submit its pointers with
 		// hc_set_file_pointers yet.
-		ASSERT(!check, "kernel didn't submit ptrs for file '%s'", filename.c_str());
+		ASSERT(!(check == CheckCopied::Yes), "kernel didn't submit ptrs for "
+		      "file '%s'", filename.c_str());
 	}
 }
 

@@ -97,11 +97,27 @@ public:
 	// is immediately copied.
 	// void set_file(const std::string& filename, const std::string& content,
 	//               bool check = false);
-	void set_shared_file(const std::string& filename, std::string content, bool check=false);
+	enum class CheckCopied {
+		Yes,
+		No,
+	};
 
-	void read_and_set_shared_file(const std::string& filename, bool check=false);
+	void set_shared_file(
+		const std::string& filename,
+		std::string content,
+		CheckCopied check = CheckCopied::No
+	);
 
-	void set_file(const std::string& filename, FileRef content, bool check=false);
+	void read_and_set_shared_file(
+		const std::string& filename,
+		CheckCopied check = CheckCopied::No
+	);
+
+	void set_file(
+		const std::string& filename,
+		FileRef content,
+		CheckCopied check = CheckCopied::No
+	);
 
 	// Reset the timer inside the VM
 	void reset_timer();
@@ -180,7 +196,7 @@ private:
 	void maybe_write_file_to_guest(
 		const std::string& filename,
 		const GuestFile& file,
-		bool check
+		CheckCopied check
 	);
 	std::pair<std::string, GuestFile> get_file_entry(size_t n);
 	void vm_err(const std::string& err);

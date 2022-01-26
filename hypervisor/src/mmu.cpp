@@ -256,14 +256,14 @@ void Mmu::read_mem(void* dst, vaddr_t src, vsize_t len) {
 	} while (pages.next());
 }
 
-void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
+void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, CheckPerms check) {
 	if (len == 0)
 		return;
 
 	PageWalker pages(dst, len, *this);
 	do {
 		// Check write permissions, perform memcpy and mark page as dirty
-		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
+		ASSERT(!(check == CheckPerms::Yes) || (pages.flags() & PDE64_RW),
 		       "writing to not writable page %lx", pages.vaddr());
 		memcpy(
 			m_memory + pages.paddr(),
@@ -274,14 +274,14 @@ void Mmu::write_mem(vaddr_t dst, const void* src, vsize_t len, bool chk_perms) {
 	} while (pages.next());
 }
 
-void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, bool chk_perms) {
+void Mmu::set_mem(vaddr_t addr, int c, vsize_t len, CheckPerms check) {
 	if (len == 0)
 		return;
 
 	PageWalker pages(addr, len, *this);
 	do {
 		// Check write permissions, perform memset and mark page as dirty
-		ASSERT(!chk_perms || (pages.flags() & PDE64_RW),
+		ASSERT(!(check == CheckPerms::Yes) || (pages.flags() & PDE64_RW),
 		       "memset to not writable page %lx", pages.vaddr());
 		memset(m_memory + pages.paddr(), c, pages.page_size());
 		m_dirty_extra.push_back(pages.paddr() & PTL1_MASK);
@@ -325,7 +325,7 @@ uint64_t parse_perms(uint32_t perms) {
 	return flags;
 }
 
-void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
+void Mmu::load_elf(const vector<segment_t>& segments, ElfType elf_type) {
 	// This could be faster with a single PageWalker for each segment instead of
 	// one for each alloc, write_mem and set_mem, but we're only doing this
 	// once so who cares
@@ -337,15 +337,15 @@ void Mmu::load_elf(const vector<segment_t>& segments, bool kernel) {
 
 		// Allocate memory region with given permissions
 		flags = parse_perms(segm.flags);
-		flags |= (kernel ? PDE64_SHARED : PDE64_USER);
+		flags |= (elf_type == ElfType::Kernel ? PDE64_SHARED : PDE64_USER);
 		alloc(segm.vaddr, segm.memsize, flags);
 
 		// Write segment data into memory
-		write_mem(segm.vaddr, segm.data, segm.filesize, false);
+		write_mem(segm.vaddr, segm.data, segm.filesize, CheckPerms::No);
 
 		// Fill padding, if any
 		set_mem(segm.vaddr + segm.filesize, 0, segm.memsize - segm.filesize,
-		        false);
+		        CheckPerms::No);
 	}
 }
 

@@ -6,6 +6,16 @@
 #include "common.h"
 #include "kvm_aux.h"
 
+enum class CheckPerms {
+	Yes,
+	No,
+};
+
+enum class ElfType {
+	User,
+	Kernel,
+};
+
 class Mmu {
 public:
 	static const paddr_t PAGE_TABLE_PADDR        = 0x1000;
@@ -61,15 +71,17 @@ public:
 	// Basic memory modification primitives
 	void read_mem(void* dst, vaddr_t src, vsize_t len);
 	void write_mem(vaddr_t dst, const void* src, vsize_t len,
-	               bool check_perms = true);
-	void set_mem(vaddr_t addr, int c, vsize_t len, bool check_perms = true);
+	               CheckPerms check = CheckPerms::Yes);
+	void set_mem(vaddr_t addr, int c, vsize_t len,
+	             CheckPerms check = CheckPerms::Yes);
 
 	// Read and write arbitrary data types to guest memory
 	template<class T>
 	T read(vaddr_t addr);
 
 	template <class T>
-	void write(vaddr_t addr, const T& value, bool check_perms = true);
+	void write(vaddr_t addr, const T& value,
+	           CheckPerms check = CheckPerms::Yes);
 
 	template<class T>
 	T readp(paddr_t addr);
@@ -87,7 +99,7 @@ public:
 	void set_flags(vaddr_t addr, vsize_t len, uint64_t flags);
 
 	// Load elf into memory
-	void load_elf(const std::vector<segment_t>& segments, bool kernel);
+	void load_elf(const std::vector<segment_t>& segments, ElfType elf_type);
 
 	void dump_memory(psize_t len, const std::string& filename) const;
 
@@ -139,8 +151,8 @@ T Mmu::read(vaddr_t addr) {
 }
 
 template<class T>
-void Mmu::write(vaddr_t addr, const T& value, bool check_perms) {
-	write_mem(addr, &value, sizeof(T), check_perms);
+void Mmu::write(vaddr_t addr, const T& value, CheckPerms check) {
+	write_mem(addr, &value, sizeof(T), check);
 }
 
 template<class T>
