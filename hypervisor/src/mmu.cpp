@@ -48,14 +48,6 @@ Mmu::Mmu(int vm_fd, int vcpu_fd, size_t mem_size)
 		.userspace_addr = (unsigned long)m_memory
 	};
 	ioctl_chk(m_vm_fd, KVM_SET_USER_MEMORY_REGION, &memreg);
-
-	// Map all physical memory. This is needed for guest kernel to access page
-	// tables and other physical addresses.
-	PageWalker pages(PHYSMAP_ADDR, *this);
-	for (paddr_t p = 0; p < m_length; p += PAGE_SIZE) {
-		pages.map(p, PDE64_PRESENT | PDE64_RW);
-		pages.next();
-	}
 }
 
 Mmu::Mmu(int vm_fd, int vcpu_fd, const Mmu& other)
@@ -112,6 +104,16 @@ paddr_t Mmu::next_frame_alloc() const {
 
 void Mmu::disable_allocations() {
 	m_can_alloc = false;
+}
+
+void Mmu::create_physmap() {
+	// Map all physical memory. This is needed for guest kernel to access page
+	// tables and other physical addresses.
+	PageWalker pages(PHYSMAP_ADDR, *this);
+	for (paddr_t p = 0; p < m_length; p += PAGE_SIZE) {
+		pages.map(p, PDE64_PRESENT | PDE64_RW);
+		pages.next();
+	}
 }
 
 __attribute__((always_inline)) static inline
@@ -174,6 +176,7 @@ size_t Mmu::reset(const Mmu& other) {
 				count++;
 				paddr_t paddr = ((i + j)*8 + k)*PAGE_SIZE;
 				memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+				// dbgprintf("resetted paddr %p\n", paddr);
 			}
 		}
 	}
@@ -200,6 +203,8 @@ size_t Mmu::reset(const Mmu& other) {
 		}
 		die(":(\n");
 	} */
+
+	dbgprintf("resetted pages: %lu\n", count);
 	return count;
 }
 

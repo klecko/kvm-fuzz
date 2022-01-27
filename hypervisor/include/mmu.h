@@ -43,6 +43,9 @@ public:
 	paddr_t next_frame_alloc() const;
 	void disable_allocations();
 
+	// Create a mapping of all physical memory
+	void create_physmap();
+
 	// Reset to the state in `other`, given that current Mmu has been
 	// constructed as a copy of `other`. Returns the number of pages resetted
 	size_t reset(const Mmu& other);

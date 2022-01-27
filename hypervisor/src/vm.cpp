@@ -41,6 +41,7 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_timer_addr(0)
 	, m_timeout_addr(0)
 {
+	m_mmu.create_physmap();
 	s_elfs.init(binary_path, kernel_path);
 	load_elfs();
 	setup_kvm();
