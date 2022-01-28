@@ -21,9 +21,6 @@ Available options:
   -o, --output dir          Output folder (corpus, crashes, etc) (default: ./out)
   -f, --file path           Memory loaded files for the target. Set once for
                             each file: -f file1 -f file2
-  -b, --basic-blocks path   Path to file containing a list of basic blocks
-                            for code coverage. (default:
-                            ./basic_blocks/<BinaryMD5Hash>.txt)
   -s, --single-run [=path]  Perform a single run, optionally specifying an
                             input file
   -h, --help                Print usage
