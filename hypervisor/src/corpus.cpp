@@ -47,7 +47,7 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 
 		// For each regular file, add its content to the corpus and save
 		// its filename
-		input = read_file(filepath);
+		input = utils::read_file(filepath);
 		m_corpus.push_back(input);
 		m_seeds_filenames.push_back(ent->d_name);
 
@@ -74,7 +74,7 @@ Corpus::Corpus(int nthreads, const string& input_dir, const string& output_dir)
 	// Each mode we'll create the subdirectory they'll write their output to
 	// here. Normal mode will write corpus and crashes dir, while each
 	// minimization mode will write to its own directory.
-	create_folder(output_dir);
+	utils::create_folder(output_dir);
 }
 
 size_t Corpus::size() const {
@@ -124,30 +124,30 @@ string Corpus::min_crash_filename(size_t i) {
 
 void Corpus::write_corpus_file(size_t i) {
 	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
-	write_file(m_output_dir_corpus + "/" + corpus_filename(i), m_corpus[i]);
+	utils::write_file(m_output_dir_corpus + "/" + corpus_filename(i), m_corpus[i]);
 }
 
 void Corpus::write_crash_file(size_t i, const FaultInfo& fault) {
 	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
-	write_file(m_output_dir_crashes + "/" + fault.filename(), m_corpus[i]);
+	utils::write_file(m_output_dir_crashes + "/" + fault.filename(), m_corpus[i]);
 }
 
 void Corpus::write_crash_file(int id, const FaultInfo& fault) {
 	ASSERT(m_mode == Mode::Normal, "mode %d", m_mode);
-	write_file(m_output_dir_crashes + "/" + fault.filename(),
-	           m_mutated_inputs[id]);
+	utils::write_file(m_output_dir_crashes + "/" + fault.filename(),
+	                  m_mutated_inputs[id]);
 }
 
 void Corpus::write_min_corpus_file(size_t i) {
 	ASSERT(m_mode == Mode::CorpusMinimization, "mode %d", m_mode);
-	write_file(m_output_dir_min_corpus+ "/" + min_corpus_filename(i),
-	           m_corpus[i]);
+	utils::write_file(m_output_dir_min_corpus+ "/" + min_corpus_filename(i),
+	                  m_corpus[i]);
 }
 
 void Corpus::write_min_crash_file(size_t i) {
 	ASSERT(m_mode == Mode::CrashesMinimization, "mode %d", m_mode);
-	write_file(m_output_dir_min_crashes + "/" + min_crash_filename(i),
-	           m_corpus[i]);
+	utils::write_file(m_output_dir_min_crashes + "/" + min_crash_filename(i),
+	                  m_corpus[i]);
 }
 
 void Corpus::set_mode_normal(const Coverage& total_coverage) {
@@ -161,8 +161,8 @@ void Corpus::set_mode_normal(const Coverage& total_coverage) {
 	// Create output folders. Write seed input files to disk only if corpus
 	// directory is not the same as input directory, as we would just overwrite
 	// current files with same content.
-	create_folder(m_output_dir_corpus);
-	create_folder(m_output_dir_crashes);
+	utils::create_folder(m_output_dir_corpus);
+	utils::create_folder(m_output_dir_crashes);
 	if (m_output_dir_corpus != m_input_dir) {
 		for (size_t i = 0; i < m_corpus.size(); i++) {
 			write_corpus_file(i);
@@ -191,7 +191,7 @@ void Corpus::set_mode_corpus_min(const vector<Coverage>& coverages) {
 	       (1 - (size() / old_size))*100, (1 - (memsize() / old_memsize))*100);
 
 	// Create output folder and write seed input files to disk
-	create_folder(m_output_dir_min_corpus);
+	utils::create_folder(m_output_dir_min_corpus);
 	for (size_t i = 0; i < m_corpus.size(); i++) {
 		write_min_corpus_file(i);
 	}
@@ -207,7 +207,7 @@ void Corpus::set_mode_crashes_min(const vector<FaultInfo>& faults) {
 	     << m_output_dir_min_crashes << endl;
 
 	// Create output folder and write seed input files to disk
-	create_folder(m_output_dir_min_crashes);
+	utils::create_folder(m_output_dir_min_crashes);
 	for (size_t i = 0; i < m_corpus.size(); i++) {
 		write_min_crash_file(i);
 	}

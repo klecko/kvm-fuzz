@@ -60,11 +60,7 @@ public:
 	FaultInfo fault() const;
 	uint64_t instructions_executed_last_run() const;
 
-#if defined(ENABLE_COVERAGE_INTEL_PT)
 	void setup_coverage();
-#elif defined(ENABLE_COVERAGE_BREAKPOINTS)
-	void setup_coverage(const std::string& path);
-#endif
 	const Coverage& coverage() const;
 
 	void reset_coverage();

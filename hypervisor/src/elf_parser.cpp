@@ -157,8 +157,9 @@ void ElfParser::init() {
 	}
 
 	// If this is a PIE binary, make sure its load address is 0 at first
-	if (m_type == ET_DYN)
-		ASSERT(m_load_addr == 0, "PIE %s binary with load addr 0x%lx", cpath, m_load_addr);
+	if (is_pie())
+		ASSERT(m_load_addr == 0, "PIE binary %s with load addr 0x%lx",
+		       cpath, m_load_addr);
 
 	// Get sections
 	string debug_link;
@@ -243,7 +244,7 @@ vsize_t ElfParser::size() const {
 }
 
 void ElfParser::set_load_addr(vaddr_t load_addr) {
-	ASSERT(m_type == ET_DYN, "setting load_addr to not PIE binary %s", m_path.c_str());
+	ASSERT(is_pie(), "setting load_addr to not PIE binary %s", m_path.c_str());
 
 	vaddr_t diff = load_addr - m_load_addr;
 	m_load_addr = load_addr;
@@ -278,8 +279,8 @@ phinfo_t ElfParser::phinfo() const {
 	return m_phinfo;
 }
 
-uint16_t ElfParser::type() const {
-	return m_type;
+bool ElfParser::is_pie() const {
+	return m_type == ET_DYN;
 }
 
 vaddr_t ElfParser::entry() const {
@@ -320,12 +321,16 @@ pair<vaddr_t, vaddr_t> ElfParser::symbol_limits(const string& name) const {
 	ASSERT(false, "not found symbol: %s", name.c_str());
 }
 
+string ElfParser::md5() const {
+	return utils::md5(m_data, m_size);
+}
+
 vector<string> ElfParser::get_dependencies() const {
 	vector<string> result;
 
 	// Run ldd and parse its output
-	string ldd_result = exec_cmd("ldd " + m_path + " 2>&1");
-	vector<string> lines = split_string(ldd_result, "\n");
+	string ldd_result = utils::exec_cmd("ldd " + m_path + " 2>&1");
+	vector<string> lines = utils::split_string(ldd_result, "\n");
 	for (const string& line : lines) {
 		size_t pos1 = line.find("=> ");
 		if (pos1 == string::npos)
@@ -359,7 +364,7 @@ bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
 
 string ElfParser::addr_to_source(vaddr_t addr) const {
 	// Substract load address for PIE binaries.
-	if (m_type == ET_DYN)
+	if (is_pie())
 		addr -= m_load_addr;
 	string src = m_debug.addr_to_source(addr);
 
@@ -411,7 +416,7 @@ vector<vaddr_t> ElfParser::get_stacktrace(const kvm_regs& kregs, size_t num_fram
 	size_t i = 0;
 	do {
 		stacktrace.push_back(regs[DwarfReg::ReturnAddress]);
-		if (m_type == ET_DYN)
+		if (is_pie())
 			regs[DwarfReg::ReturnAddress] -= m_load_addr;
 	} while (
 		++i < num_frames &&
@@ -451,7 +456,7 @@ vector<pair<vaddr_t, const ElfParser*>> ElfParser::get_stacktrace(
 		if (!elf)
 			break;
 		stacktrace.push_back({regs[DwarfReg::ReturnAddress], elf});
-		if (elf->type() == ET_DYN)
+		if (elf->is_pie())
 			regs[DwarfReg::ReturnAddress] -= elf->load_addr();
 	} while (
 		++i < num_frames &&

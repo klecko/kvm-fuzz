@@ -121,7 +121,7 @@ class ElfParser {
 		vaddr_t load_addr() const;
 		vaddr_t initial_brk() const;
 		phinfo_t phinfo() const;
-		uint16_t type() const;
+		bool is_pie() const;
 		vaddr_t entry() const;
 		std::string path() const;
 		//std::string abs_path() const;
@@ -132,6 +132,7 @@ class ElfParser {
 		//std::vector<relocation_t> relocations() const;
 		std::pair<vaddr_t, vaddr_t> section_limits(const std::string& name) const;
 		std::pair<vaddr_t, vaddr_t> symbol_limits(const std::string& name) const;
+		std::string md5() const;
 
 		// Get dynamic libraries dependencies using ldd
 		std::vector<std::string> get_dependencies() const;

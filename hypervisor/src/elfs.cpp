@@ -22,9 +22,9 @@ void Elfs::init(const string& binary_path, const string& kernel_path) {
 	m_kernel = ElfParser(kernel_path);
 	if (!m_elf.interpreter().empty()) {
 		m_interpreter = new ElfParser(m_elf.interpreter());
-		ASSERT(m_interpreter->type() == ET_DYN, "interpreter not ET_DYN");
+		ASSERT(m_interpreter->is_pie(), "interpreter not PIE");
 	}
-	ASSERT(m_kernel.type() == ET_EXEC, "Kernel is PIE");
+	ASSERT(!m_kernel.is_pie(), "Kernel is PIE");
 	ASSERT(m_kernel.interpreter().empty(), "Kernel is dynamically linked");
 }
 
@@ -44,6 +44,15 @@ std::vector<const ElfParser*> Elfs::all_elfs() const {
 	std::vector<const ElfParser*> elfs = {&m_elf, &m_kernel};
 	if (m_interpreter)
 		elfs.push_back(m_interpreter);
+	for (const auto& library : m_libraries) {
+		elfs.push_back(&library.second);
+	}
+	return elfs;
+}
+
+std::vector<const ElfParser*> Elfs::target_elfs() const {
+	// Just user elf and libraries
+	std::vector<const ElfParser*> elfs = {&m_elf};
 	for (const auto& library : m_libraries) {
 		elfs.push_back(&library.second);
 	}

@@ -65,6 +65,6 @@ GuestFile SharedFiles::set_file(const std::string& path, std::string content) {
 }
 
 GuestFile SharedFiles::set_file(const std::string& path) {
-	return set_file(path, read_file(path));
+	return set_file(path, utils::read_file(path));
 }
 

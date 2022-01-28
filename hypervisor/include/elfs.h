@@ -16,6 +16,7 @@ public:
 	ElfParser& kernel();
 	ElfParser* interpreter();
 	std::vector<const ElfParser*> all_elfs() const;
+	std::vector<const ElfParser*> target_elfs() const;
 	void add_library(const std::string& filename, FileRef content);
 	void set_library_load_addr(const std::string& filename, vaddr_t load_addr);
 

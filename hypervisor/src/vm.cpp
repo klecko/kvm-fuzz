@@ -235,30 +235,45 @@ void Vm::setup_coverage() {
 }
 
 #elif defined(ENABLE_COVERAGE_BREAKPOINTS)
-void Vm::setup_coverage(const string& path) {
-	ifstream bbs(path);
-	if (!bbs.good()) {
-		ElfParser& elf = s_elfs.elf();
-		// Command injection woopsie doopsie
-		printf("Basic blocks file '%s' doesn't exist. It will be created using "
-		       "angr. This can take some minutes.\n", path.c_str());
-		string cmd = "./scripts/generate_basic_blocks.py " + elf.path() +
-		             " " + path + " " + to_hex(elf.load_addr());
-		ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
-		bbs.open(path);
+void Vm::setup_coverage() {
+	utils::create_folder("./basic_blocks");
+
+	for (const ElfParser* elf : s_elfs.target_elfs()) {
+		string md5 = elf->md5();
+		string bbs_path = "./basic_blocks/" + md5 + ".txt";
+		ifstream bbs(bbs_path);
+		if (!bbs.good()) {
+			// Command injection woopsie doopsie
+			printf("Basic blocks file for '%s' at '%s' doesn't exist. It will "
+			       "be created using angr. This can take some minutes.\n",
+			       elf->path().c_str(), bbs_path.c_str());
+			string cmd = "./scripts/generate_basic_blocks.py " + elf->path() +
+			             " " + bbs_path;
+			ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
+			bbs.open(bbs_path);
+		}
+		ERROR_ON(!bbs.good(), "opening basic blocks file '%s'", bbs_path.c_str());
+
+		// Set every basic block as breakpoint, adding elf load address in case
+		// it's PIE.
+		size_t count = 0;
+		vaddr_t bb;
+		bbs >> hex >> bb;
+		while (bbs.good()) {
+			if (elf->is_pie()) {
+				bb += elf->load_addr();
+				ASSERT(elf->load_addr() != 0, "elf '%s' has no load_addr, user "
+				       "loader didn't run yet?", elf->path().c_str());
+			}
+			set_breakpoint(bb, Breakpoint::Type::Coverage);
+			bbs >> bb;
+			count++;
+		}
+		bbs.close();
+		ASSERT(count > 0, "no basic blocks read from '%s' for '%s'",
+		       bbs_path.c_str(), elf->path().c_str());
+		printf("Read %lu basic blocks for '%s'\n", count, elf->path().c_str());
 	}
-	ERROR_ON(!bbs.good(), "opening basic blocks file %s", path.c_str());
-	size_t count = 0;
-	vaddr_t bb;
-	bbs >> hex >> bb;
-	while (bbs.good()) {
-		set_breakpoint(bb, Breakpoint::Type::Coverage);
-		bbs >> bb;
-		count++;
-	}
-	bbs.close();
-	ASSERT(count > 0, "no basic block read from %s", path.c_str());
-	printf("Read %lu basic blocks from %s\n", count, path.c_str());
 }
 #endif
 
@@ -271,7 +286,7 @@ void Vm::load_elfs() {
 
 	// Now, user elf. Assign load address if it's DYN (PIE) and load it
 	ElfParser& elf = s_elfs.elf();
-	if (elf.type() == ET_DYN)
+	if (elf.is_pie())
 		elf.set_load_addr(Mmu::ELF_ADDR);
 	dbgprintf("Loading elf at 0x%lx\n", elf.load_addr());
 	m_mmu.load_elf(elf.segments(), ElfType::User);
@@ -746,7 +761,7 @@ void Vm::set_breakpoints_dirty(bool dirty) {
 }
 
 void Vm::read_and_set_shared_file(const string& filename, CheckCopied check) {
-	set_shared_file(filename, read_file(filename), check);
+	set_shared_file(filename, utils::read_file(filename), check);
 }
 
 void Vm::set_shared_file(const string& filename, string content, CheckCopied check) {

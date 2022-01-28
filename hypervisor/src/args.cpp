@@ -59,9 +59,6 @@ void print_usage() {
 	"  -o, --output dir          Output folder (corpus, crashes, etc) (default: ./out)\n"
 	"  -f, --file path           Memory loaded files for the target. Set once for\n"
 	"                            each file: -f file1 -f file2\n"
-	"  -b, --basic-blocks path   Path to file containing a list of basic blocks\n"
-	"                            for code coverage. (default:\n"
-	"                            ./basic_blocks/<BinaryMD5Hash>.txt)\n"
 	"  -s, --single-run [=path]  Perform a single run, optionally specifying an\n"
 	"                            input file\n"
 	"  -h, --help                Print usage\n"
@@ -84,7 +81,6 @@ bool Args::parse(int argc, char** argv) {
 		{"input", required_argument, nullptr, 'i'},
 		{"output", required_argument, nullptr, 'o'},
 		{"file", required_argument, nullptr, 'f'},
-		{"basic-blocks", required_argument, nullptr, 'b'},
 		{"single-run", optional_argument, nullptr, 's'},
 		{"help", no_argument, nullptr, 'h'},
 		{0, 0, 0, 0},
@@ -129,9 +125,6 @@ bool Args::parse(int argc, char** argv) {
 			case 'f':
 				memory_files.push_back(optarg);
 				break;
-			case 'b':
-				basic_blocks_path = optarg;
-				break;
 			case 's':
 				single_run = true;
 				if (optarg)
@@ -163,13 +156,6 @@ bool Args::parse(int argc, char** argv) {
 		printf("You can't specify both --minimize-corpus and --minimize-crashes.\n\n");
 		print_usage();
 		return false;
-	}
-
-	// Default value for basic blocks path
-	if (basic_blocks_path.empty()) {
-		create_folder("./basic_blocks");
-		string md5 = md5_file(binary_path);
-		basic_blocks_path = "./basic_blocks/" + md5 + ".txt";
 	}
 
 	// Convert timeout to microsecs, or set it to maximum value if it was 0

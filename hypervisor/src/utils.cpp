@@ -10,6 +10,8 @@
 
 using namespace std;
 
+namespace utils {
+
 void create_folder(const string& name){
 	// If folder doesn't exist, create it. If it exists, check it is an
 	// actual folder
@@ -87,3 +89,5 @@ vector<string> split_string(const string& s, const string& delimiter) {
 	}
 	return result;
 }
+
+};

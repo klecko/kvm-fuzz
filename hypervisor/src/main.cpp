@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
 	string file;
 	if (!(args.single_run && args.single_run_input_path.empty())) {
 		if (args.single_run) {
-			file = read_file(args.single_run_input_path);
+			file = utils::read_file(args.single_run_input_path);
 		} else {
 			file = string(corpus.max_input_size(), 'a');
 		}
@@ -206,13 +206,9 @@ int main(int argc, char** argv) {
 	vm.reset_timer();
 	vm.set_timeout(args.timeout);
 
-#if defined(ENABLE_COVERAGE_INTEL_PT)
-	vm.setup_coverage();
-#elif defined(ENABLE_COVERAGE_BREAKPOINTS)
 	// We do this here because we need libraries to be already loaded in case
 	// we want to put breakpoints to get code coverage in those areas.
-	vm.setup_coverage(args.basic_blocks_path);
-#endif
+	vm.setup_coverage();
 
 	if (args.single_run) {
 		// Just perform a single run and exit.

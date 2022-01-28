@@ -16,7 +16,6 @@ struct Args {
 	std::vector<std::string> memory_files;
 	std::string binary_path;
 	std::vector<std::string> binary_argv;
-	std::string basic_blocks_path;
 	bool single_run = false;
 	std::string single_run_input_path;
 	bool minimize_corpus = false;
