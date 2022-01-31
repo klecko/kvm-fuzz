@@ -9,7 +9,12 @@
 using namespace std;
 
 int g_kvm_fd = -1;
-const char* Vm::reason_str[] = {"Exit", "Debug", "Crash", "Timeout", "Unknown"};
+
+const char* Vm::reason_str(Vm::RunEndReason reason) {
+	constexpr const char* reason_strs[] =
+		{"Exit", "Breakpoint", "Debug", "Crash", "Timeout", "Unknown"};
+	return reason_strs[static_cast<int>(reason)];
+}
 
 __attribute__((constructor))
 void init_kvm() {
@@ -442,22 +447,6 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	set_sregs_dirty();
 }
 
-void Vm::set_input(FileRef input) {
-	// Set input as a file which the guest will open and read, making sure
-	// the kernel has already submitted a buffer so the input is copied to its
-	// memory.
-	set_file("input", input, CheckCopied::Yes);
-
-	// If our target received the input in a buffer instead of using open and
-	// read, we may want to write it to the guest memory, instead of using
-	// memory-loaded files.
-	// Assuming rdi is buffer pointer, rsi is input length and rdx is
-	// buffer length:
-	// size_t input_size = min((size_t)m_regs->rdx, input.size());
-	// m_mmu.write_mem(m_regs->rdi, input.c_str(), input_size);
-	// m_regs->rsi = input_size;
-}
-
 Vm::RunEndReason Vm::run(Stats& stats) {
 	cycle_t cycles;
 	RunEndReason reason = RunEndReason::Unknown;
@@ -489,12 +478,6 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				break;
 
 			case KVM_EXIT_DEBUG:
-				/* printf("breakpoint hit\n");
-				dump_regs();
-				m_regs->rip += 1;
-				set_regs_dirty();
-				cout << endl;
-				break; */
 				stats.vm_exits_debug++;
 				if (m_breakpoints.count(m_regs->rip))
 					handle_breakpoint(reason);
@@ -546,7 +529,7 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 
 	// If it's of type RunEnd, stop running and stop handling the breakpoint
 	if (bp.type & Breakpoint::RunEnd) {
-		reason = RunEndReason::Debug;
+		reason = RunEndReason::Breakpoint;
 		m_running = false;
 		return;
 	}
@@ -560,7 +543,8 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 		remove_breakpoint(addr, Breakpoint::Hook);
 		Stats dummy;
 		RunEndReason reason = single_step(dummy);
-		ASSERT(reason == RunEndReason::Debug, "run end reason: %s", reason_str[reason]);
+		ASSERT(reason == RunEndReason::Debug, "run end reason: %s",
+		       reason_str(reason));
 		set_breakpoint(addr, Breakpoint::Hook);
 
 		// single_step sets m_running to false. Set it to true again
@@ -585,8 +569,8 @@ void Vm::run_until(vaddr_t pc, Stats& stats) {
 
 	if (reason == RunEndReason::Crash)
 		print_fault_info();
-	ASSERT(reason == RunEndReason::Debug, "run until end reason: %s",
-	       Vm::reason_str[reason]);
+	ASSERT(reason == RunEndReason::Breakpoint, "run until end reason: %s",
+	       reason_str(reason));
 	ASSERT(m_regs->rip == pc, "run until stopped at 0x%llx instead of 0x%lx",
 	       m_regs->rip, pc);
 }
@@ -684,6 +668,14 @@ void Vm::remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte) {
 		*p = original_byte;
 	}
 	ASSERT(val == 0xCC, "not set breakpoint at 0x%lx", addr);
+}
+
+void Vm::set_breakpoint(vaddr_t addr) {
+	set_breakpoint(addr, Breakpoint::Type::RunEnd);
+}
+
+void Vm::remove_breakpoint(vaddr_t addr) {
+	remove_breakpoint(addr, Breakpoint::Type::RunEnd);
 }
 
 void Vm::set_breakpoint(vaddr_t addr, Breakpoint::Type type) {

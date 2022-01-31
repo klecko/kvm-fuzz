@@ -20,32 +20,6 @@ void init_kvm();
 
 class Vm {
 public:
-	static const char* reason_str[];
-	enum RunEndReason {
-		Exit,
-		Debug,
-		Crash,
-		Timeout,
-		Unknown = -1,
-	};
-
-	typedef void (*hook_handler_t)(Vm& vm);
-
-	struct Breakpoint {
-		enum Type : uint8_t {
-			RunEnd = 1 << 0,
-			Coverage = 1 << 1,
-			Hook = 1 << 2,
-		};
-
-		// This is an OR of one or more Types
-		uint8_t type;
-
-		// The original byte at memory, which we must reset when removing the
-		// breakpoint.
-		uint8_t original_byte;
-	};
-
 	Vm(vsize_t mem_size, const std::string& kernel_path,
 	   const std::string& binary_path, const std::vector<std::string>& argv);
 
@@ -69,46 +43,68 @@ public:
 	// as a copy of `other`
 	void reset(const Vm& other, Stats& stats);
 
-	void set_input(FileRef input);
+	// Keep this the same as in the kernel
+	enum class RunEndReason : int {
+		// Exit syscall
+		Exit,
+		// Breakpoint (type RunEnd)
+		Breakpoint,
+		// Debug event, such as single-step or hardware breakpoint
+		Debug,
+		// Crash, whose fault information can be obtained with `fault()`
+		Crash,
+		// Timeout
+		Timeout,
+		Unknown,
+	};
+	static const char* reason_str(RunEndReason reason);
 
+	// Run the Vm
 	RunEndReason run(Stats& stats);
 
+	// Run the Vm until a given address
 	void run_until(vaddr_t pc, Stats& stats);
 
 	void set_single_step(bool enabled);
 	RunEndReason single_step(Stats& stats);
 
-	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
-	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
-	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	// Set and remove breakpoints. Execution will stop at given address, with
+	// RunEndReason::Breakpoint.
+	void set_breakpoint(vaddr_t addr);
+	void remove_breakpoint(vaddr_t addr);
+
+	// Set and remove hooks. They will be executed at given address.
+	typedef void (*hook_handler_t)(Vm& vm);
 	void set_hook(vaddr_t addr, hook_handler_t hook_handler);
 	void remove_hook(vaddr_t addr);
+
 	void set_breakpoints_dirty(bool dirty);
 
-	// Associate `filename` with `content` to emulate file operations in the
-	// guest. String `content` shouldn't be modified and it could be shared
-	// by all threads. File content will be copied to kernel memory when kernel
-	// submits a buffer, or immediately if it already submitted one.
-	// If `check` is set, make sure a buffer was already provided so `content`
-	// is immediately copied.
-	// void set_file(const std::string& filename, const std::string& content,
-	//               bool check = false);
 	enum class CheckCopied {
 		Yes,
 		No,
 	};
 
+	// Associate `filename` with `content` to emulate file operations in the
+	// guest. This file will be shared by all the Vms. File content will be
+	// copied to kernel memory when kernel submits a buffer, or immediately if
+	// it already submitted one.  If `check` is set, it makes sure a buffer was
+	// already provided so `content` is immediately copied.
 	void set_shared_file(
 		const std::string& filename,
 		std::string content,
 		CheckCopied check = CheckCopied::No
 	);
 
+	// Same as `set_shared_file`, but content is read from given filename.
 	void read_and_set_shared_file(
 		const std::string& filename,
 		CheckCopied check = CheckCopied::No
 	);
 
+	// Same as `set_shared_file`, but the file is not shared by other Vms, and
+	// `content` is a reference, so it isn't copied. Caller is responsible of
+	// the referenced content and must take care of its lifetime.
 	void set_file(
 		const std::string& filename,
 		FileRef content,
@@ -132,6 +128,21 @@ public:
 	void dump(const std::string& filename);
 
 private:
+	struct Breakpoint {
+		enum Type : uint8_t {
+			RunEnd = 1 << 0,
+			Coverage = 1 << 1,
+			Hook = 1 << 2,
+		};
+
+		// This is an OR of one or more Types
+		uint8_t type;
+
+		// The original byte at memory, which we must reset when removing the
+		// breakpoint.
+		uint8_t original_byte;
+	};
+
 	int m_vm_fd;
 	int m_vcpu_fd;
 	kvm_run*   m_vcpu_run;
@@ -186,6 +197,9 @@ private:
 	void set_sregs_dirty();
 	void set_instructions_executed(uint64_t instr_executed);
 	void* fetch_page(uint64_t page, bool* success);
+	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
+	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	uint8_t set_breakpoint_to_memory(vaddr_t addr);
 	void remove_breakpoint_from_memory(vaddr_t addr, uint8_t original_byte);
 	void handle_breakpoint(RunEndReason& reason);

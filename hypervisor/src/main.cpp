@@ -91,6 +91,21 @@ void print_stats(const Stats& stats, const Corpus& corpus) {
 	}
 }
 
+void set_input(Vm& vm, FileRef input) {
+	// Set input as a file which the guest will open and read, making sure
+	// the kernel has already submitted a buffer so the input is copied to its
+	// memory.
+	vm.set_file("input", input, Vm::CheckCopied::Yes);
+
+	// If our target received the input in a buffer instead of using open and
+	// read, we may want to write it to the guest memory, instead of using
+	// memory-loaded files. Assuming vm is at the entry of a function that takes
+	// as parameters the buffer pointer, the input length and the buffer length:
+	// size_t input_size = min((size_t)vm.regs().rdx, input.length);
+	// vm.mmu().write_mem(vm.regs().rdi, input.ptr, input_size);
+	// vm.regs().rsi = input_size;
+}
+
 void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 	// The vm we'll be running
 	Vm runner(base);
@@ -111,12 +126,12 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 		while (_rdtsc() - cycles_init < 50000000) {
 			// Get new input
 			cycles = rdtsc1();
-			FileRef input = corpus.get_new_input(id, rng, stats);
+			FileRef input = corpus.get_new_input(id, rng, local_stats);
 			local_stats.mut_cycles += rdtsc1() - cycles;
 
 			// Update input
 			cycles = rdtsc1();
-			runner.set_input(input);
+			set_input(runner, input);
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
 			// Perform run
@@ -127,13 +142,19 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			local_stats.instr += runner.instructions_executed_last_run();
 
 			// Check RunEndReason
-			if (reason == Vm::RunEndReason::Crash) {
-				stats.crashes++;
-				corpus.report_crash(id, runner);
-			} else if (reason == Vm::RunEndReason::Timeout) {
-				stats.timeouts++;
-			} else if (reason != Vm::RunEndReason::Exit) {
-				die("unexpected RunEndReason: %s\n", Vm::reason_str[reason]);
+			switch (reason) {
+				case Vm::RunEndReason::Breakpoint:
+				case Vm::RunEndReason::Exit:
+					break;
+				case Vm::RunEndReason::Timeout:
+					local_stats.timeouts++;
+					break;
+				case Vm::RunEndReason::Crash:
+					local_stats.crashes++;
+					corpus.report_crash(id, runner);
+					break;
+				default:
+					die("unexpected RunEndReason: %s\n", Vm::reason_str(reason));
 			}
 
 			// Report coverage
@@ -179,7 +200,7 @@ int main(int argc, char** argv) {
 	// string which will be replaced in the fuzz loop with inputs provided by
 	// the corpus. We set its size to the maximum input size so kernel allocates
 	// a buffer of that size.
-	// Note this is not needed if we are using input injection in Vm::set_input,
+	// Note this is not needed if we are using input injection in set_input
 	// instead of memory-loaded files.
 	string file;
 	if (!(args.single_run && args.single_run_input_path.empty())) {
@@ -202,6 +223,13 @@ int main(int argc, char** argv) {
 		fork_addr = vm.elf().entry();
 	vm.run_until(fork_addr, stats);
 
+	// Optionally set breakpoints to end the run before the syscall `exit` is
+	// called. Setting a breakpoint at libc function `exit` avoids running exit
+	// handlers, improving performance.
+	vaddr_t exit_addr = vm.elf().resolve_symbol("exit");
+	if (exit_addr)
+		vm.set_breakpoint(exit_addr);
+
 	// Reset timer so it starts counting from 0, and set specified timeout
 	vm.reset_timer();
 	vm.set_timeout(args.timeout);
@@ -216,13 +244,13 @@ int main(int argc, char** argv) {
 			printf("Performing single run with no input file\n");
 		} else {
 			printf("Performing single run with input file '%s', length %lu\n",
-				   args.single_run_input_path.c_str(), file.size());
-			vm.set_input(FileRef::from_string(file));
+			       args.single_run_input_path.c_str(), file.size());
+			set_input(vm, FileRef::from_string(file));
 		}
 		Vm::RunEndReason reason = vm.run(stats);
 		if (reason == Vm::RunEndReason::Crash)
 			vm.print_fault_info();
-		printf("Run ended with reason %s\n", Vm::reason_str[reason]);
+		printf("Run ended with reason %s\n", Vm::reason_str(reason));
 		// vm.dump("libtiff-data");
 		return 0;
 	}
@@ -243,14 +271,19 @@ int main(int argc, char** argv) {
 		Vm runner(vm);
 		Vm::RunEndReason reason;
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_input(corpus.element(i));
+			set_input(runner, corpus.element(i));
 			reason = runner.run(stats);
-			if (reason == Vm::RunEndReason::Crash) {
-				printf("Input file '%s' crashed in corpus minimization mode\n",
-				       corpus.seed_filename(i).c_str());
-			} else if (reason != Vm::RunEndReason::Exit) {
-				die("unexpected RunEndReason for input '%s': %s\n",
-				    corpus.seed_filename(i).c_str(), Vm::reason_str[reason]);
+			switch (reason) {
+				case Vm::RunEndReason::Breakpoint:
+				case Vm::RunEndReason::Exit:
+					break;
+				case Vm::RunEndReason::Crash:
+					vm.print_fault_info();
+					die("Input file '%s' crashed in corpus minimization mode\n",
+					    corpus.seed_filename(i).c_str());
+				default:
+					die("unexpected RunEndReason for input '%s': %s\n",
+					    corpus.seed_filename(i).c_str(), Vm::reason_str(reason));
 			}
 			coverages.push_back(runner.coverage());
 			runner.reset_coverage();
@@ -265,7 +298,7 @@ int main(int argc, char** argv) {
 		Vm runner(vm);
 		Vm::RunEndReason reason;
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_input(corpus.element(i));
+			set_input(runner, corpus.element(i));
 			reason = runner.run(stats);
 			ASSERT(reason == Vm::RunEndReason::Crash, "input '%s' didn't crash",
 			       corpus.seed_filename(i).c_str());
@@ -278,7 +311,7 @@ int main(int argc, char** argv) {
 		// Perform run with each seed input and submit total coverage to corpus
 		Vm runner(vm);
 		for (size_t i = 0; i < corpus.size(); i++) {
-			runner.set_input(corpus.element(i));
+			set_input(runner, corpus.element(i));
 			runner.run(stats);
 			runner.reset(vm, stats);
 		}

@@ -101,12 +101,14 @@ pub const StackTraceRegs = struct {
     }
 };
 
+// Keep this the same as in the hypervisor
 pub const RunEndReason = enum(c_int) {
     Exit,
+    Breakpoint,
     Debug,
     Crash,
     Timeout,
-    Unknown = -1,
+    Unknown,
 };
 
 fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
