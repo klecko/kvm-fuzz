@@ -156,6 +156,8 @@ struct kvm_dirty_gfn {
 
 #define KVM_VMX_PT_CONFIGURE_HYPERCALL_HOOK _IOW(KVMIO, 0xe5, __u64) /* set address for hypercall hooks */
 
+#define KVM_VMX_PT_RESET                    _IO(KVMIO, 0xf2)
+
 #define KVM_EXIT_VMX_PT_TOPA_MAIN_FULL      119
 
 struct vmx_pt_filter_iprs {

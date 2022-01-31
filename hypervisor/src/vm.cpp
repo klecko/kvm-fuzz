@@ -205,12 +205,15 @@ inline page_fetcher_t cast_page_fetcher(M ptr) {
 	return *reinterpret_cast<page_fetcher_t*>(&ptr);
 }
 
-void Vm::setup_coverage() {
-	// Get coverage range. Elf should have been loaded by now
-	auto limits = m_elf.section_limits(".text");
-	vmx_pt_filter_iprs filter0 = { limits.first, limits.second };
-	printf_once("Coverage range: 0x%llx to 0x%llx\n", filter0.a, filter0.b);
+void test_bb(void*, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
+	printf("bb callback: %lx %lx %lx\n", arg1, arg2, arg3);
+}
 
+void test_edge(void*, uint64_t arg1, uint64_t arg2) {
+	printf("edge callback: %lx %lx\n", arg1, arg2);
+}
+
+void Vm::setup_coverage() {
 	// VMX PT
 	m_vmx_pt_fd = ioctl_chk(m_vcpu_fd, KVM_VMX_PT_SETUP_FD, 0);
 	size_t vmx_pt_size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_GET_TOPA_SIZE, 0);
@@ -218,20 +221,31 @@ void Vm::setup_coverage() {
 	                          MAP_SHARED, m_vmx_pt_fd, 0);
 	ERROR_ON(m_vmx_pt == MAP_FAILED, "mmap vmx_pt");
 
-	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter0);
+	// Set coverage range to the whole user address space. Ideally we wouldn't
+	// need to set this, and just enable Intel PT in user mode (when CPL = 0),
+	// but KVM-Nyx doesn't allow this (yet?).
+	vmx_pt_filter_iprs filter = {1, Mmu::USER_END_ADDR - 1};
+
+	// Another option: set the range to just the elf (and not libraries)
+	// auto limits = m_elf.section_limits(".text");
+	// vmx_pt_filter_iprs filter0 = { limits.first, limits.second };
+
+	// Configure range and enable KVM-Nyx
+	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CONFIGURE_ADDR0, &filter);
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE_ADDR0, 0);
 	ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_ENABLE, 0);
 
 	// libxdc
-	uint64_t filter[4][2] = {0};
-	filter[0][0] = filter0.a;
-	filter[0][1] = filter0.b;
+	uint64_t libxdc_filters[4][2] = {0};
+	libxdc_filters[0][0] = filter.a;
+	libxdc_filters[0][1] = filter.b;
 	void* bitmap = m_coverage.bitmap();
-	m_vmx_pt_decoder = libxdc_init(filter, cast_page_fetcher(&Vm::fetch_page),
-	                               this, bitmap, COVERAGE_BITMAP_SIZE);
-	//libxdc_register_bb_callback(decoder, (bb_callback_t)test_bb, nullptr);
-	//libxdc_register_edge_callback(decoder, (edge_callback_t)test_edge, nullptr);
-	//libxdc_enable_tracing(decoder);
+	page_fetcher_t page_fetcher = cast_page_fetcher(&Vm::fetch_page);
+	m_vmx_pt_decoder = libxdc_init(libxdc_filters, page_fetcher, this,
+	                               bitmap, COVERAGE_BITMAP_SIZE);
+	// libxdc_register_bb_callback(m_vmx_pt_decoder, (bb_callback_t)test_bb, nullptr);
+	// libxdc_register_edge_callback(m_vmx_pt_decoder, (edge_callback_t)test_edge, nullptr);
+	// libxdc_enable_tracing(m_vmx_pt_decoder);
 }
 
 #elif defined(ENABLE_COVERAGE_BREAKPOINTS)
@@ -273,8 +287,12 @@ void Vm::setup_coverage() {
 		ASSERT(count > 0, "no basic blocks read from '%s' for '%s'",
 		       bbs_path.c_str(), elf->path().c_str());
 		printf("Read %lu basic blocks for '%s'\n", count, elf->path().c_str());
+		break;
 	}
 }
+
+#else
+void Vm::setup_coverage() {}
 #endif
 
 
@@ -617,27 +635,13 @@ void* Vm::fetch_page(uint64_t page, bool* success) {
 	return last_result;
 }
 
-void test_bb(void*, uint64_t arg1, uint64_t arg2, uint64_t arg3) {
-	printf("bb callback: %lx %lx %lx\n", arg1, arg2, arg3);
-}
-
-void test_edge(void*, uint64_t arg1, uint64_t arg2) {
-	printf("edge callback: %lx %lx\n", arg1, arg2);
-}
-
 void Vm::update_coverage(Stats& stats) {
 	cycle_t cycles = rdtsc2();
-	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_CHECK_TOPA_OVERFLOW, 0);
+	size_t size = ioctl_chk(m_vmx_pt_fd, KVM_VMX_PT_RESET, 0);
 
 	if (size) {
-		/* uint8_t* buf = (uint8_t*)malloc(size+1);
-		memcpy(buf, m_vmx_pt, size);
-		buf[size] = 0x55; */
-
-		// KVM-PT was modified to allow this, because I thought the memcpy was
-		// very expensive, but it seems it isn't
-		m_vmx_pt[size] = 0x55;
-
+		// KVM-Nyx sets the PT_TRACE_END at the end for us <3
+		ASSERT(m_vmx_pt[size] == PT_TRACE_END, "or maybe not");
 		decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
 		ASSERT(ret == decoder_result_t::decoder_success, "libxdc decode: %d", ret);
 
@@ -650,8 +654,6 @@ void Vm::update_coverage(Stats& stats) {
 		//        libxdc_bitmap_get_hash(m_vmx_pt_decoder));
 		// auto limits = m_elf.section_limits(".text");
 		// printf("Limits: 0x%lx, 0x%lx\n", limits.first, limits.second);
-
-		//free(buf);
 	}
 	stats.update_cov_cycles += rdtsc2() - cycles;
 }
