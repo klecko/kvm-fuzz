@@ -117,6 +117,7 @@ const handle_sys_arch_prctl = @import("syscalls/prctl.zig").handle_sys_arch_prct
 const handle_sys_access = @import("syscalls/access.zig").handle_sys_access;
 const handle_sys_brk = @import("syscalls/brk.zig").handle_sys_brk;
 const handle_sys_openat = @import("syscalls/open.zig").handle_sys_openat;
+const handle_sys_open = @import("syscalls/open.zig").handle_sys_open;
 const handle_sys_close = @import("syscalls/open.zig").handle_sys_close;
 const handle_sys_read = @import("syscalls/read.zig").handle_sys_read;
 const handle_sys_pread64 = @import("syscalls/read.zig").handle_sys_pread64;
@@ -154,6 +155,7 @@ const handle_sys_getpid = @import("syscalls/getpid.zig").handle_sys_getpid;
 const handle_sys_gettid = @import("syscalls/getpid.zig").handle_sys_gettid;
 const handle_sys_getppid = @import("syscalls/getpid.zig").handle_sys_getppid;
 const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
+const handle_sys_getrandom = @import("syscalls/random.zig").handle_sys_getrandom;
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
 const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
 
@@ -212,6 +214,7 @@ pub noinline fn handleSyscall(
         .gettid => self.handle_sys_gettid(),
         .getppid => self.handle_sys_getppid(),
         .getpgid => self.handle_sys_getpgid(arg0),
+        .getrandom => self.handle_sys_getrandom(arg0, arg1, arg2),
         .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2, regs),
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
@@ -230,7 +233,15 @@ pub noinline fn handleSyscall(
         },
         .exit => self.handle_sys_exit(arg0, regs),
         .exit_group => self.handle_sys_exit_group(arg0, regs),
-        else => panic("unhandled syscall: {s}\n", .{@tagName(syscall)}),
+        else => {
+            const stacktrace_regs = hypercalls.StackTraceRegs{
+                .rsp = regs.rsp,
+                .rbp = regs.rbp,
+                .rip = regs.rip,
+            };
+            hypercalls.printStackTrace(&stacktrace_regs);
+            panic("unhandled syscall: {s}\n", .{@tagName(syscall)});
+        },
     } catch |err| linux.errorToErrno(err);
 
     log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ self.pid, @tagName(syscall), ret });

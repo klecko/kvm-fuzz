@@ -54,6 +54,28 @@ pub fn handle_sys_openat(
     return cast(usize, ret);
 }
 
+fn sys_open(
+    self: *Process,
+    pathname_ptr: UserCString,
+    flags: i32,
+    mode: linux.mode_t,
+) !linux.fd_t {
+    return sys_openat(self, linux.AT.FDCWD, pathname_ptr, flags, mode);
+}
+
+pub fn handle_sys_open(
+    self: *Process,
+    arg0: usize,
+    arg1: usize,
+    arg2: usize,
+) !usize {
+    const pathname_ptr = try UserCString.fromFlat(arg0);
+    const flags = cast(i32, arg1);
+    const mode = cast(linux.mode_t, arg2);
+    const ret = try sys_open(self, pathname_ptr, flags, mode);
+    return cast(usize, ret);
+}
+
 fn sys_close(self: *Process, fd: linux.fd_t) !void {
     const key_value = self.files.table.fetchRemove(fd) orelse return error.BadFD;
     key_value.value.ref.unref();

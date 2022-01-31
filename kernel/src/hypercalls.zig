@@ -101,7 +101,7 @@ pub const StackTraceRegs = struct {
     }
 };
 
-const RunEndReason = enum(c_int) {
+pub const RunEndReason = enum(c_int) {
     Exit,
     Debug,
     Crash,
@@ -205,7 +205,7 @@ pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
 
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
-extern fn _printStackTrace(stacktrace_regs: *StackTraceRegs) void;
+extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
 extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 extern fn getRip() usize;
@@ -236,7 +236,7 @@ pub fn maybeLoadLibrary(mmap_addr: usize, mmap_file: []const u8, rip: usize) voi
     loadLibrary(filename.ptr, filename.len, mmap_addr);
 }
 
-pub fn printStackTrace(stacktrace_regs: ?*StackTraceRegs) void {
+pub fn printStackTrace(stacktrace_regs: ?*const StackTraceRegs) void {
     // If we weren't given regs, use current ones
     const arg = stacktrace_regs orelse &StackTraceRegs.fromCurrent();
     _printStackTrace(arg);

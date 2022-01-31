@@ -25,7 +25,6 @@ fn sys_futex(
     _ = self;
 
     const op = futex_op & ~@as(i32, linux.FUTEX.PRIVATE_FLAG);
-    print("futex: {}\n", .{futex_op});
     if (op == linux.FUTEX.WAKE)
         return 0;
     print("{} {} {} {} {} {}\n", .{ uaddr, futex_op, val, arg, uaddr2, val3 });

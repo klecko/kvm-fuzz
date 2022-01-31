@@ -26,8 +26,6 @@ pub fn init(allocator: Allocator, num_files: usize) void {
         var size: usize = undefined;
         hypercalls.getFileInfo(i, &filename_buf, &size);
 
-        log.info("file {}: length {}\n", .{ i, size });
-
         // Calculate filename length, allocate a buffer and copy it
         const filename_len = std.mem.indexOfScalar(u8, &filename_buf, 0).?;
         var filename = allocator.alloc(u8, filename_len) catch unreachable;

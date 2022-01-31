@@ -11,7 +11,7 @@ const scheduler = @import("scheduler.zig");
 const Process = @import("process/Process.zig");
 const print = common.print;
 
-pub const log_level: std.log.Level = .info;
+pub const log_level: std.log.Level = .err;
 // pub const log_level: std.log.Level = .debug;
 
 export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
