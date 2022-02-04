@@ -152,34 +152,27 @@ size_t Mmu::reset(const Mmu& other) {
 	};
 	ioctl_chk(m_vm_fd, KVM_GET_DIRTY_LOG, &dirty);
 
-	// Reset pages and clear bitmap
+	// Iterate the dirty bitmap, restoring pages associated with set bits
 	const uint8_t* dirty_bitmap = m_dirty_bitmap;
 	size_t dirty_bytes = m_dirty_bits/8;
 	for (size_t i = 0; i < dirty_bytes; i += sizeof(size_t)) {
 		size_t dirty_word = *(size_t*)(dirty_bitmap + i);
-		if (!dirty_word)
-			continue;
+		while (dirty_word != 0) {
+			// Get set bit inside the word
+			size_t r = __builtin_ctzl(dirty_word);
 
-		// There are dirty bits in `dirty_word`. Iterate all its bytes.
-		for (size_t j = 0; j < sizeof(dirty_word); j++) {
-			uint8_t dirty_byte = (dirty_word >> (j*8)) & 0xFF;
-			if (!dirty_byte)
-				continue;
+			// Restore page
+			paddr_t paddr = (i*8 + r)*PAGE_SIZE;
+			memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
+			count++;
 
-			// There are dirty bits in `dirty_byte`. Iterate all its bits.
-			for (size_t k = 0; k < 8; k++) {
-				uint8_t dirty_bit = dirty_byte & (1 << k);
-				if (!dirty_bit)
-					continue;
-
-				// We found a dirty bit. Restore page.
-				count++;
-				paddr_t paddr = ((i + j)*8 + k)*PAGE_SIZE;
-				memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
-				// dbgprintf("resetted paddr %p\n", paddr);
-			}
+			// Clear bit
+			size_t t = dirty_word & -dirty_word;
+			dirty_word ^= t;
 		}
 	}
+
+	// Reset the bitmap
 	memset(dirty.dirty_bitmap, 0, m_dirty_bits/8);
 #endif
 
