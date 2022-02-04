@@ -518,6 +518,21 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 	}
 #endif
 
+#ifdef ENABLE_INSTRUCTION_COUNT
+	// Update instructions executed reading from the MSR. Ideally we would want
+	// to get that from the kernel, which would be cheaper than performing a
+	// syscall here. Problem is execution may end at a breakpoint, and currently
+	// breakpoints are not handled by the kernel, so in that case there's no way
+	// it tells us the number of instructions.
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
+	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	memset(msrs, 0, sz);
+	msrs->nmsrs = 1;
+	msrs->entries[0].index = MSR_FIXED_CTR0;
+	ioctl_chk(m_vcpu_fd, KVM_GET_MSRS, msrs);
+	set_instructions_executed(msrs->entries[0].data);
+#endif
+
 	return reason;
 }
 

@@ -2,7 +2,9 @@ const std = @import("std");
 const x86 = @import("x86/x86.zig");
 const linux = @import("linux.zig");
 const fs = @import("fs/fs.zig");
-const printFmt = @import("common.zig").print;
+const common = @import("common.zig");
+const printFmt = common.print;
+const panic = common.panic;
 
 pub const Hypercall = enum(c_int) {
     Test,
@@ -174,7 +176,7 @@ comptime {
         \\  jmp hypercall
         \\
         \\.global _endRun
-        \\_endRun:
+        \\endRun:
         \\	mov $10, %rax
         \\	jmp hypercall
         \\
@@ -208,7 +210,7 @@ pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
-extern fn _endRun(reason: RunEndReason, info: ?*const FaultInfo, instr_executed: usize) noreturn;
+pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 extern fn getRip() usize;
 
@@ -242,13 +244,6 @@ pub fn printStackTrace(stacktrace_regs: ?*const StackTraceRegs) void {
     // If we weren't given regs, use current ones
     const arg = stacktrace_regs orelse &StackTraceRegs.fromCurrent();
     _printStackTrace(arg);
-}
-
-const pmm = @import("mem/mem.zig").pmm;
-const log = @import("log.zig");
-pub fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn {
-    // log.print("frames allocated: {}\n", .{pmm.numberOfAllocations()});
-    _endRun(reason, info, x86.perf.instructionsExecuted());
 }
 
 const buf_len = 1024;

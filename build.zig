@@ -9,7 +9,22 @@ fn shouldStrip(mode: std.builtin.Mode) bool {
     };
 }
 
-fn buildKernel(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
+const SharedOptions = struct {
+    const InstructionCount = enum {
+        kernel,
+        user,
+        all,
+        none,
+    };
+    instruction_count: InstructionCount,
+};
+
+fn buildKernel(
+    b: *std.build.Builder,
+    std_target: CrossTarget,
+    std_mode: std.builtin.Mode,
+    shared_options: SharedOptions,
+) void {
     // Custom x86_64 freestanding target for the kernel
     const target = CrossTarget.parse(.{
         .arch_os_abi = "x86_64-freestanding-none",
@@ -27,17 +42,6 @@ fn buildKernel(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.bui
     exe.strip = shouldStrip(exe.build_mode);
 
     // zig build options
-    const InstructionCount = enum{
-        kernel,
-        user,
-        all,
-        none,
-    };
-    const instruction_count = b.option(
-        InstructionCount,
-        "instruction-count",
-        "Instruction count mode. Default is user.",
-    ) orelse .user;
     const enable_guest_output = b.option(
         bool,
         "enable-guest-output",
@@ -46,7 +50,11 @@ fn buildKernel(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.bui
 
     // Kernel build options
     const build_options = b.addOptions();
-    build_options.addOption(InstructionCount, "instruction_count", instruction_count);
+    build_options.addOption(
+        SharedOptions.InstructionCount,
+        "instruction_count",
+        shared_options.instruction_count,
+    );
     build_options.addOption(bool, "enable_guest_output", enable_guest_output);
     exe.addOptions("build_options", build_options);
 
@@ -66,7 +74,12 @@ fn buildKernel(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.bui
     exe.step.dependOn(&fmt_step.step);
 }
 
-fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) void {
+fn addHypervisorOptions(
+    b: *std.build.Builder,
+    exe: *std.build.LibExeObjStep,
+    shared_options: SharedOptions,
+) void {
+    // Mutations
     const enable_mutations = b.option(
         bool,
         "enable-mutations",
@@ -77,12 +90,12 @@ fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) vo
         exe.defineCMacro("ENABLE_MUTATIONS", null);
     }
 
+    // Coverage
     const Coverage = enum {
         breakpoints,
         intelpt,
         none,
     };
-
     const coverage = b.option(
         Coverage,
         "coverage",
@@ -99,6 +112,7 @@ fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) vo
         .none => {},
     }
 
+    // Bitmap size
     const bitmap_size_str = b.option(
         []const u8,
         "bitmap-size",
@@ -124,6 +138,7 @@ fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) vo
         exe.defineCMacro("COVERAGE_BITMAP_SIZE", size_str_parsed);
     }
 
+    // Dirty log ring
     const kvm_dirty_log_ring_version_required = std.builtin.Version{ .major = 5, .minor = 11 };
     const enable_kvm_dirty_log_ring = b.option(
         bool,
@@ -147,13 +162,22 @@ fn addHypervisorOptions(b: *std.build.Builder, exe: *std.build.LibExeObjStep) vo
         }
         exe.defineCMacro("ENABLE_KVM_DIRTY_LOG_RING", null);
     }
+
+    if (shared_options.instruction_count != .none) {
+        exe.defineCMacro("ENABLE_INSTRUCTION_COUNT", null);
+    }
 }
 
-fn buildHypervisor(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
+fn buildHypervisor(
+    b: *std.build.Builder,
+    std_target: CrossTarget,
+    std_mode: std.builtin.Mode,
+    shared_options: SharedOptions,
+) void {
     const exe = b.addExecutable("kvm-fuzz", null);
     exe.setTarget(std_target);
     exe.setBuildMode(std_mode);
-    addHypervisorOptions(b, exe);
+    addHypervisorOptions(b, exe, shared_options);
     exe.addIncludeDir("hypervisor/include");
     exe.addCSourceFiles(&.{
         "hypervisor/src/args.cpp",
@@ -236,7 +260,15 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const std_mode = b.standardReleaseOptions();
 
-    buildKernel(b, std_target, std_mode);
-    buildHypervisor(b, std_target, std_mode);
+    const shared_options = SharedOptions{
+        .instruction_count = b.option(
+            SharedOptions.InstructionCount,
+            "instruction-count",
+            "Instruction count mode. Default is user.",
+        ) orelse .user,
+    };
+
+    buildKernel(b, std_target, std_mode, shared_options);
+    buildHypervisor(b, std_target, std_mode, shared_options);
     buildUserspaceTests(b, std_target, std_mode);
 }

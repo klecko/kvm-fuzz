@@ -224,8 +224,7 @@ private:
 	void do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr);
 	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	                        vaddr_t load_addr);
-	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
-	                   uint64_t instructions_executed);
+	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr);
 
 	/* void handle_syscall();
 	*/

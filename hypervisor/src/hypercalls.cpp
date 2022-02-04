@@ -166,12 +166,10 @@ void Vm::do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	s_elfs.set_library_load_addr(filename, load_addr);
 }
 
-void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr,
-                       uint64_t instr_executed)
-{
-	set_instructions_executed(instr_executed);
+void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 	if (reason == RunEndReason::Crash)
 		m_fault = m_mmu.read<FaultInfo>(info_addr);
+	m_running = false;
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -208,8 +206,7 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			break;
 		case Hypercall::EndRun:
 			reason = (RunEndReason)m_regs->rdi;
-			do_hc_end_run(reason, m_regs->rsi, m_regs->rdx);
-			m_running = false;
+			do_hc_end_run(reason, m_regs->rsi);
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);
