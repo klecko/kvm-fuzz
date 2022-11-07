@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <string.h>
 
+
 // These are now set by the build script.
 
 // If disabled, input file will be chose from the initial corpus but it will
@@ -29,8 +30,8 @@
 
 // Enables Intel PT for code coverage. Currently, KVM-PT is used for tracing
 // and libxdc for decoding. There are some performance issues :P
-//#define ENABLE_COVERAGE_INTEL_PT
-//#define COVERAGE_BITMAP_SIZE 64*1024
+// #define ENABLE_COVERAGE_INTEL_PT
+// #define COVERAGE_BITMAP_SIZE 64*1024
 
 
 #if defined(ENABLE_COVERAGE_BREAKPOINTS) || defined(ENABLE_COVERAGE_INTEL_PT)

@@ -32,7 +32,7 @@ public:
 	ElfParser& elf();
 	psize_t memsize() const;
 	FaultInfo fault() const;
-	uint64_t instructions_executed_last_run() const;
+	uint64_t get_instructions_executed_and_reset();
 
 	void setup_coverage();
 	const Coverage& coverage() const;
@@ -118,6 +118,9 @@ public:
 	// finish with RunEndReason::Timeout.
 	void set_timeout(size_t microsecs);
 
+	size_t stack_pop();
+	void stack_push(size_t value);
+
 	void print_current_stacktrace(size_t num_frames=-1);
 	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
 	void print_fault_info();
@@ -164,6 +167,7 @@ private:
 
 	Mmu  m_mmu;
 	bool m_running;
+	bool m_single_stepping;
 
 	// Breakpoints indexed by the address they are placed at
 	std::unordered_map<vaddr_t, Breakpoint> m_breakpoints;

@@ -157,7 +157,7 @@ const TaskStateSegment = packed struct {
     ist7: u64,
     reserved3: u64 = 0,
     reserved4: u16 = 0,
-    iopb: u16 = @sizeOf(TaskStateSegment),
+    iopb: u16 = 104, //@sizeOf(TaskStateSegment),
 
     pub fn init() TaskStateSegment {
         var ret = std.mem.zeroes(TaskStateSegment);
@@ -174,7 +174,7 @@ pub const GDTPtr = packed struct {
     offset: u64,
 };
 
-// Make sure we didn't fuck up the structs
+// Make sure we didn't mess up the structs
 comptime {
     assert(@sizeOf(GlobalDescriptor) == 0x08);
     assert(@sizeOf(TaskStateSegmentDescriptor) == 0x10);

@@ -111,7 +111,7 @@ pub fn availableFdStartingOn(self: Process, start: linux.fd_t) ?linux.fd_t {
     return null;
 }
 
-const startUser = @import("user.zig").startUser;
+pub const startUser = @import("user.zig").startUser;
 
 const handle_sys_arch_prctl = @import("syscalls/prctl.zig").handle_sys_arch_prctl;
 const handle_sys_access = @import("syscalls/access.zig").handle_sys_access;
@@ -135,6 +135,7 @@ const handle_sys_mprotect = @import("syscalls/mmap.zig").handle_sys_mprotect;
 const handle_sys_prlimit = @import("syscalls/prlimit.zig").handle_sys_prlimit;
 const handle_sys_time = @import("syscalls/time.zig").handle_sys_time;
 const handle_sys_clock_gettime = @import("syscalls/time.zig").handle_sys_clock_gettime;
+const handle_sys_gettimeofday = @import("syscalls/time.zig").handle_sys_gettimeofday;
 const handle_sys_dup = @import("syscalls/dup.zig").handle_sys_dup;
 const handle_sys_dup2 = @import("syscalls/dup.zig").handle_sys_dup2;
 const handle_sys_getcwd = @import("syscalls/getcwd.zig").handle_sys_getcwd;
@@ -158,6 +159,7 @@ const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
 const handle_sys_getrandom = @import("syscalls/random.zig").handle_sys_getrandom;
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
 const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
+const handle_sys_sched_getaffinity = @import("syscalls/sched.zig").handle_sys_sched_getaffinity;
 
 pub noinline fn handleSyscall(
     self: *Process,
@@ -170,7 +172,11 @@ pub noinline fn handleSyscall(
     arg5: usize,
     regs: *UserRegs,
 ) usize {
-    log.debug("--> [{}] syscall {s}\n", .{ self.pid, @tagName(syscall) });
+    log.debug("--> [{}] syscall {s} at {x}\n", .{ self.pid, @tagName(syscall), regs.rip });
+
+    // TODO singlestep issue
+    // if (((regs.rflags >> 9) & 1) == 0)
+    //     panic("lost flags :(\n", .{});
 
     // TODO define a syscall handler type that takes all arguments, and put
     // every handler into an array
@@ -180,13 +186,13 @@ pub noinline fn handleSyscall(
         .brk => self.handle_sys_brk(arg0),
         .openat => self.handle_sys_openat(arg0, arg1, arg2, arg3),
         .read => self.handle_sys_read(arg0, arg1, arg2),
-        .pread => self.handle_sys_pread64(arg0, arg1, arg2, arg3),
+        .pread64 => self.handle_sys_pread64(arg0, arg1, arg2, arg3),
         .write => self.handle_sys_write(arg0, arg1, arg2),
         .writev => self.handle_sys_writev(arg0, arg1, arg2),
         .lseek => self.handle_sys_lseek(arg0, arg1, arg2),
         .stat => self.handle_sys_stat(arg0, arg1),
         .fstat => self.handle_sys_fstat(arg0, arg1),
-        .fstatat => self.handle_sys_fstatat(arg0, arg1, arg2, arg3),
+        .fstatat64 => self.handle_sys_fstatat(arg0, arg1, arg2, arg3),
         .dup => self.handle_sys_dup(arg0),
         .dup2 => self.handle_sys_dup2(arg0, arg1),
         .socket => self.handle_sys_socket(arg0, arg1, arg2),
@@ -200,12 +206,15 @@ pub noinline fn handleSyscall(
         .getcwd => self.handle_sys_getcwd(arg0, arg1),
         .chdir => self.handle_sys_chdir(arg0),
         .readlink => self.handle_sys_readlink(arg0, arg1, arg2),
+        .readlinkat => self.handle_sys_readlink(arg1, arg2, arg3),
         .mmap => self.handle_sys_mmap(arg0, arg1, arg2, arg3, arg4, arg5, regs),
+        .mremap => error.OutOfMemory,
         .mprotect => self.handle_sys_mprotect(arg0, arg1, arg2),
         .munmap => self.handle_sys_munmap(arg0, arg1),
         .prlimit64 => self.handle_sys_prlimit(arg0, arg1, arg2, arg3),
         .time => self.handle_sys_time(arg0),
         .clock_gettime => self.handle_sys_clock_gettime(arg0, arg1),
+        .gettimeofday => self.handle_sys_gettimeofday(arg0, arg1),
         .sysinfo => self.handle_sys_sysinfo(arg0),
         .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
         .clone => self.handle_sys_clone(arg0, arg1, arg2, arg3, arg4, regs),
@@ -217,7 +226,8 @@ pub noinline fn handleSyscall(
         .getrandom => self.handle_sys_getrandom(arg0, arg1, arg2),
         .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2, regs),
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
-        .getuid, .getgid, .geteuid, .getegid => @as(usize, 0),
+        .sched_getaffinity => self.handle_sys_sched_getaffinity(arg0, arg1, arg2),
+        .getuid, .getgid, .geteuid, .getegid => @as(usize, 1000),
         .set_tid_address,
         .set_robust_list,
         .rt_sigaction,
@@ -227,6 +237,13 @@ pub noinline fn handleSyscall(
         .madvise,
         .setsockopt,
         .sched_yield,
+        .fadvise64,
+        .alarm,
+        .ioctl,
+        .seccomp,
+        .prctl,
+        .rseq,
+        .pselect6,
         => blk: {
             // log.info("TODO {s}\n", .{@tagName(syscall)});
             break :blk @as(usize, 0);
@@ -234,16 +251,16 @@ pub noinline fn handleSyscall(
         .exit => self.handle_sys_exit(arg0, regs),
         .exit_group => self.handle_sys_exit_group(arg0, regs),
         else => {
-            const stacktrace_regs = hypercalls.StackTraceRegs{
-                .rsp = regs.rsp,
-                .rbp = regs.rbp,
-                .rip = regs.rip,
-            };
+            const stacktrace_regs = hypercalls.StackTraceRegs.from(regs);
             hypercalls.printStackTrace(&stacktrace_regs);
             panic("unhandled syscall: {s}\n", .{@tagName(syscall)});
         },
     } catch |err| linux.errorToErrno(err);
 
     log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ self.pid, @tagName(syscall), ret });
+    // if (syscall == .openat) {
+    //     const stacktrace_regs = hypercalls.StackTraceRegs.from(regs);
+    //     hypercalls.printStackTrace(&stacktrace_regs);
+    // }
     return ret;
 }

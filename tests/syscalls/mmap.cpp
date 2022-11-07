@@ -247,7 +247,7 @@ size_t get_system_available_memory() {
 }
 
 TEST_CASE("mmap ENOMEM") {
-	size_t size = get_system_available_memory() * 10;
+	size_t size = get_system_available_memory() * 100;
 	void* p = mmap(nullptr, size, prot, flags, -1, 0);
 	REQUIRE(p == MAP_FAILED);
 	REQUIRE(errno == ENOMEM);

@@ -12,11 +12,16 @@ fn sys_readlink(self: *Process, pathname_ptr: UserCString, buf: UserSlice([]u8))
     const pathname = try mem.safe.copyStringFromUser(self.allocator, pathname_ptr);
     defer self.allocator.free(pathname);
 
-    assert(std.mem.eql(u8, pathname, "/proc/self/exe"));
+    const path_result = if (std.mem.eql(u8, pathname, "/proc/self/exe"))
+        self.elf_path
+    else {
+        std.log.warn("readlink {s}, returning EINVAL\n", .{pathname});
+        return error.InvalidArgument;
+    };
 
     // Write path. Readlink does not append a null byte to buf.
-    const size = std.math.min(self.elf_path.len, buf.len());
-    try mem.safe.copyToUser(u8, buf, self.elf_path[0..size]);
+    const size = std.math.min(path_result.len, buf.len());
+    try mem.safe.copyToUser(u8, buf, path_result[0..size]);
     return size;
 }
 

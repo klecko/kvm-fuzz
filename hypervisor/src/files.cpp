@@ -54,14 +54,11 @@ void FileRefsByPath::set_guest_ptrs_at_pos(size_t n, GuestPtrs guest_ptrs) {
 }
 
 GuestFile SharedFiles::set_file(const std::string& path, std::string content) {
-	// Content has been copied (or moved, if it was a rvalue). Move it  to our
+	// Content has been copied (or moved, if it was a rvalue). Move it to our
 	// file contents and set a reference to it.
 	string& content_ref = m_file_contents[path];
 	content_ref = move(content);
-	return FileRefsByPath::set_file(path, {
-		.ptr = content_ref.data(),
-		.length = content_ref.size(),
-	});
+	return FileRefsByPath::set_file(path, FileRef::from_string(content_ref));
 }
 
 GuestFile SharedFiles::set_file(const std::string& path) {

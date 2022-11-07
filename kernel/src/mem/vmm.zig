@@ -18,8 +18,17 @@ var free_bitset = std.StaticBitSet(bitset_size).initFull();
 /// This allows for 4096*8 pages, which is 128MB. Same as in PMM.
 const bitset_size_bytes = std.mem.page_size;
 const bitset_size = bitset_size_bytes * std.mem.byte_size_in_bits;
+const max_memory = bitset_size * std.mem.page_size;
 
 pub fn init() void {
+    var info: hypercalls.MemInfo = undefined;
+    hypercalls.getMemInfo(&info);
+    if (info.mem_length > max_memory)
+        std.debug.panic("max memory surpassed: {}M, but max is {}M", .{
+            info.mem_length / (1024 * 1024),
+            max_memory / (1024 * 1024),
+        });
+
     // Initialize the kernel page table
     kernel_page_table = x86.paging.KernelPageTable.init();
 

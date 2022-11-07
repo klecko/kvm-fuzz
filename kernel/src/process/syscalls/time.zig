@@ -43,3 +43,25 @@ pub fn handle_sys_time(self: *Process, arg0: usize) !usize {
     const ret = try sys_time(self, time_ptr);
     return cast(usize, ret);
 }
+
+fn sys_gettimeofday(
+    self: *Process,
+    tv_ptr: ?UserPtr(*linux.timeval),
+    timezone_ptr: ?UserPtr(*linux.timezone),
+) !void {
+    std.debug.assert(timezone_ptr == null);
+    if (tv_ptr) |ptr| {
+        const tv = linux.timeval{
+            .tv_sec = sys_time(self, null) catch unreachable,
+            .tv_usec = 0,
+        };
+        try mem.safe.copyToUserSingle(linux.timeval, ptr, &tv);
+    }
+}
+
+pub fn handle_sys_gettimeofday(self: *Process, arg0: usize, arg1: usize) !usize {
+    const tv_ptr = UserPtr(*linux.timeval).fromFlatMaybeNull(arg0);
+    const timezone_ptr = UserPtr(*linux.timezone).fromFlatMaybeNull(arg1);
+    try sys_gettimeofday(self, tv_ptr, timezone_ptr);
+    return 0;
+}

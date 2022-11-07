@@ -134,9 +134,9 @@ pub const FileDescription = struct {
     offset: usize = 0,
 
     // File operations
-    stat: fn (self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void,
-    read: fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
-    write: fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
+    stat: *const fn (self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void,
+    read: *const fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
+    write: *const fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
 
     /// Reference counter. It must free the whole object this FileDescription
     /// belongs to, not just the FileDescription.

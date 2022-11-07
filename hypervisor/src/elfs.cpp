@@ -17,7 +17,12 @@ Elfs::~Elfs() {
 }
 
 void Elfs::init(const string& binary_path, const string& kernel_path) {
-	ASSERT(!m_elf.has_data(), "double init");
+	if (m_interpreter) {
+		delete m_interpreter;
+		m_interpreter = nullptr;
+		m_libraries.clear();
+	}
+
 	m_elf = ElfParser(binary_path);
 	m_kernel = ElfParser(kernel_path);
 	if (!m_elf.interpreter().empty()) {

@@ -205,7 +205,7 @@ string ElfDebug::addr_to_source(vaddr_t pc) const {
 		return result;
 
 	bool found = false;
-	Dwarf_Error err;
+	Dwarf_Error err = nullptr;
 
 	// Iterate compilation unit headers
 	while (dwarf_next_cu_header_d(
@@ -287,7 +287,11 @@ string ElfDebug::get_source_str_cu_die(Dwarf_Die cu_die, Dwarf_Addr pc) const {
 	Dwarf_Unsigned version;
 	Dwarf_Small table_count;
 	Dwarf_Line_Context ctxt;
-	if (dwarf_srclines_b(cu_die, &version, &table_count, &ctxt, NULL) != DW_DLV_OK)
+	Dwarf_Error err = nullptr;
+
+	int ret = dwarf_srclines_b(cu_die, &version, &table_count, &ctxt, &err);
+	// DWARF_CHECK(ret, err);
+	if (ret != DW_DLV_OK)
 		return result;
 
 	if (table_count == 1) {

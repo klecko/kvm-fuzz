@@ -101,6 +101,14 @@ pub const StackTraceRegs = struct {
             ),
         };
     }
+
+    pub fn from(other: anytype) StackTraceRegs {
+        return .{
+            .rip = other.rip,
+            .rbp = other.rbp,
+            .rsp = other.rsp,
+        };
+    }
 };
 
 // Keep this the same as in the hypervisor

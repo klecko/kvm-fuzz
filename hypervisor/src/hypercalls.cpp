@@ -117,8 +117,10 @@ void Vm::do_hc_submit_file_pointers(size_t n, vaddr_t data_addr,
 	// Make sure ptrs weren't submitted yet
 	auto file_entry = get_file_entry(n);
 	GuestPtrs current_ptrs = file_entry.second.guest;
-	ASSERT(current_ptrs.data_addr == 0 && current_ptrs.length_addr == 0,
-	       "double submite_file_pointers for %s?", file_entry.first.c_str());
+	// TODO: cuando creo una vm, pongo un shared file, se destruye, y creo otra vm,
+	// esta última tiene aún los shared files. pensar como hacerlo.
+	// ASSERT(current_ptrs.data_addr == 0 && current_ptrs.length_addr == 0,
+	//        "double submite_file_pointers for %s?", file_entry.first.c_str());
 
 	// Submit given ptrs
 	GuestPtrs ptrs = {

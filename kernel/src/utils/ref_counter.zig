@@ -46,7 +46,7 @@ pub fn RefCounter(comptime ParentT: type) type {
         destroyFn: ?DestroyFn,
 
         const Self = @This();
-        const DestroyFn = fn (parent: *ParentT) void;
+        const DestroyFn = *const fn (parent: *ParentT) void;
 
         /// The name of the field that holds us in ParentT.
         const field_name = blk: {

@@ -8,10 +8,10 @@ const scheduler = @import("scheduler.zig");
 
 /// The type of each interrupt handler entry point, which will end up jumping
 /// to the actual interrupt handler.
-pub const InterruptHandlerEntryPoint = fn () callconv(.Naked) void;
+pub const InterruptHandlerEntryPoint = *const fn () callconv(.Naked) void;
 
 /// The type of each interrupt handler, which will do the actual work.
-const InterruptHandler = fn (*InterruptFrame) void;
+const InterruptHandler = *const fn (*InterruptFrame) void;
 
 // TODO: this is definitely x86-dependant
 /// The data we'll have in the stack inside every interrupt handler.
@@ -121,7 +121,7 @@ fn pushesErrorCode(interrupt_number: usize) bool {
 /// and jump to interruptHandlerCommon.
 pub fn getInterruptHandlerEntryPoint(comptime interrupt_number: usize) InterruptHandlerEntryPoint {
     // FIXME: when functions become expressions we won't need to use the struct
-    return struct {
+    return &struct {
         fn handler() callconv(.Naked) void {
             if (comptime !pushesErrorCode(interrupt_number)) {
                 asm volatile ("push $0");

@@ -118,7 +118,7 @@ pub fn init() void {
     star |= @as(usize, @enumToInt(SegmentSelector.KernelCode)) << 32; // for syscall
     star |= @as(usize, @enumToInt(SegmentSelector.UserData) - 8) << 48; // for sysret
     x86.wrmsr(.STAR, star);
-    x86.wrmsr(.LSTAR, @ptrToInt(syscallEntry));
+    x86.wrmsr(.LSTAR, @ptrToInt(&syscallEntry));
     x86.wrmsr(.SYSCALL_MASK, 0x3F7FD5); // interrupts are disabled on syscall
 
     // Save kernel stack

@@ -139,7 +139,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			reason = runner.run(local_stats);
 			local_stats.run_cycles += rdtsc1() - cycles;
 			local_stats.cases++;
-			local_stats.instr += runner.instructions_executed_last_run();
+			local_stats.instr += runner.get_instructions_executed_and_reset();
 
 			// Check RunEndReason
 			switch (reason) {

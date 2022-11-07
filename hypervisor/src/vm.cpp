@@ -40,6 +40,7 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	: m_vm_fd(create_vm())
 	, m_mmu(m_vm_fd, m_vcpu_fd, mem_size)
 	, m_running(false)
+	, m_single_stepping(false)
 	, m_breakpoints_dirty(false)
 	, m_instructions_executed(0)
 	, m_instructions_executed_prev(0)
@@ -59,6 +60,7 @@ Vm::Vm(const Vm& other)
 	, m_files(other.m_files)
 	, m_mmu(m_vm_fd, m_vcpu_fd, other.m_mmu)
 	, m_running(false)
+	, m_single_stepping(other.m_single_stepping)
 	, m_breakpoints(other.m_breakpoints)
 	, m_hook_handlers(other.m_hook_handlers)
 	, m_breakpoints_dirty(other.m_breakpoints_dirty)
@@ -268,7 +270,7 @@ void Vm::setup_coverage() {
 			       elf->path().c_str(), bbs_path.c_str());
 			string cmd = "./scripts/generate_basic_blocks.py " + elf->path() +
 			             " " + bbs_path;
-			ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd %s", cmd.c_str());
+			ERROR_ON(system(cmd.c_str()) != 0, "failed to run cmd '%s'", cmd.c_str());
 			bbs.open(bbs_path);
 		}
 		ERROR_ON(!bbs.good(), "opening basic blocks file '%s'", bbs_path.c_str());
@@ -370,11 +372,10 @@ void Vm::set_sregs_dirty() {
 }
 
 void Vm::set_instructions_executed(uint64_t instr_executed) {
-	m_instructions_executed_prev = m_instructions_executed;
-	m_instructions_executed = instr_executed;
 }
 
 kvm_regs& Vm::regs() {
+	set_regs_dirty();
 	return *m_regs;
 }
 
@@ -398,10 +399,30 @@ FaultInfo Vm::fault() const {
 	return m_fault;
 }
 
-uint64_t Vm::instructions_executed_last_run() const {
-	// Since we are not resetting guest MSRs, these counters are not resetted
-	// each run.
+uint64_t Vm::get_instructions_executed_and_reset() {
+#ifdef ENABLE_INSTRUCTION_COUNT
+	// Update instructions executed reading from the MSR. Ideally we would want
+	// to get that from the kernel, which would be cheaper than performing a
+	// syscall here. Problem is execution may end at a breakpoint, and currently
+	// breakpoints are not handled by the kernel, so in that case there's no way
+	// it tells us the number of instructions. Therefore, we need to read the
+	// MSR ourselves.
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
+	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	memset(msrs, 0, sz);
+	msrs->nmsrs = 1;
+	msrs->entries[0].index = MSR_FIXED_CTR0;
+	ioctl_chk(m_vcpu_fd, KVM_GET_MSRS, msrs);
+
+	// Since we are not resetting guest MSRs, the counter is accumulative.
+	// Return instructions executed since last call.
+	m_instructions_executed_prev = m_instructions_executed;
+	m_instructions_executed = msrs->entries[0].data;
 	return m_instructions_executed - m_instructions_executed_prev;
+
+#else
+	return 0;
+#endif
 }
 
 const Coverage& Vm::coverage() const {
@@ -518,21 +539,6 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 	}
 #endif
 
-#ifdef ENABLE_INSTRUCTION_COUNT
-	// Update instructions executed reading from the MSR. Ideally we would want
-	// to get that from the kernel, which would be cheaper than performing a
-	// syscall here. Problem is execution may end at a breakpoint, and currently
-	// breakpoints are not handled by the kernel, so in that case there's no way
-	// it tells us the number of instructions.
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
-	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
-	memset(msrs, 0, sz);
-	msrs->nmsrs = 1;
-	msrs->entries[0].index = MSR_FIXED_CTR0;
-	ioctl_chk(m_vcpu_fd, KVM_GET_MSRS, msrs);
-	set_instructions_executed(msrs->entries[0].data);
-#endif
-
 	return reason;
 }
 
@@ -552,18 +558,44 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	// If it's a hook handle it, then remove breakpoint, single step and set
 	// breakpoint again
 	if (bp.type & Breakpoint::Type::Hook) {
+		// Handle hook and remove breakpoint
 		hook_handler_t hook_handler = m_hook_handlers[addr];
 		ASSERT(hook_handler, "hook breakpoint without hook handler at 0x%lx", addr);
 		hook_handler(*this);
 		remove_breakpoint(addr, Breakpoint::Hook);
-		Stats dummy;
-		RunEndReason reason = single_step(dummy);
-		ASSERT(reason == RunEndReason::Debug, "run end reason: %s",
-		       reason_str(reason));
-		set_breakpoint(addr, Breakpoint::Hook);
 
-		// single_step sets m_running to false. Set it to true again
-		m_running = true;
+		// Single step. Then, we only want to continue executing if it was
+		// was successful (no Exit, Breakpoint, Crash, etc) and we are not
+		// single stepping (we already single stepped). Otherwise, update exit
+		// reason.
+		// Without the ioctl, single_step() doesn't work sometimes. Example:
+		// running at 0x41fef2, supposed to run until 0x41fef6, but ran until
+		// 0xffffffff80200000 (hypercall). I haven't been able to get a failing
+		// test for this.
+		// TODO: even with the ioctl this seems to keep failing!!!!!!!
+		// Parece que es por la interrupcion de la APIC.
+		// Idea: desactivar interrupciones antes del single step y reactivarlas despues
+		// problema: parece que single_step() no funciona si usamos set_regs_dirty()
+		// en vez del primer ioctl.
+		// sigue ejecutando hasta que ejecuta syscall y el assert del kernel peta
+		// porque falta la flag de interrupciones.
+		Stats dummy;
+		// printf("before ss: %lx\n", regs().rip);
+		m_regs->rflags &= ~(1 << 9);
+		// set_regs_dirty();
+		ioctl_chk(m_vcpu_fd, KVM_SET_REGS, m_regs); // removing this makes the kernel assert fail
+		RunEndReason reason_ss = single_step(dummy);
+		m_regs->rflags |= (1 << 9);
+		// set_regs_dirty(); // this doesn't seem to be needed bc kvm_dirty_regs is already 1
+		// ioctl_chk(m_vcpu_fd, KVM_SET_REGS, m_regs);
+		// printf("after ss: %lx %lx\n", regs().rip, m_vcpu_run->kvm_dirty_regs); // WHY IS THIS 1
+		if (reason_ss == RunEndReason::Debug && !m_single_stepping)
+			m_running = true;
+		else
+			reason = reason_ss;
+
+		// Restore breakpoint
+		set_breakpoint(addr, Breakpoint::Hook);
 	}
 
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
@@ -597,13 +629,17 @@ void Vm::set_single_step(bool enabled) {
 	                KVM_GUESTDBG_USE_SW_BP;
 	if (enabled)
 		debug.control |= KVM_GUESTDBG_SINGLESTEP;
+	m_single_stepping = enabled;
 	ioctl_chk(m_vcpu_fd, KVM_SET_GUEST_DEBUG, &debug);
 }
 
 Vm::RunEndReason Vm::single_step(Stats& stats) {
+	// We want to restore the current m_single_stepping later, in case run()
+	// needs to handle a hook, which calls single_step() again.
+	bool old_single_stepping = m_single_stepping;
 	set_single_step(true);
 	RunEndReason reason = run(stats);
-	set_single_step(false);
+	set_single_step(old_single_stepping);
 	return reason;
 }
 
@@ -642,7 +678,9 @@ void Vm::update_coverage(Stats& stats) {
 		// KVM-Nyx sets the PT_TRACE_END at the end for us <3
 		ASSERT(m_vmx_pt[size] == PT_TRACE_END, "or maybe not");
 		decoder_result_t ret = libxdc_decode(m_vmx_pt_decoder, m_vmx_pt, size);
-		ASSERT(ret == decoder_result_t::decoder_success, "libxdc decode: %d", ret);
+		ASSERT(ret == decoder_result_t::decoder_success ||
+		       ret == decoder_result_t::decoder_success_pt_overflow,
+		       "libxdc decode: %d", ret);
 
 		// ofstream ofs("libtiff-trace");
 		// assert(ofs.good());
@@ -810,6 +848,17 @@ void Vm::reset_timer() {
 void Vm::set_timeout(size_t microsecs) {
 	ASSERT(m_timeout_addr, "trying to set timeout but kernel didnt submit ptr");
 	m_mmu.write<vsize_t>(m_timeout_addr, microsecs);
+}
+
+size_t Vm::stack_pop() {
+	size_t value = mmu().read<size_t>(regs().rsp);
+	regs().rsp += 8;
+	return value;
+}
+
+void Vm::stack_push(size_t value) {
+	regs().rsp -= 8;
+	mmu().write<size_t>(regs().rsp, value);
 }
 
 void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {

@@ -2,7 +2,7 @@ const std = @import("std");
 const Process = @import("../Process.zig");
 const linux = @import("../../linux.zig");
 const fs = @import("../../fs/fs.zig");
-const TODO = @import("../../common.zig").TODO;
+const common = @import("../../common.zig");
 const cast = std.zig.c_translation.cast;
 
 fn sys_fcntl_dupfd(
@@ -38,7 +38,9 @@ fn sys_fcntl(self: *Process, fd: linux.fd_t, cmd: i32, arg: u64) !usize {
         // Get file description flags
         linux.F.GETFL => file.flags,
 
-        else => TODO(),
+        linux.F.SETLKW => 0,
+
+        else => common.panic("unhandled fcntl cmd: {}, arg: {}\n", .{ cmd, arg }),
     };
     return cast(usize, ret);
 }

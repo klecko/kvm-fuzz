@@ -7,7 +7,8 @@ const x86 = @import("x86/x86.zig");
 const StackTrace = std.builtin.StackTrace;
 
 // https://github.com/ziglang/zig/issues/7962
-pub fn panicRoot(msg: []const u8, error_return_trace: ?*StackTrace) noreturn {
+pub fn panicRoot(msg: []const u8, error_return_trace: ?*StackTrace, ret_addr: ?usize) noreturn {
+    _ = ret_addr;
     panicFmtErrorReturnTrace("{s}\n", .{msg}, error_return_trace);
 }
 

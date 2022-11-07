@@ -137,7 +137,12 @@ pub fn handle_sys_mmap(
     const flags = cast(i32, arg3);
     const fd = cast(linux.fd_t, arg4);
     const offset = arg5;
-    return sys_mmap(self, addr, length, prot, flags, fd, offset, regs);
+    const ret = sys_mmap(self, addr, length, prot, flags, fd, offset, regs);
+    // TODO fixme
+    if (ret) |_| {} else |err| if (err == error.OutOfMemory) {
+        log.warn("mmap returned ENOMEM\n", .{});
+    }
+    return ret;
 }
 
 fn sys_munmap(self: *Process, addr: usize, length: usize) !void {

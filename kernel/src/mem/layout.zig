@@ -1,6 +1,6 @@
 /// Start address of the region where user mappings will be mapped.
 // pub const user_mappings_start: usize = 0x7AAAAAAAA000;
-pub const user_mappings_start: usize = 0x7FFFFAAAA000;
+pub const user_mappings_start: usize = 0x7FFAAAAAA000;
 
 /// Start and size of the user stack (grows towards lower addresses)
 pub const user_stack: usize = 0x800000000000;

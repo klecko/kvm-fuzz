@@ -88,6 +88,7 @@ fn setupUserStack(
 
     // Setup auxv
     const auxv = [_]elf.Auxv{
+        makeAuxv(elf.AT_SYSINFO_EHDR, 0x0),
         makeAuxv(elf.AT_PHDR, info.elf_load_addr + info.phinfo.e_phoff),
         makeAuxv(elf.AT_PHENT, info.phinfo.e_phentsize),
         makeAuxv(elf.AT_PHNUM, info.phinfo.e_phnum),
@@ -96,7 +97,7 @@ fn setupUserStack(
         makeAuxv(elf.AT_FLAGS, 0),
         makeAuxv(elf.AT_ENTRY, info.elf_entry),
         makeAuxv(elf.AT_RANDOM, random_bytes_addr),
-        makeAuxv(elf.AT_EXECFN, argv_addrs[0]),
+        makeAuxv(elf.AT_EXECFN, if (argv_addrs.len > 0) argv_addrs[0] else 0),
         makeAuxv(elf.AT_PLATFORM, platform_addr),
         makeAuxv(elf.AT_SECURE, 0),
         makeAuxv(elf.AT_UID, 0),
@@ -122,7 +123,7 @@ fn setupUserStack(
 
     // Setup argc
     stack_usize_ptr -= 1;
-    stack_usize_ptr.* = argv.len;
+    stack_usize_ptr[0] = argv.len;
 
     // Some debugging
     log.debug("ARGS:\n", .{});

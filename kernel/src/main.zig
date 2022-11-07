@@ -14,6 +14,15 @@ const print = common.print;
 pub const log_level: std.log.Level = .err;
 // pub const log_level: std.log.Level = .debug;
 
+// Stage2 compiler seems to evaluate std.heap.GeneralPurposeAllocator default
+// backing allocator (root.os.heap.page_allocator) although we explicitly
+// set it to our paging allocator in mem/heap.zig.
+pub const os = struct {
+    pub const heap = struct {
+        pub const page_allocator = mem.heap.page_allocator;
+    };
+};
+
 export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     std.log.info("hello from zig\n", .{});
 

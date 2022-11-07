@@ -178,7 +178,7 @@ fn buildHypervisor(
     exe.setTarget(std_target);
     exe.setBuildMode(std_mode);
     addHypervisorOptions(b, exe, shared_options);
-    exe.addIncludeDir("hypervisor/include");
+    exe.addIncludePath("hypervisor/include");
     exe.addCSourceFiles(&.{
         "hypervisor/src/args.cpp",
         "hypervisor/src/corpus.cpp",
@@ -208,8 +208,8 @@ fn buildHypervisor(
     exe.install();
 }
 
-fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
-    const exe = b.addExecutable("tests", null);
+fn buildSyscallsTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
+    const exe = b.addExecutable("syscalls_tests", null);
 
     // It would be great to link this binary statically. We'd need to link with
     // musl instead of glibc, but musl breaks tests. For example, musl implements
@@ -221,24 +221,27 @@ fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode:
     // x86 extensions
     var target = std_target;
     target.cpu_model = .baseline;
+    target.setGnuLibCVersion(2, 34, 0); // workaround for libc.so.6 not being a symlink in ubuntu 21+
 
     exe.setTarget(target);
     exe.setBuildMode(std_mode);
+    exe.addIncludePath("./tests");
     exe.addCSourceFiles(&.{
-        "tests/brk.cpp",
-        "tests/dup.cpp",
-        "tests/fcntl.cpp",
-        "tests/files.cpp",
-        "tests/fork.cpp",
-        "tests/getcwd.cpp",
-        "tests/misc.cpp",
-        "tests/mmap.cpp",
-        "tests/readlink.cpp",
-        "tests/socket.cpp",
-        "tests/stdin.cpp",
-        "tests/tests.cpp",
-        "tests/thread_local.cpp",
-        "tests/uname.cpp",
+        "tests/syscalls/brk.cpp",
+        "tests/syscalls/dup.cpp",
+        "tests/syscalls/fcntl.cpp",
+        "tests/syscalls/files.cpp",
+        "tests/syscalls/fork.cpp",
+        "tests/syscalls/getcwd.cpp",
+        "tests/syscalls/main.cpp",
+        "tests/syscalls/misc.cpp",
+        "tests/syscalls/mmap.cpp",
+        "tests/syscalls/readlink.cpp",
+        "tests/syscalls/sched.cpp",
+        "tests/syscalls/socket.cpp",
+        "tests/syscalls/stdin.cpp",
+        "tests/syscalls/thread_local.cpp",
+        "tests/syscalls/uname.cpp",
     }, &.{
         "-std=c++11",
         "-Wall",
@@ -248,9 +251,54 @@ fn buildUserspaceTests(b: *std.build.Builder, std_target: CrossTarget, std_mode:
     exe.strip = true;
 
     const install = b.addInstallArtifact(exe);
-
-    const build_step = b.step("tests", "Build userspace tests");
+    const build_step = b.step("syscalls_tests", "Build syscalls tests");
     build_step.dependOn(&install.step);
+}
+
+fn buildHypervisorTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
+    const exe = b.addExecutable("hypervisor_tests", null);
+
+    exe.setTarget(std_target);
+    exe.setBuildMode(std_mode);
+    exe.addIncludePath("./tests");
+    exe.addIncludePath("hypervisor/include");
+    exe.addCSourceFiles(&.{
+        "hypervisor/src/elf_debug.cpp",
+        "hypervisor/src/elf_parser.cpp",
+        "hypervisor/src/elfs.cpp",
+        "hypervisor/src/files.cpp",
+        "hypervisor/src/hypercalls.cpp",
+        "hypervisor/src/mmu.cpp",
+        "hypervisor/src/page_walker.cpp",
+        "hypervisor/src/utils.cpp",
+        "hypervisor/src/vm.cpp",
+        "tests/hypervisor/files.cpp",
+        "tests/hypervisor/hooks.cpp",
+        "tests/hypervisor/inst_count.cpp",
+        "tests/hypervisor/main.cpp",
+    }, &.{
+        "-std=c++11",
+    });
+    exe.defineCMacro("ENABLE_INSTRUCTION_COUNT", null);
+    exe.linkLibC();
+    exe.linkLibCpp();
+    exe.linkSystemLibrary("dwarf");
+    exe.linkSystemLibrary("elf");
+    exe.linkSystemLibrary("crypto");
+
+    const install = b.addInstallArtifact(exe);
+    const build_step = b.step("hypervisor_tests", "Build hypervisor tests");
+    build_step.dependOn(&install.step);
+
+    // Binaries needed for the tests
+    const test_hooks_exe = b.addExecutable("test_hooks", "tests/hypervisor/binaries/hooks.s");
+    const test_hooks_install = b.addInstallArtifact(test_hooks_exe);
+    install.step.dependOn(&test_hooks_install.step);
+
+    const test_files_exe = b.addExecutable("test_files", "tests/hypervisor/binaries/files.c");
+    test_files_exe.linkLibC();
+    const test_files_install = b.addInstallArtifact(test_files_exe);
+    install.step.dependOn(&test_files_install.step);
 }
 
 pub fn build(b: *std.build.Builder) void {
@@ -270,5 +318,6 @@ pub fn build(b: *std.build.Builder) void {
 
     buildKernel(b, std_target, std_mode, shared_options);
     buildHypervisor(b, std_target, std_mode, shared_options);
-    buildUserspaceTests(b, std_target, std_mode);
+    buildSyscallsTests(b, std_target, std_mode);
+    buildHypervisorTests(b, std_target, std_mode);
 }
