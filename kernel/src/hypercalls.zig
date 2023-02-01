@@ -18,6 +18,8 @@ pub const Hypercall = enum(c_int) {
     PrintStackTrace,
     LoadLibrary,
     EndRun,
+    NotifySyscallStart,
+    NotifySyscallEnd,
 };
 
 // Keep this the same as in the hypervisor
@@ -128,70 +130,61 @@ fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
 }
 comptime {
     asm (
-        \\.global hypercall
         \\hypercall:
-        \\	outb %al, $16;
-        \\	ret;
+        \\  outb %al, $16;
+        \\  ret;
         \\
-        // \\.global hc_test
-        // \\hc_test:
-        // \\	mov $0, %rax;
-        // \\	jmp hypercall
-        \\
-        \\.global _print
         \\_print:
-        \\	mov $1, %rax
-        \\	jmp hypercall
+        \\  mov $1, %rax
+        \\  jmp hypercall
         \\
-        \\.global getMemInfo
         \\getMemInfo:
-        \\	mov $2, %rax
-        \\	jmp hypercall
+        \\  mov $2, %rax
+        \\  jmp hypercall
         \\
-        \\.global getKernelBrk
         \\getKernelBrk:
         \\  mov $3, %rax
         \\  jmp hypercall
         \\
-        \\.global getInfo
         \\getInfo:
         \\  mov $4, %rax
         \\  jmp hypercall
         \\
-        \\.global getFileInfo
         \\getFileInfo:
         \\  mov $5, %rax
         \\  jmp hypercall
         \\
-        \\.global submitFilePointers
         \\submitFilePointers:
         \\  mov $6, %rax
         \\  jmp hypercall
         \\
-        \\.global submitTimeoutPointers
         \\submitTimeoutPointers:
         \\  mov $7, %rax
         \\  jmp hypercall
         \\
-        \\.global _printStackTrace
         \\_printStackTrace:
         \\  mov $8, %rax
         \\  jmp hypercall
         \\
-        \\.global loadLibrary
         \\loadLibrary:
         \\  mov $9, %rax
         \\  jmp hypercall
         \\
-        \\.global _endRun
         \\endRun:
-        \\	mov $10, %rax
-        \\	jmp hypercall
+        \\  mov $10, %rax
+        \\  jmp hypercall
         \\
-        \\.global getRip
+        \\_notifySyscallStart:
+        \\  mov $11, %rax
+        \\  jmp hypercall
+        \\
+        \\notifySyscallEnd:
+        \\  mov $12, %rax
+        \\  jmp hypercall
+        \\
         \\getRip:
-        \\movq (%rsp), %rax
-        \\ret
+        \\  movq (%rsp), %rax
+        \\  ret
     );
     checkEquals(.Print, 1);
     checkEquals(.GetMemInfo, 2);
@@ -203,9 +196,10 @@ comptime {
     checkEquals(.PrintStackTrace, 8);
     checkEquals(.LoadLibrary, 9);
     checkEquals(.EndRun, 10);
+    checkEquals(.NotifySyscallStart, 11);
+    checkEquals(.NotifySyscallEnd, 12);
 }
 
-// pub extern fn test(arg: usize) void;
 extern fn _print(s: [*]const u8) void;
 pub extern fn getMemInfo(info: *MemInfo) void;
 pub extern fn getKernelBrk() usize;
@@ -218,8 +212,10 @@ pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
-pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
+pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
+extern fn _notifySyscallStart(syscall_name: [*:0]const u8) void;
+pub extern fn notifySyscallEnd() void;
 extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
@@ -252,6 +248,10 @@ pub fn printStackTrace(stacktrace_regs: ?*const StackTraceRegs) void {
     // If we weren't given regs, use current ones
     const arg = stacktrace_regs orelse &StackTraceRegs.fromCurrent();
     _printStackTrace(arg);
+}
+
+pub fn notifySyscallStart(syscall_n: linux.SYS) void {
+    _notifySyscallStart(@tagName(syscall_n));
 }
 
 const buf_len = 1024;

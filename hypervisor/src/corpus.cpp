@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <limits>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "corpus.h"

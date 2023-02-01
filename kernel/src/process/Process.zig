@@ -173,6 +173,8 @@ pub noinline fn handleSyscall(
     regs: *UserRegs,
 ) usize {
     log.debug("--> [{}] syscall {s} at {x}\n", .{ self.pid, @tagName(syscall), regs.rip });
+    hypercalls.notifySyscallStart(syscall);
+    defer hypercalls.notifySyscallEnd();
 
     // TODO singlestep issue
     // if (((regs.rflags >> 9) & 1) == 0)

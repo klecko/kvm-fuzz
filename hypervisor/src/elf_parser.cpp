@@ -208,8 +208,11 @@ void ElfParser::init() {
 				.size       = syms[i].st_size
 			};
 			m_symbols.push_back(symbol);
+			// if (symbol.type == STT_FUNC)
+			// 	cout << "symbol: " << symbol.name << " " << (int)symbol.visibility << endl;
 		}
 	}
+	// exit(0);
 
 	m_debug = ElfDebug(m_data, m_size);
 

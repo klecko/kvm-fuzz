@@ -2,6 +2,7 @@
 #include <linux/limits.h>
 #include <sys/mman.h>
 #include <termios.h>
+#include <fstream>
 #include "vm.h"
 
 using namespace std;
@@ -19,6 +20,8 @@ enum Hypercall : size_t {
 	PrintStacktrace,
 	LoadLibrary,
 	EndRun,
+	NotifySyscallStart,
+	NotifySyscallEnd,
 };
 
 // Keep this the same as in the kernel
@@ -174,6 +177,23 @@ void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 	m_running = false;
 }
 
+void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr) {
+	m_syscall_name = m_mmu.read_string(syscall_name_addr);
+	if (m_syscall_name == "exit_group")
+		m_os_syscalls << m_syscall_name << " 0" << endl;
+	else
+		m_instructions_syscall_start = read_msr(MSR_FIXED_CTR0);
+}
+
+void Vm::do_hc_notify_syscall_end() {
+	uint64_t instructions = read_msr(MSR_FIXED_CTR0) - m_instructions_syscall_start;
+	ASSERT(instructions != 0, "instructions executed by syscall is 0, did you forget "
+	                          "compiling with -Dinstruction-count=all ?");
+	m_os_syscalls << m_syscall_name << " " << instructions << endl;
+	m_instructions_syscall_start = 0;
+	m_syscall_name.clear();
+}
+
 void Vm::handle_hypercall(RunEndReason& reason) {
 	uint64_t ret = 0;
 	switch (m_regs->rax) {
@@ -209,6 +229,12 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::EndRun:
 			reason = (RunEndReason)m_regs->rdi;
 			do_hc_end_run(reason, m_regs->rsi);
+			break;
+		case Hypercall::NotifySyscallStart:
+			do_hc_notify_syscall_start(m_regs->rdi);
+			break;
+		case Hypercall::NotifySyscallEnd:
+			do_hc_notify_syscall_end();
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);

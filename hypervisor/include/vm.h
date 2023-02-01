@@ -118,6 +118,8 @@ public:
 	// finish with RunEndReason::Timeout.
 	void set_timeout(size_t microsecs);
 
+	uint64_t read_msr(uint64_t msr);
+
 	size_t stack_pop();
 	void stack_push(size_t value);
 
@@ -190,6 +192,11 @@ private:
 	vaddr_t m_timer_addr;
 	vaddr_t m_timeout_addr;
 
+public:
+	size_t m_next_file = 0;
+	std::ofstream m_os_syscalls;
+private:
+
 	int create_vm();
 	void setup_kvm();
 	void load_elfs();
@@ -199,7 +206,6 @@ private:
 	void setup_kernel_execution(const std::vector<std::string>& argv);
 	void set_regs_dirty();
 	void set_sregs_dirty();
-	void set_instructions_executed(uint64_t instr_executed);
 	void* fetch_page(uint64_t page, bool* success);
 	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
@@ -229,6 +235,11 @@ private:
 	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	                        vaddr_t load_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr);
+
+	std::string m_syscall_name;
+	uint64_t m_instructions_syscall_start;
+	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr);
+	void do_hc_notify_syscall_end();
 
 	/* void handle_syscall();
 	*/

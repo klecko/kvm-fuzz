@@ -134,12 +134,17 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			set_input(runner, input);
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
+			string syscalls_filename = "traces/" + to_string(runner.m_next_file++);
+			runner.m_os_syscalls.open(syscalls_filename);
+
 			// Perform run
 			cycles = rdtsc1();
 			reason = runner.run(local_stats);
 			local_stats.run_cycles += rdtsc1() - cycles;
 			local_stats.cases++;
 			local_stats.instr += runner.get_instructions_executed_and_reset();
+
+			runner.m_os_syscalls.close();
 
 			// Check RunEndReason
 			switch (reason) {
@@ -182,6 +187,8 @@ int main(int argc, char** argv) {
 	Args args;
 	if (!args.parse(argc, argv))
 		return 0;
+
+	system("rm -rf traces; mkdir traces");
 
 	setvbuf(stdout, nullptr, _IONBF, 0);
 	setvbuf(stderr, nullptr, _IONBF, 0);
@@ -323,7 +330,7 @@ int main(int argc, char** argv) {
 	printf("Creating threads...\n");
 	cpu_set_t cpu;
 	vector<thread> threads;
-	for (int i = 0; i < args.jobs; i++) {
+	for (uint i = 0; i < args.jobs; i++) {
 		thread t = thread(worker, i, ref(vm), ref(corpus), ref(stats));
 		CPU_ZERO(&cpu);
 		CPU_SET(i % thread::hardware_concurrency(), &cpu);

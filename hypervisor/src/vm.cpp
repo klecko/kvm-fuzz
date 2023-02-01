@@ -371,9 +371,6 @@ void Vm::set_sregs_dirty() {
 	m_vcpu_run->kvm_dirty_regs |= KVM_SYNC_X86_SREGS;
 }
 
-void Vm::set_instructions_executed(uint64_t instr_executed) {
-}
-
 kvm_regs& Vm::regs() {
 	set_regs_dirty();
 	return *m_regs;
@@ -399,6 +396,16 @@ FaultInfo Vm::fault() const {
 	return m_fault;
 }
 
+uint64_t Vm::read_msr(uint64_t msr) {
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
+	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
+	memset(msrs, 0, sz);
+	msrs->nmsrs = 1;
+	msrs->entries[0].index = msr;
+	ioctl_chk(m_vcpu_fd, KVM_GET_MSRS, msrs);
+	return msrs->entries[0].data;
+}
+
 uint64_t Vm::get_instructions_executed_and_reset() {
 #ifdef ENABLE_INSTRUCTION_COUNT
 	// Update instructions executed reading from the MSR. Ideally we would want
@@ -406,18 +413,10 @@ uint64_t Vm::get_instructions_executed_and_reset() {
 	// syscall here. Problem is execution may end at a breakpoint, and currently
 	// breakpoints are not handled by the kernel, so in that case there's no way
 	// it tells us the number of instructions. Therefore, we need to read the
-	// MSR ourselves.
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
-	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
-	memset(msrs, 0, sz);
-	msrs->nmsrs = 1;
-	msrs->entries[0].index = MSR_FIXED_CTR0;
-	ioctl_chk(m_vcpu_fd, KVM_GET_MSRS, msrs);
-
-	// Since we are not resetting guest MSRs, the counter is accumulative.
-	// Return instructions executed since last call.
+	// MSR ourselves. Also, since we are not resetting guest MSRs, the counter
+	// is accumulative. Return instructions executed since last call.
 	m_instructions_executed_prev = m_instructions_executed;
-	m_instructions_executed = msrs->entries[0].data;
+	m_instructions_executed = read_msr(MSR_FIXED_CTR0);
 	return m_instructions_executed - m_instructions_executed_prev;
 
 #else
