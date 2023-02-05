@@ -17,6 +17,7 @@ enum Hypercall : size_t {
 	GetFileInfo,
 	SubmitFilePointers,
 	SubmitTimeoutPointers,
+	SubmitTracingPointer,
 	PrintStacktrace,
 	LoadLibrary,
 	EndRun,
@@ -71,7 +72,6 @@ struct VmInfo {
 	vaddr_t interp_start;
 	vaddr_t interp_end;
 	phinfo_t phinfo;
-	struct termios term;
 };
 
 void Vm::do_hc_get_info(vaddr_t info_addr) {
@@ -88,13 +88,6 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	info.interp_start  = (interpreter ? interpreter->load_addr() : 0);
 	info.interp_end    = (interpreter ? info.interp_start + interpreter->size() : 0);
 	info.phinfo        = elf.phinfo();
-
-	// Make sure our struct termios corresponds to the one used by the kernel
-	#if !defined(_HAVE_STRUCT_TERMIOS_C_ISPEED) ||   \
-	    !defined(_HAVE_STRUCT_TERMIOS_C_OSPEED)
-	#error struct termios in hypervisor doesn't have ispeed and ospeed?
-	#endif
-	tcgetattr(STDOUT_FILENO, &info.term);
 
 	m_mmu.write(info_addr, info);
 }
@@ -149,6 +142,11 @@ void Vm::do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr)
 	m_timeout_addr = timeout_addr;
 }
 
+void Vm::do_hc_submit_tracing_pointer(vaddr_t tracing_addr) {
+	m_tracing_addr = tracing_addr;
+	m_mmu.write(m_tracing_addr, m_tracing);
+}
+
 void Vm::do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr) {
 	// For now we set just rsp, rip and rbp, which seem to be the only
 	// ones needed in most situations, and initialize the others to 0.
@@ -178,20 +176,19 @@ void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 }
 
 void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr) {
-	m_syscall_name = m_mmu.read_string(syscall_name_addr);
-	if (m_syscall_name == "exit_group")
-		m_os_syscalls << m_syscall_name << " 0" << endl;
+	m_syscall.name = m_mmu.read_string(syscall_name_addr);
+	if (m_syscall.name == "exit_group")
+		m_trace.push_back({m_syscall.name, 0});
 	else
-		m_instructions_syscall_start = read_msr(MSR_FIXED_CTR0);
+		m_syscall.instructions_start = read_msr(MSR_FIXED_CTR0);
 }
 
 void Vm::do_hc_notify_syscall_end() {
-	uint64_t instructions = read_msr(MSR_FIXED_CTR0) - m_instructions_syscall_start;
+	uint64_t instructions = read_msr(MSR_FIXED_CTR0) - m_syscall.instructions_start;
 	ASSERT(instructions != 0, "instructions executed by syscall is 0, did you forget "
 	                          "compiling with -Dinstruction-count=all ?");
-	m_os_syscalls << m_syscall_name << " " << instructions << endl;
-	m_instructions_syscall_start = 0;
-	m_syscall_name.clear();
+	m_trace.push_back({m_syscall.name, instructions});
+	m_syscall = {};
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -219,6 +216,9 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			break;
 		case Hypercall::SubmitTimeoutPointers:
 			do_hc_submit_timeout_pointers(m_regs->rdi, m_regs->rsi);
+			break;
+		case Hypercall::SubmitTracingPointer:
+			do_hc_submit_tracing_pointer(m_regs->rdi);
 			break;
 		case Hypercall::PrintStacktrace:
 			do_hc_print_stacktrace(m_regs->rdi);

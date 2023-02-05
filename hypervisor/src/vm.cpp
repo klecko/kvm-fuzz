@@ -46,6 +46,9 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_instructions_executed_prev(0)
 	, m_timer_addr(0)
 	, m_timeout_addr(0)
+	, m_tracing(false)
+	, m_tracing_addr(0)
+	, m_next_trace_id(0)
 {
 	m_mmu.create_physmap();
 	s_elfs.init(binary_path, kernel_path);
@@ -68,6 +71,9 @@ Vm::Vm(const Vm& other)
 	, m_instructions_executed_prev(other.m_instructions_executed_prev)
 	, m_timer_addr(other.m_timer_addr)
 	, m_timeout_addr(other.m_timeout_addr)
+	, m_tracing(other.m_tracing)
+	, m_tracing_addr(other.m_tracing_addr)
+	, m_next_trace_id(other.m_next_trace_id)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -858,6 +864,24 @@ size_t Vm::stack_pop() {
 void Vm::stack_push(size_t value) {
 	regs().rsp -= 8;
 	mmu().write<size_t>(regs().rsp, value);
+}
+
+void Vm::set_tracing(bool tracing) {
+	ASSERT(m_tracing_addr, "kernel didn't submit tracing addr");
+	m_tracing = tracing;
+	m_mmu.write(m_tracing_addr, m_tracing);
+}
+
+void Vm::dump_trace(size_t id) {
+	if (!m_tracing)
+		return;
+
+	string filename = "traces/" + to_string(id) + "_" + to_string(m_next_trace_id++);
+	ofstream out(filename);
+	for (pair<string, size_t> element : m_trace) {
+		out << element.first << " " << to_string(element.second) << endl;
+	}
+	m_trace.clear();
 }
 
 void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {

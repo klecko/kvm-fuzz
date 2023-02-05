@@ -15,6 +15,7 @@ pub const Hypercall = enum(c_int) {
     GetFileInfo,
     SubmitFilePointers,
     SubmitTimeoutPointers,
+    SubmitTracingPointer,
     PrintStackTrace,
     LoadLibrary,
     EndRun,
@@ -40,7 +41,6 @@ pub const VmInfo = extern struct {
     interp_start: usize,
     interp_end: usize,
     phinfo: phinfo_t,
-    term: linux.termios,
 };
 
 // Keep this the same as in the hypervisor
@@ -49,8 +49,6 @@ pub const MemInfo = extern struct {
     mem_length: usize,
     physmap_vaddr: usize,
 };
-
-// Keep this the same as in the hypervisor
 
 // Keep this the same as in the hypervisor
 pub const FaultInfo = extern struct {
@@ -162,24 +160,28 @@ comptime {
         \\  mov $7, %rax
         \\  jmp hypercall
         \\
-        \\_printStackTrace:
+        \\submitTracingPointer:
         \\  mov $8, %rax
         \\  jmp hypercall
         \\
-        \\loadLibrary:
+        \\_printStackTrace:
         \\  mov $9, %rax
         \\  jmp hypercall
         \\
-        \\endRun:
+        \\loadLibrary:
         \\  mov $10, %rax
         \\  jmp hypercall
         \\
-        \\_notifySyscallStart:
+        \\endRun:
         \\  mov $11, %rax
         \\  jmp hypercall
         \\
-        \\notifySyscallEnd:
+        \\_notifySyscallStart:
         \\  mov $12, %rax
+        \\  jmp hypercall
+        \\
+        \\_notifySyscallEnd:
+        \\  mov $13, %rax
         \\  jmp hypercall
         \\
         \\getRip:
@@ -193,11 +195,12 @@ comptime {
     checkEquals(.GetFileInfo, 5);
     checkEquals(.SubmitFilePointers, 6);
     checkEquals(.SubmitTimeoutPointers, 7);
-    checkEquals(.PrintStackTrace, 8);
-    checkEquals(.LoadLibrary, 9);
-    checkEquals(.EndRun, 10);
-    checkEquals(.NotifySyscallStart, 11);
-    checkEquals(.NotifySyscallEnd, 12);
+    checkEquals(.SubmitTracingPointer, 8);
+    checkEquals(.PrintStackTrace, 9);
+    checkEquals(.LoadLibrary, 10);
+    checkEquals(.EndRun, 11);
+    checkEquals(.NotifySyscallStart, 12);
+    checkEquals(.NotifySyscallEnd, 13);
 }
 
 extern fn _print(s: [*]const u8) void;
@@ -211,11 +214,12 @@ pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
 
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
+extern fn submitTracingPointer(tracing_ptr: *bool) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
 extern fn _notifySyscallStart(syscall_name: [*:0]const u8) void;
-pub extern fn notifySyscallEnd() void;
+extern fn _notifySyscallEnd() void;
 extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
@@ -250,8 +254,21 @@ pub fn printStackTrace(stacktrace_regs: ?*const StackTraceRegs) void {
     _printStackTrace(arg);
 }
 
+// Syscall tracing
+var tracing_enabled: bool = undefined;
+
+pub fn init() void {
+    submitTracingPointer(&tracing_enabled);
+}
+
 pub fn notifySyscallStart(syscall_n: linux.SYS) void {
-    _notifySyscallStart(@tagName(syscall_n));
+    if (tracing_enabled)
+        _notifySyscallStart(@tagName(syscall_n));
+}
+
+pub fn notifySyscallEnd() void {
+    if (tracing_enabled)
+        _notifySyscallEnd();
 }
 
 const buf_len = 1024;

@@ -123,6 +123,10 @@ public:
 	size_t stack_pop();
 	void stack_push(size_t value);
 
+	// Syscall tracing
+	void set_tracing(bool tracing);
+	void dump_trace(size_t id = 0);
+
 	void print_current_stacktrace(size_t num_frames=-1);
 	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
 	void print_fault_info();
@@ -192,10 +196,15 @@ private:
 	vaddr_t m_timer_addr;
 	vaddr_t m_timeout_addr;
 
-public:
-	size_t m_next_file = 0;
-	std::ofstream m_os_syscalls;
-private:
+	// Syscall tracing
+	bool m_tracing;
+	vaddr_t m_tracing_addr;
+	struct {
+		std::string name;
+		uint64_t instructions_start;
+	} m_syscall;
+	size_t m_next_trace_id;
+	std::vector<std::pair<std::string, size_t>> m_trace;
 
 	int create_vm();
 	void setup_kvm();
@@ -231,13 +240,11 @@ private:
 	void do_hc_submit_file_pointers(size_t n, vaddr_t buf_addr,
 	                                vaddr_t length_addr);
 	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
+	void do_hc_submit_tracing_pointer(vaddr_t tracing_addr);
 	void do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr);
 	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	                        vaddr_t load_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr);
-
-	std::string m_syscall_name;
-	uint64_t m_instructions_syscall_start;
 	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr);
 	void do_hc_notify_syscall_end();
 

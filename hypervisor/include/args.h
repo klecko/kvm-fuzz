@@ -20,6 +20,7 @@ struct Args {
 	std::string single_run_input_path;
 	bool minimize_corpus = false;
 	bool minimize_crashes = false;
+	bool tracing = false;
 
 	// Args(int argc, char** argv);
 	bool parse(int argc, char** argv);

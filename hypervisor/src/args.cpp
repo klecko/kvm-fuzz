@@ -54,13 +54,14 @@ void print_usage() {
 	"  -m, --memory arg          Virtual machine memory limit (default: 8M)\n"
 	"  -t, --timeout ms          Timeout for each in run in milliseconds, or 0 for no\n"
 	"                            timeout (default: 2)\n"
-	"  -k, --kernel path         Kernel path (default: ./kernel/kernel)\n"
+	"  -k, --kernel path         Kernel path (default: ./zig-out/bin/kernel)\n"
 	"  -i, --input dir           Input folder (initial corpus) (default: ./in)\n"
 	"  -o, --output dir          Output folder (corpus, crashes, etc) (default: ./out)\n"
 	"  -f, --file path           Memory loaded files for the target. Set once for\n"
 	"                            each file: -f file1 -f file2\n"
 	"  -s, --single-run [=path]  Perform a single run, optionally specifying an\n"
 	"                            input file\n"
+	"  -T, --tracing             Enable syscall tracing\n"
 	"  -h, --help                Print usage\n"
 	, Args::DEFAULT_NUM_THREADS);
 }
@@ -82,12 +83,13 @@ bool Args::parse(int argc, char** argv) {
 		{"output", required_argument, nullptr, 'o'},
 		{"file", required_argument, nullptr, 'f'},
 		{"single-run", optional_argument, nullptr, 's'},
+		{"tracing", no_argument, nullptr, 'T'},
 		{"help", no_argument, nullptr, 'h'},
 		{0, 0, 0, 0},
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "j:m:t:k:i:o:f:b:s::h", long_options, nullptr)) > 0) {
+	while ((opt = getopt_long(argc, argv, "j:m:t:k:i:o:f:s::Th", long_options, nullptr)) > 0) {
 		switch (opt) {
 			case LongOptions::MinimizeCorpus:
 				minimize_corpus = true;
@@ -130,6 +132,9 @@ bool Args::parse(int argc, char** argv) {
 				if (optarg)
 					single_run_input_path = optarg;
 				break;
+			case 'T':
+				tracing = true;
+				break;
 			case 'h':
 			case '?':
 			default:
@@ -156,6 +161,10 @@ bool Args::parse(int argc, char** argv) {
 		printf("You can't specify both --minimize-corpus and --minimize-crashes.\n\n");
 		print_usage();
 		return false;
+	}
+
+	if (tracing && timeout != 0) {
+		printf("Tracing and timeout are both enabled, you may want to disable timeout to avoid incomplete traces.\n\n");
 	}
 
 	// Convert timeout to microsecs, or set it to maximum value if it was 0

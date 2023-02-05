@@ -8,12 +8,32 @@ import networkx as nx
 
 dir = Path("traces")
 
+first_syscall = None
+first_syscall_filename = None
 traces = []
 for filename in dir.iterdir():
 	with open(filename) as f:
 		trace = f.readlines()
+		if not trace:
+			continue
 		trace = [(line.split()[0], int(line.split()[1])) for line in trace]
+
+		# Check last syscall
+		if trace[-1][0] != "exit_group":
+			print(f"Warning: trace '{filename}' has '{trace[-1][0]}' as last syscall, ignoring")
+			continue
+
+		# Check first syscall
+		if not first_syscall:
+			first_syscall = trace[0][0]
+			first_syscall_filename = filename
+		if trace[0][0] != first_syscall:
+			print(f"Not every trace starts with the same syscall: file '{first_syscall_filename}' " +
+			      f"starts with '{first_syscall}', file '{filename}' starts with '{trace[0][0]}'. Aborting.")
+			exit()
+
 		traces.append(trace)
+
 
 # get syscalls instructions
 syscalls_instructions = defaultdict(list)

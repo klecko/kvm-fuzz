@@ -29,6 +29,7 @@ export fn kmain(argc: usize, argv: [*][*:0]const u8) noreturn {
     var info: hypercalls.VmInfo = undefined;
     hypercalls.getInfo(&info);
 
+    hypercalls.init();
     x86.gdt.init();
     x86.idt.init();
     mem.pmm.init();

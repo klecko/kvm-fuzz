@@ -134,17 +134,12 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			set_input(runner, input);
 			local_stats.set_input_cycles += rdtsc1() - cycles;
 
-			string syscalls_filename = "traces/" + to_string(runner.m_next_file++);
-			runner.m_os_syscalls.open(syscalls_filename);
-
 			// Perform run
 			cycles = rdtsc1();
 			reason = runner.run(local_stats);
 			local_stats.run_cycles += rdtsc1() - cycles;
 			local_stats.cases++;
 			local_stats.instr += runner.get_instructions_executed_and_reset();
-
-			runner.m_os_syscalls.close();
 
 			// Check RunEndReason
 			switch (reason) {
@@ -167,6 +162,9 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			corpus.report_coverage(id, runner.coverage());
 			runner.reset_coverage();
 			local_stats.report_cov_cycles += rdtsc1() - cycles;
+
+			// Dump trace of syscalls
+			runner.dump_trace(id);
 
 			// Reset vm
 			cycles = rdtsc1();
@@ -244,6 +242,8 @@ int main(int argc, char** argv) {
 	// We do this here because we need libraries to be already loaded in case
 	// we want to put breakpoints to get code coverage in those areas.
 	vm.setup_coverage();
+
+	vm.set_tracing(args.tracing);
 
 	if (args.single_run) {
 		// Just perform a single run and exit.
