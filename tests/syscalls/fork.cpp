@@ -65,10 +65,10 @@ void foo() {
 	global = 1;
 }
 
-// TEST_CASE("thread") {
-// 	printf("THREAD TEST --------------------------------------------------\n");
-// 	REQUIRE(global == 0);
-// 	std::thread t(foo);
-// 	t.join();
-// 	REQUIRE(global == 1);
-// }
+TEST_CASE("thread") {
+	printf("THREAD TEST --------------------------------------------------\n");
+	REQUIRE(global == 0);
+	std::thread t(foo);
+	t.join();
+	REQUIRE(global == 1);
+}

@@ -6,6 +6,8 @@ const x86 = @import("../x86/x86.zig");
 const linux = @import("../linux.zig");
 const hypercalls = @import("../hypercalls.zig");
 const FileDescriptorTable = @import("FileDescriptorTable.zig");
+const futex = @import("syscalls/futex.zig");
+const robust_list = @import("syscalls/robust_list.zig");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.process);
 const Process = @This();
@@ -49,6 +51,10 @@ blocked_signals: Sigset,
 
 signal_handlers: *[linux._NSIG]Sigaction,
 
+robust_list_head: ?mem.safe.UserPtr(*const linux.robust_list_head),
+
+clear_child_tid_ptr: ?mem.safe.UserPtr(*i32),
+
 // // Top of the stack
 // kernel_rsp: usize,
 
@@ -66,6 +72,7 @@ pub const State = union(enum) {
     waiting_for_any_with_pgid: linux.pid_t,
     waiting_for_tgid: linux.pid_t,
     waiting_for_any,
+    waiting_for_futex: futex.Futex,
     exited,
 };
 
@@ -118,6 +125,8 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
         .fs_base = undefined,
         .blocked_signals = Process.Sigset.initEmpty(),
         .signal_handlers = signal_handlers,
+        .robust_list_head = null,
+        .clear_child_tid_ptr = null,
     };
 }
 
@@ -144,6 +153,7 @@ pub fn availableFdStartingOn(self: Process, start: linux.fd_t) ?linux.fd_t {
 }
 
 pub const startUser = @import("user.zig").startUser;
+pub const wakeRobustFutexes = robust_list.wakeRobustFutexes;
 
 const handle_sys_arch_prctl = @import("syscalls/prctl.zig").handle_sys_arch_prctl;
 const handle_sys_access = @import("syscalls/access.zig").handle_sys_access;
@@ -191,10 +201,11 @@ const handle_sys_getppid = @import("syscalls/getpid.zig").handle_sys_getppid;
 const handle_sys_getpgid = @import("syscalls/getpid.zig").handle_sys_getpgid;
 const handle_sys_getrandom = @import("syscalls/random.zig").handle_sys_getrandom;
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
-const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
+const handle_sys_futex = futex.handle_sys_futex;
 const handle_sys_sched_getaffinity = @import("syscalls/sched.zig").handle_sys_sched_getaffinity;
 const handle_sys_rt_sigaction = @import("syscalls/signals.zig").handle_sys_rt_sigaction;
 const handle_sys_rt_sigprocmask = @import("syscalls/signals.zig").handle_sys_rt_sigprocmask;
+const handle_sys_set_robust_list = robust_list.handle_sys_set_robust_list;
 
 pub noinline fn handleSyscall(
     self: *Process,
@@ -263,13 +274,13 @@ pub noinline fn handleSyscall(
         .getpgid => self.handle_sys_getpgid(arg0),
         .getrandom => self.handle_sys_getrandom(arg0, arg1, arg2),
         .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2, regs),
-        .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
+        .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5, regs),
+        .set_robust_list => self.handle_sys_set_robust_list(arg0, arg1),
         .sched_getaffinity => self.handle_sys_sched_getaffinity(arg0, arg1, arg2),
         .rt_sigaction => self.handle_sys_rt_sigaction(arg0, arg1, arg2, arg3),
         .rt_sigprocmask => self.handle_sys_rt_sigprocmask(arg0, arg1, arg2, arg3),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 1000),
         .set_tid_address,
-        .set_robust_list,
         .sigaltstack,
         .setitimer,
         .madvise,

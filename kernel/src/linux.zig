@@ -40,6 +40,20 @@ pub const clone_args = extern struct {
 
 pub const iovec = std.os.iovec;
 
+pub const FUTEX_BITSET_MATCH_ANY = 0xFFFFFFFF;
+pub const FUTEX_WAITERS = 0x80000000;
+pub const FUTEX_OWNER_DIED = 0x40000000;
+
+pub const robust_list = struct {
+    next: ?*robust_list,
+};
+
+pub const robust_list_head = struct {
+    list: robust_list,
+    futex_offset: isize,
+    list_op_pending: ?*robust_list,
+};
+
 // Zig defines std.os.linux.NSIG as 65, but I believe it's wrong. It may be due
 // to signals starting at 1 instead of 0.
 // https://elixir.bootlin.com/linux/v6.1.12/source/arch/x86/include/asm/signal.h#L11
@@ -60,6 +74,7 @@ pub fn errorToErrno(err: anyerror) usize {
         error.PermissionDenied => linux.E.ACCES,
         error.Search => linux.E.SRCH,
         error.NoChild => linux.E.CHILD,
+        error.TryAgain => linux.E.AGAIN,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     });
 }

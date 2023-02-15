@@ -55,14 +55,14 @@ fn removeProcess(idx: usize) void {
 pub fn exitCurrentProcessAndSchedule(frame: *Process.UserRegs) void {
     const removing_process = current();
     const removing_process_idx = active_idx;
-    print("exiting process {}\n", .{removing_process.pid});
+    // print("exiting process {}\n", .{removing_process.pid});
 
     // First wake up other processes
     var was_waited_for = false;
     for (processes.items) |process| {
         if (shouldWakeUp(process, removing_process)) {
             was_waited_for = true;
-            print("waking up {}\n", .{process.pid});
+            // print("waking up {}\n", .{process.pid});
             process.state = .active;
             // Set rax for wait syscall return value
             process.user_regs.rax = @intCast(usize, removing_process.pid);
@@ -76,6 +76,15 @@ pub fn exitCurrentProcessAndSchedule(frame: *Process.UserRegs) void {
             if (process.state == .active) active_processes += 1;
         }
         if (active_processes == 1) {
+            for (processes.items) |stuck_process| {
+                if (stuck_process.state != .active) {
+                    if (stuck_process.state == .exited) {
+                        log.warn("zombie process {}, tgid {}\n", .{ stuck_process.pid, stuck_process.tgid });
+                    } else {
+                        log.warn("stuck process {}, state {}\n", .{ stuck_process.pid, stuck_process.state });
+                    }
+                }
+            }
             hypercalls.endRun(.Exit, null);
         }
     }
@@ -147,10 +156,38 @@ pub fn processWaitPid(process: *Process, pid: linux.pid_t, regs: *Process.UserRe
     return null;
 }
 
+pub fn wakeProcessesWaitingForFutex(
+    uaddr: usize,
+    mask: u32,
+    num: u32,
+) u32 {
+    if (num == 0)
+        return 0;
+
+    var woken_up: u32 = 0;
+    for (processes.items) |process| {
+        if (process.state == .waiting_for_futex) {
+            const futex = process.state.waiting_for_futex;
+            if (futex.uaddr == uaddr and futex.mask & mask != 0) {
+                // print("waking up from futex process {}\n", .{process.pid});
+                process.state = .active;
+                process.user_regs.rax = 0;
+                woken_up += 1;
+                if (woken_up == num)
+                    break;
+            }
+        }
+    }
+    return woken_up;
+}
+
 fn nextProcess() void {
+    const prev_idx = active_idx;
     active_idx = (active_idx + 1) % processes.items.len;
     while (processes.items[active_idx].state != .active) {
         active_idx = (active_idx + 1) % processes.items.len;
+        if (active_idx == prev_idx + 1)
+            @panic("deadlock: no active process");
     }
 }
 

@@ -66,6 +66,7 @@ fn sys_clone(
         std.mem.copy(Process.Sigaction, tmp, self.signal_handlers);
         break :blk tmp;
     };
+    const clear_child_tid_ptr = if (flags & linux.CLONE.CHILD_CLEARTID != 0) child_tid_ptr.? else null;
 
     // const stack = try self.allocator.allocAdvanced(u8, std.mem.page_size, std.mem.page_size, .at_least);
     // var kernel_rsp = @ptrToInt(stack.ptr + stack.len);
@@ -95,6 +96,8 @@ fn sys_clone(
         .fs_base = fs_base,
         .blocked_signals = self.blocked_signals,
         .signal_handlers = signal_handlers,
+        .robust_list_head = self.robust_list_head,
+        .clear_child_tid_ptr = clear_child_tid_ptr,
     };
     new_process.user_regs.rax = 0;
     if (stack_ptr) |stack| {
@@ -117,7 +120,7 @@ fn sys_clone(
         try mem.safe.copyToUserSingle(linux.pid_t, parent_tid_ptr.?, &new_process.pid);
     }
 
-    common.print("process {} cloned, new pid {}\n", .{ self.pid, new_process.pid });
+    // common.print("process {} cloned, new pid {}\n", .{ self.pid, new_process.pid });
     return new_process.pid;
 }
 
