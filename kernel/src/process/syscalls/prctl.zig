@@ -6,9 +6,11 @@ const TODO = @import("../../common.zig").TODO;
 const cast = std.zig.c_translation.cast;
 
 fn sys_arch_prctl(self: *Process, code: i32, addr: usize) !void {
-    _ = self;
     switch (code) {
-        linux.ARCH.SET_FS => x86.wrmsr(.FS_BASE, addr),
+        linux.ARCH.SET_FS => {
+            self.fs_base = addr;
+            x86.wrmsr(.FS_BASE, addr);
+        },
         linux.ARCH.SET_GS, linux.ARCH.GET_FS, linux.ARCH.GET_GS => TODO(),
         else => return error.InvalidArgument,
     }

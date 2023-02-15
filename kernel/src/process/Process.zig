@@ -43,6 +43,12 @@ limits: Limits,
 // TODO revisar
 user_regs: UserRegs,
 
+fs_base: usize,
+
+blocked_signals: Sigset,
+
+signal_handlers: *[linux._NSIG]Sigaction,
+
 // // Top of the stack
 // kernel_rsp: usize,
 
@@ -60,6 +66,21 @@ pub const State = union(enum) {
     waiting_for_any_with_pgid: linux.pid_t,
     waiting_for_tgid: linux.pid_t,
     waiting_for_any,
+    exited,
+};
+
+// This is different than linux.sigset_t, which seems to be the definition used by libc.
+// The linux kernel uses simply a u64. We can do a bit better.
+pub const Sigset = std.bit_set.IntegerBitSet(8 * 8);
+comptime {
+    std.debug.assert(@sizeOf(Sigset) == 8);
+}
+
+pub const Sigaction = extern struct {
+    handler: ?*const fn (c_int) align(1) callconv(.C) void,
+    flags: u64,
+    restorer: ?*const fn () callconv(.C) void,
+    mask: Sigset,
 };
 
 pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
@@ -67,9 +88,17 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path = try allocator.alloc(u8, elf_path_len);
     std.mem.copy(u8, elf_path, info.elf_path[0..elf_path_len]);
 
-    const pid = getNextPid();
+    var signal_handlers = try allocator.create([linux._NSIG]Sigaction);
+    signal_handlers.* = [_]Sigaction{.{
+        .handler = linux.SIG.DFL,
+        .flags = 0,
+        .restorer = null,
+        .mask = Process.Sigset.initEmpty(),
+    }} ** linux._NSIG;
 
     const limits = Limits.default();
+    const pid = getNextPid();
+
     return Process{
         .allocator = allocator,
         .pid = pid,
@@ -86,6 +115,9 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
         // .kernel_rsp = 0,
         // .kernel_rsp0 = 0,
         .user_regs = undefined,
+        .fs_base = undefined,
+        .blocked_signals = Process.Sigset.initEmpty(),
+        .signal_handlers = signal_handlers,
     };
 }
 
@@ -149,6 +181,7 @@ const handle_sys_recvfrom = @import("syscalls/socket.zig").handle_sys_recvfrom;
 const handle_sys_sysinfo = @import("syscalls/sysinfo.zig").handle_sys_sysinfo;
 const handle_sys_fcntl = @import("syscalls/fcntl.zig").handle_sys_fcntl;
 const handle_sys_clone = @import("syscalls/clone.zig").handle_sys_clone;
+const handle_sys_clone3 = @import("syscalls/clone.zig").handle_sys_clone3;
 const handle_sys_exit = @import("syscalls/exit.zig").handle_sys_exit;
 const handle_sys_exit_group = @import("syscalls/exit.zig").handle_sys_exit_group;
 const handle_sys_wait4 = @import("syscalls/wait.zig").handle_sys_wait4;
@@ -160,6 +193,8 @@ const handle_sys_getrandom = @import("syscalls/random.zig").handle_sys_getrandom
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
 const handle_sys_futex = @import("syscalls/futex.zig").handle_sys_futex;
 const handle_sys_sched_getaffinity = @import("syscalls/sched.zig").handle_sys_sched_getaffinity;
+const handle_sys_rt_sigaction = @import("syscalls/signals.zig").handle_sys_rt_sigaction;
+const handle_sys_rt_sigprocmask = @import("syscalls/signals.zig").handle_sys_rt_sigprocmask;
 
 pub noinline fn handleSyscall(
     self: *Process,
@@ -220,6 +255,7 @@ pub noinline fn handleSyscall(
         .sysinfo => self.handle_sys_sysinfo(arg0),
         .fcntl => self.handle_sys_fcntl(arg0, arg1, arg2),
         .clone => self.handle_sys_clone(arg0, arg1, arg2, arg3, arg4, regs),
+        .clone3 => self.handle_sys_clone3(arg0, arg1, regs),
         .wait4 => self.handle_sys_wait4(arg0, arg1, arg2, arg3, regs),
         .getpid => self.handle_sys_getpid(),
         .gettid => self.handle_sys_gettid(),
@@ -229,11 +265,11 @@ pub noinline fn handleSyscall(
         .tgkill => self.handle_sys_tgkill(arg0, arg1, arg2, regs),
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5),
         .sched_getaffinity => self.handle_sys_sched_getaffinity(arg0, arg1, arg2),
+        .rt_sigaction => self.handle_sys_rt_sigaction(arg0, arg1, arg2, arg3),
+        .rt_sigprocmask => self.handle_sys_rt_sigprocmask(arg0, arg1, arg2, arg3),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 1000),
         .set_tid_address,
         .set_robust_list,
-        .rt_sigaction,
-        .rt_sigprocmask,
         .sigaltstack,
         .setitimer,
         .madvise,

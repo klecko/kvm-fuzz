@@ -5,6 +5,7 @@ const mem = @import("../../mem/mem.zig");
 const scheduler = @import("../../scheduler.zig");
 const x86 = @import("../../x86/x86.zig");
 const FileDescriptorTable = @import("../FileDescriptorTable.zig");
+const common = @import("../../common.zig");
 const UserPtr = mem.safe.UserPtr;
 const log = std.log.scoped(.sys_clone);
 const assert = std.debug.assert;
@@ -56,10 +57,15 @@ fn sys_clone(
     const tgid = if (flags & linux.CLONE.THREAD != 0) self.tgid else pid;
     const ptgid = if (flags & linux.CLONE.THREAD != 0) self.ptgid else self.tgid;
     const space = if (flags & linux.CLONE.VM != 0) self.space else try self.space.clone();
-    const files = if (flags & linux.CLONE.FILES != 0)
-        self.files.ref.ref()
-    else
-        try FileDescriptorTable.createDefault(self.allocator, self.limits.nofile.hard);
+    const files = if (flags & linux.CLONE.FILES != 0) self.files.ref.ref() else try self.files.clone();
+    const fs_base = if (flags & linux.CLONE.SETTLS != 0) tls else self.fs_base;
+    const signal_handlers = if (flags & linux.CLONE.SIGHAND != 0)
+        self.signal_handlers
+    else blk: {
+        var tmp = try self.allocator.create([linux._NSIG]Process.Sigaction);
+        std.mem.copy(Process.Sigaction, tmp, self.signal_handlers);
+        break :blk tmp;
+    };
 
     // const stack = try self.allocator.allocAdvanced(u8, std.mem.page_size, std.mem.page_size, .at_least);
     // var kernel_rsp = @ptrToInt(stack.ptr + stack.len);
@@ -86,6 +92,9 @@ fn sys_clone(
         // .kernel_rsp = kernel_rsp,
         // .kernel_rsp0 = kernel_rsp,
         .user_regs = regs.*,
+        .fs_base = fs_base,
+        .blocked_signals = self.blocked_signals,
+        .signal_handlers = signal_handlers,
     };
     new_process.user_regs.rax = 0;
     if (stack_ptr) |stack| {
@@ -94,7 +103,7 @@ fn sys_clone(
     try scheduler.addProcess(new_process);
 
     if (flags & linux.CLONE.CHILD_SETTID != 0) {
-        // This is thought to be done in the new process in before returning to
+        // This is thought to be done in the new process before returning to
         // userspace. As we can't do that because we are directly returning to
         // userspace, do it now loading its address space temporary.
         assert(child_tid_ptr != null);
@@ -108,10 +117,7 @@ fn sys_clone(
         try mem.safe.copyToUserSingle(linux.pid_t, parent_tid_ptr.?, &new_process.pid);
     }
 
-    if (flags & linux.CLONE.SETTLS != 0) {
-        x86.wrmsr(.FS_BASE, tls);
-    }
-
+    common.print("process {} cloned, new pid {}\n", .{ self.pid, new_process.pid });
     return new_process.pid;
 }
 
@@ -129,6 +135,32 @@ pub fn handle_sys_clone(
     const parent_tid_ptr = UserPtr(*linux.pid_t).fromFlatMaybeNull(arg2);
     const child_tid_ptr = UserPtr(*linux.pid_t).fromFlatMaybeNull(arg3);
     const tls = arg4;
-    const ret = sys_clone(self, flags, stack_ptr, parent_tid_ptr, child_tid_ptr, tls, regs) catch unreachable;
+    const ret = try sys_clone(self, flags, stack_ptr, parent_tid_ptr, child_tid_ptr, tls, regs);
     return cast(usize, ret);
+}
+
+pub fn handle_sys_clone3(
+    self: *Process,
+    arg0: usize,
+    arg1: usize,
+    regs: *Process.UserRegs,
+) !usize {
+    const cl_args_ptr = try UserPtr(*const linux.clone_args).fromFlat(arg0);
+    const size = arg1;
+
+    std.debug.assert(@sizeOf(linux.clone_args) == size);
+    var args: linux.clone_args = undefined;
+    try mem.safe.copyFromUserSingle(linux.clone_args, &args, cl_args_ptr);
+
+    // TODO: there are probably many options we are ignoring here
+
+    return handle_sys_clone(
+        self,
+        args.flags,
+        args.stack + args.stack_size,
+        args.parent_tid,
+        args.child_tid,
+        args.tls,
+        regs,
+    );
 }

@@ -15,25 +15,12 @@ fn sys_wait4(
     options: i32,
     rusage: ?UserPtr(*linux.rusage),
     regs: *Process.UserRegs,
-) !linux.pid_t {
+) !?linux.pid_t {
     _ = wstatus;
     _ = options;
     _ = rusage;
 
-    self.state = if (pid < -1)
-        State{ .waiting_for_any_with_pgid = -pid }
-    else if (pid == -1)
-        State{ .waiting_for_any = {} }
-    else if (pid == 0)
-        State{ .waiting_for_any_with_pgid = self.pgid }
-    else
-        State{ .waiting_for_tgid = pid };
-
-    // TODO: process we are waiting for may have already exited, leading to deadlock
-    scheduler.schedule(regs);
-    if (scheduler.current() == self)
-        panic("deadlock\n", .{});
-    return 0;
+    return try scheduler.processWaitPid(self, pid, regs);
 }
 
 pub fn handle_sys_wait4(
@@ -48,6 +35,12 @@ pub fn handle_sys_wait4(
     const wstatus = UserPtr(*i32).fromFlatMaybeNull(arg1);
     const options = cast(i32, arg2);
     const rusage = UserPtr(*linux.rusage).fromFlatMaybeNull(arg3);
-    const ret = try sys_wait4(self, pid, wstatus, options, rusage, regs);
-    return cast(usize, ret);
+    if (try sys_wait4(self, pid, wstatus, options, rusage, regs)) |ret| {
+        // The process we waited for has already exited, we didn't switch
+        // processes and can continue.
+        return cast(usize, ret);
+    } else {
+        // We have switched processes, don't overwrite rax (same as in sys_exit_group).
+        return regs.rax;
+    }
 }

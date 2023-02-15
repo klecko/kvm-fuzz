@@ -23,16 +23,19 @@ const HashMap = std.AutoHashMap(linux.fd_t, *fs.FileDescription);
 const RefCounter = utils.RefCounter(FileDescriptorTable);
 
 fn destroy(self: *FileDescriptorTable) void {
-    // Unref every FileDescription in the table
-    var iter = self.table.valueIterator();
+    // Deinit and free the object
+    destroyTable(&self.table);
+    self.cloexec.deinit();
+    self.ref.allocator.destroy(self);
+}
+
+fn destroyTable(table: *HashMap) void {
+    // Unref every FileDescription in the table and deinit the table itself
+    var iter = table.valueIterator();
     while (iter.next()) |file_ptr| {
         file_ptr.*.ref.unref();
     }
-
-    // Deinit and free the object
-    self.table.deinit();
-    self.cloexec.deinit();
-    self.ref.allocator.destroy(self);
+    table.deinit();
 }
 
 pub fn createDefault(allocator: Allocator, limit_fd: usize) !*FileDescriptorTable {
@@ -79,4 +82,32 @@ pub fn setCloexecValue(self: *FileDescriptorTable, fd: linux.fd_t, value: bool) 
 
 pub fn isCloexecSet(self: *FileDescriptorTable, fd: linux.fd_t) bool {
     return self.cloexec.isSet(cast(usize, fd));
+}
+
+pub fn clone(self: *const FileDescriptorTable) !*FileDescriptorTable {
+    const allocator = self.ref.allocator;
+    const ret = try allocator.create(FileDescriptorTable);
+    errdefer allocator.destroy(ret);
+
+    var cloexec = try self.cloexec.clone(allocator);
+    errdefer cloexec.deinit();
+
+    // Clone table, taking a reference to each file. If we fail at some iteration,
+    // we first unref the file we couldn't insert, and then destroyTable() unrefs
+    // every other file we inserted.
+    var table = HashMap.init(allocator);
+    errdefer destroyTable(&table);
+    var iter = self.table.iterator();
+    while (iter.next()) |entry| {
+        const file = entry.value_ptr.*.ref.ref();
+        errdefer file.ref.unref();
+        try table.put(entry.key_ptr.*, file);
+    }
+
+    ret.* = FileDescriptorTable{
+        .table = table,
+        .ref = RefCounter.init(allocator, destroy),
+        .cloexec = cloexec,
+    };
+    return ret;
 }

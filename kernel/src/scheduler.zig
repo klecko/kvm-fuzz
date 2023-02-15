@@ -3,6 +3,7 @@ const common = @import("common.zig");
 const print = common.print;
 const panic = common.panic;
 const Process = @import("process/Process.zig");
+const State = Process.State;
 const x86 = @import("x86/x86.zig");
 const mem = @import("mem/mem.zig");
 const hypercalls = @import("hypercalls.zig");
@@ -27,27 +28,55 @@ pub fn addProcess(process: *Process) !void {
     try processes.append(process);
 }
 
-pub fn removeActiveProcessAndSchedule(frame: *Process.UserRegs) void {
-    // Check if this is the last process
-    if (processes.items.len == 1) {
-        hypercalls.endRun(.Exit, null);
-    }
+fn areChildAndParent(child: *const Process, parent: *const Process) bool {
+    return child.ptgid == parent.tgid;
+}
 
+// Returns whether `process` should be waken up when `removing_process` finishes
+fn shouldWakeUp(process: *const Process, removing_process: *const Process) bool {
+    // print("shouldWakeUp {}\n", .{process.state});
+    return areChildAndParent(removing_process, process) and switch (process.state) {
+        .waiting_for_any_with_pgid => |pgid| pgid == removing_process.pgid,
+        .waiting_for_tgid => |tgid| tgid == removing_process.tgid,
+        .waiting_for_any => true,
+        else => false,
+    };
+}
+
+fn removeProcess(idx: usize) void {
+    // TODO: free it?
+    print("removing process {}\n", .{processes.items[idx].pid});
+    _ = processes.orderedRemove(idx);
+    std.debug.assert(idx != active_idx);
+    if (active_idx > idx)
+        active_idx -= 1;
+}
+
+pub fn exitCurrentProcessAndSchedule(frame: *Process.UserRegs) void {
     const removing_process = current();
     const removing_process_idx = active_idx;
-    print("removing process {}\n", .{removing_process.pid});
+    print("exiting process {}\n", .{removing_process.pid});
 
     // First wake up other processes
-    for (processes.items) |proc| {
-        const should_wakeup = switch (proc.state) {
-            .waiting_for_any_with_pgid => |pgid| pgid == removing_process.pgid,
-            .waiting_for_tgid => |tgid| tgid == removing_process.tgid,
-            .waiting_for_any => proc.tgid == removing_process.ptgid,
-            else => false,
-        };
-        if (should_wakeup) {
-            print("waking up {}\n", .{proc.pid});
-            proc.state = .active;
+    var was_waited_for = false;
+    for (processes.items) |process| {
+        if (shouldWakeUp(process, removing_process)) {
+            was_waited_for = true;
+            print("waking up {}\n", .{process.pid});
+            process.state = .active;
+            // Set rax for wait syscall return value
+            process.user_regs.rax = @intCast(usize, removing_process.pid);
+        }
+    }
+
+    // Check if this is the last active process
+    if (!was_waited_for) {
+        var active_processes: usize = 0;
+        for (processes.items) |process| {
+            if (process.state == .active) active_processes += 1;
+        }
+        if (active_processes == 1) {
+            hypercalls.endRun(.Exit, null);
         }
     }
 
@@ -56,18 +85,66 @@ pub fn removeActiveProcessAndSchedule(frame: *Process.UserRegs) void {
     if (current() == removing_process)
         panic("deadlock\n", .{});
 
-    // Remove process from list
-    _ = processes.orderedRemove(removing_process_idx);
-
-    // Update active_idx so it points to the same process we just switched to
-    if (active_idx > removing_process_idx)
-        active_idx -= 1;
+    // Remove process from list only if it was waited for. Otherwise keep it
+    // with exited state, in case any other process waits for it.
+    if (was_waited_for) {
+        removeProcess(removing_process_idx);
+    } else {
+        removing_process.state = .exited;
+    }
 
     // const idx = for (processes.items) |proc, i| {
     //     if (proc == process) break i;
     // } else panic("attempt to remove not found process\n", .{});
     // _ = processes.orderedRemove(idx);
 
+}
+
+// Implements process waiting for a given pid, with semantics as in wait4 syscall.
+// If the process we waited for has already exited, it returns its tgid and it
+// doesn't schedule. Otherwise, it returns null, sets process state to waiting
+// and schedules.
+pub fn processWaitPid(process: *Process, pid: linux.pid_t, regs: *Process.UserRegs) !?linux.pid_t {
+    std.debug.assert(current() == process);
+
+    // Update state
+    process.state = if (pid < -1)
+        State{ .waiting_for_any_with_pgid = -pid }
+    else if (pid == -1)
+        State{ .waiting_for_any = {} }
+    else if (pid == 0)
+        State{ .waiting_for_any_with_pgid = process.pgid }
+    else
+        State{ .waiting_for_tgid = pid };
+    errdefer process.state = .active;
+
+    // Make sure there's some wakeable child
+    blk: {
+        for (processes.items) |child| {
+            if (shouldWakeUp(process, child)) break :blk;
+        }
+        return error.NoChild;
+    }
+
+    // Check if the process we are waiting for has already exited
+    for (processes.items) |exited_process, i| {
+        if (exited_process.state != .exited) continue;
+        if (shouldWakeUp(process, exited_process)) {
+            // Actually remove exited process, so we can't wait for it twice
+            const ret = exited_process.tgid;
+            removeProcess(i);
+
+            // No need to sleep
+            process.state = .active;
+            return ret;
+        }
+    }
+
+    // Schedule
+    schedule(regs);
+    if (current() == process)
+        panic("deadlock\n", .{});
+    return null;
 }
 
 fn nextProcess() void {
@@ -133,6 +210,11 @@ pub fn schedule(frame: anytype) void {
         // if (cur.space.page_table.ptl4 != next.space.page_table.ptl4) {
         // log.info("switch address space\n", .{});
         next.space.load();
+    }
+
+    // Change fs base if needed
+    if (cur.fs_base != next.fs_base) {
+        x86.wrmsr(.FS_BASE, next.fs_base);
     }
 
     // switchTasksAsm();

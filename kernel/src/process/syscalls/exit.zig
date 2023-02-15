@@ -17,7 +17,7 @@ pub fn handle_sys_exit(self: *Process, arg0: usize, regs: *Process.UserRegs) usi
 fn sys_exit_group(self: *Process, status: i32, regs: *Process.UserRegs) usize {
     _ = status;
     _ = self;
-    scheduler.removeActiveProcessAndSchedule(regs);
+    scheduler.exitCurrentProcessAndSchedule(regs);
 
     // Regs have been modified. We don't want to modify rax when returning a
     // a value, so just return the current value.

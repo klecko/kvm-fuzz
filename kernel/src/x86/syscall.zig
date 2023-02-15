@@ -40,7 +40,7 @@ fn syscallEntry() callconv(.Naked) void {
         \\push %%r14
         \\push %%r13
         \\push %%r12
-        \\push $0    // overwritten by rflags
+        \\push $0    // r11, overwritten by rflags
         \\push %%r10
         \\push %%r9
         \\push %%r8
@@ -49,7 +49,7 @@ fn syscallEntry() callconv(.Naked) void {
         \\push %%rdi
         \\push %%rsi
         \\push %%rdx
-        \\push $0    // overwritten by rip
+        \\push $0    // rcx, overwritten by rip
         \\push %%rbx
         \\push %%rax
 

@@ -3,6 +3,7 @@ const Process = @import("../Process.zig");
 const linux = @import("../../linux.zig");
 const scheduler = @import("../../scheduler.zig");
 const hypercalls = @import("../../hypercalls.zig");
+const common = @import("../../common.zig");
 const x86 = @import("../../x86/x86.zig");
 const cast = std.zig.c_translation.cast;
 
@@ -14,7 +15,10 @@ fn sys_tgkill(
     regs: *Process.UserRegs,
 ) !void {
     _ = self;
-    _ = sig;
+    if (sig != linux.SIG.ABRT) {
+        common.panic("tgkill with signal {}\n", .{sig});
+    }
+
     const process = scheduler.processWithPID(tid) orelse return error.Search;
     if (process.tgid != tgid) return error.Search;
     const fault = hypercalls.FaultInfo{

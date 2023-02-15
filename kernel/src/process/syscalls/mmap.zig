@@ -138,9 +138,8 @@ pub fn handle_sys_mmap(
     const fd = cast(linux.fd_t, arg4);
     const offset = arg5;
     const ret = sys_mmap(self, addr, length, prot, flags, fd, offset, regs);
-    // TODO fixme
-    if (ret) |_| {} else |err| if (err == error.OutOfMemory) {
-        log.warn("mmap returned ENOMEM\n", .{});
+    if (ret == error.OutOfMemory) {
+        log.warn("mmap returned ENOMEM when asking for {}M\n", .{length / (1024 * 1024)});
     }
     return ret;
 }

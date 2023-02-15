@@ -24,7 +24,27 @@ pub const sysinfo = extern struct {
     mem_unit: u32,
 };
 
+pub const clone_args = extern struct {
+    flags: u64,
+    pidfd: u64,
+    child_tid: u64,
+    parent_tid: u64,
+    exit_signal: u64,
+    stack: u64,
+    stack_size: u64,
+    tls: u64,
+    set_tid: u64,
+    set_tid_size: u64,
+    cgroup: u64,
+};
+
 pub const iovec = std.os.iovec;
+
+// Zig defines std.os.linux.NSIG as 65, but I believe it's wrong. It may be due
+// to signals starting at 1 instead of 0.
+// https://elixir.bootlin.com/linux/v6.1.12/source/arch/x86/include/asm/signal.h#L11
+pub const _NSIG = 64;
+pub const NSIG = undefined; // generate compiler error when using NSIG, since it's also defined by zig stdlib
 
 pub fn errorToErrno(err: anyerror) usize {
     return errno(switch (err) {
@@ -39,6 +59,7 @@ pub fn errorToErrno(err: anyerror) usize {
         error.NoFdAvailable => linux.E.MFILE,
         error.PermissionDenied => linux.E.ACCES,
         error.Search => linux.E.SRCH,
+        error.NoChild => linux.E.CHILD,
         else => panic("unhandled error at errorToErrno: {}\n", .{err}),
     });
 }
