@@ -11,29 +11,7 @@ const log = std.log.scoped(.sys_clone);
 const assert = std.debug.assert;
 const cast = std.zig.c_translation.cast;
 
-// const Regs = struct {
-//     rax: usize = 0,
-//     rbx: usize = 0,
-//     rcx: usize = 0,
-//     rdx: usize = 0,
-//     rbp: usize = 0,
-//     rsi: usize = 0,
-//     rdi: usize = 0,
-//     r8: usize = 0,
-//     r9: usize = 0,
-//     r10: usize = 0,
-//     r11: usize = 0,
-//     r12: usize = 0,
-//     r13: usize = 0,
-//     r14: usize = 0,
-//     r15: usize = 0,
-//     rip: usize = 0,
-// };
-
-// fn foo() void {
-//     print("Hi!!!!\n", .{});
-//     // scheduler.schedule();
-// }
+const RETURN_TO_CHILD = true;
 
 fn sys_clone(
     self: *Process,
@@ -51,30 +29,36 @@ fn sys_clone(
 
     // thread: 0x3d0f00 0x7ffff87fddf0 0x7ffff87fe9d0 0x7ffff87fe9d0 0x7ffff87fe700
     // fork:   0x1200011 0x0 0x0 0x6b3bd0 0x0
+    const share_signal_handlers = flags & linux.CLONE.SIGHAND != 0;
+    const clear_signal_handlers = flags & linux.CLONE.CLEAR_SIGHAND != 0;
+    const share_vm = flags & linux.CLONE.VM != 0;
+    const share_files = flags & linux.CLONE.FILES != 0;
+    const is_thread = flags & linux.CLONE.THREAD != 0;
+
+    if (share_signal_handlers and clear_signal_handlers)
+        return error.InvalidArgument;
+    if (share_signal_handlers and !share_vm)
+        return error.InvalidArgument;
+    if (is_thread and !share_signal_handlers)
+        return error.InvalidArgument;
 
     // TODO errdefer
     const pid = Process.getNextPid();
-    const tgid = if (flags & linux.CLONE.THREAD != 0) self.tgid else pid;
-    const ptgid = if (flags & linux.CLONE.THREAD != 0) self.ptgid else self.tgid;
-    const space = if (flags & linux.CLONE.VM != 0) self.space else try self.space.clone();
-    const files = if (flags & linux.CLONE.FILES != 0) self.files.ref.ref() else try self.files.clone();
+    const tgid = if (is_thread) self.tgid else pid;
+    const ptgid = if (is_thread) self.ptgid else self.tgid;
+    const space = if (share_vm) self.space else try self.space.clone();
+    const files = if (share_files) self.files.ref.ref() else try self.files.clone();
     const fs_base = if (flags & linux.CLONE.SETTLS != 0) tls else self.fs_base;
-    const signal_handlers = if (flags & linux.CLONE.SIGHAND != 0)
-        self.signal_handlers
+    const signal_handlers = if (share_signal_handlers)
+        self.signal_handlers // TODO ref counting
+    else if (clear_signal_handlers)
+        common.TODO()
     else blk: {
         var tmp = try self.allocator.create([linux._NSIG]Process.Sigaction);
         std.mem.copy(Process.Sigaction, tmp, self.signal_handlers);
         break :blk tmp;
     };
     const clear_child_tid_ptr = if (flags & linux.CLONE.CHILD_CLEARTID != 0) child_tid_ptr.? else null;
-
-    // const stack = try self.allocator.allocAdvanced(u8, std.mem.page_size, std.mem.page_size, .at_least);
-    // var kernel_rsp = @ptrToInt(stack.ptr + stack.len);
-    // const regs = Regs{
-    //     .rip = @ptrToInt(foo),
-    // };
-    // kernel_rsp -= @sizeOf(Regs);
-    // @intToPtr(*Regs, kernel_rsp).* = regs;
 
     var new_process = try self.allocator.create(Process);
     new_process.* = Process{
@@ -99,29 +83,37 @@ fn sys_clone(
         .robust_list_head = self.robust_list_head,
         .clear_child_tid_ptr = clear_child_tid_ptr,
     };
-    new_process.user_regs.rax = 0;
     if (stack_ptr) |stack| {
         new_process.user_regs.rsp = stack.flat();
     }
     try scheduler.addProcess(new_process);
-
-    if (flags & linux.CLONE.CHILD_SETTID != 0) {
-        // This is thought to be done in the new process before returning to
-        // userspace. As we can't do that because we are directly returning to
-        // userspace, do it now loading its address space temporary.
-        assert(child_tid_ptr != null);
-        new_process.space.load();
-        try mem.safe.copyToUserSingle(linux.pid_t, child_tid_ptr.?, &new_process.pid);
-        self.space.load();
-    }
 
     if (flags & linux.CLONE.PARENT_SETTID != 0) {
         assert(parent_tid_ptr != null);
         try mem.safe.copyToUserSingle(linux.pid_t, parent_tid_ptr.?, &new_process.pid);
     }
 
+    if (RETURN_TO_CHILD) {
+        scheduler.switchToProcess(new_process, regs);
+        self.user_regs.rax = cast(usize, new_process.pid); // return value for parent
+    } else {
+        new_process.user_regs.rax = 0; // return value for child
+    }
+
+    if (flags & linux.CLONE.CHILD_SETTID != 0) {
+        // We have to write the pid to the child address space. If we are
+        // returning to the parent, then we are in the parent context and
+        // therefore we need to load the child address space temporarily to
+        // write the value. If we are returning to the child, at this point we
+        // are already in the child context, so we can just write it.
+        assert(child_tid_ptr != null);
+        if (!RETURN_TO_CHILD) new_process.space.load();
+        try mem.safe.copyToUserSingle(linux.pid_t, child_tid_ptr.?, &new_process.pid);
+        if (!RETURN_TO_CHILD) self.space.load();
+    }
+
     // common.print("process {} cloned, new pid {}\n", .{ self.pid, new_process.pid });
-    return new_process.pid;
+    return if (RETURN_TO_CHILD) 0 else new_process.pid;
 }
 
 pub fn handle_sys_clone(

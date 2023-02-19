@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Process = @import("../Process.zig");
 const common = @import("../../common.zig");
+const utils = @import("../../utils/utils.zig");
 const panic = common.panic;
 const linux = @import("../../linux.zig");
 const mem = @import("../../mem/mem.zig");
@@ -139,7 +140,7 @@ pub fn handle_sys_mmap(
     const offset = arg5;
     const ret = sys_mmap(self, addr, length, prot, flags, fd, offset, regs);
     if (ret == error.OutOfMemory) {
-        log.warn("mmap returned ENOMEM when asking for {}M\n", .{length / (1024 * 1024)});
+        log.warn("mmap returned ENOMEM when asking for {}\n", .{utils.fmtNumberAsMemory(length)});
     }
     return ret;
 }

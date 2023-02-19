@@ -4,7 +4,7 @@ set -e
 zig build syscalls_tests
 
 function socket_test() {
-	sleep 2
+	sleep 3
 	echo "hello" | nc localhost 12345
 	echo "hello" | nc localhost 12345
 }

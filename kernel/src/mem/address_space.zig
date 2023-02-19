@@ -171,12 +171,15 @@ pub const AddressSpace = struct {
         }
     }
 
-    pub fn clone(self: AddressSpace) !AddressSpace {
+    // TODO: set self as constant when upgrading zig
+    pub fn clone(self: *AddressSpace) !AddressSpace {
+        const page_table = try self.page_table.clone();
+        //errdefer TODO
+        const user_mappings = try self.user_mappings.clone();
         return AddressSpace{
             .allocator = self.allocator,
-            .page_table = try PageTable.clone(self.page_table),
-            // TODO: fixme
-            .user_mappings = self.user_mappings, //mem.RegionManager.init(self.allocator),
+            .page_table = page_table,
+            .user_mappings = user_mappings,
         };
     }
 };

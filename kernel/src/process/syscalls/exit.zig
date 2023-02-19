@@ -12,8 +12,6 @@ const cast = std.zig.c_translation.cast;
 // }
 
 fn sys_exit_group(self: *Process, status: i32, regs: *Process.UserRegs) usize {
-    _ = status;
-
     self.wakeRobustFutexes();
 
     // Set with CLONE_CHILD_CLEARTID
@@ -23,7 +21,7 @@ fn sys_exit_group(self: *Process, status: i32, regs: *Process.UserRegs) usize {
         _ = scheduler.wakeProcessesWaitingForFutex(ptr.flat(), linux.FUTEX_BITSET_MATCH_ANY, 1);
     }
 
-    scheduler.exitCurrentProcessAndSchedule(regs);
+    scheduler.exitCurrentProcessAndSchedule(status, regs);
 
     // Regs have been modified. We don't want to modify rax when returning a
     // a value, so just return the current value.

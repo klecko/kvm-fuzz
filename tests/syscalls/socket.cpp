@@ -6,10 +6,13 @@
 #include <fcntl.h>
 #include "common.h"
 
-// Reading input from a socket
-// In order to run this test in linux, one must run
-//     echo hello | nc localhost 12345
-// in a terminal twice
+/* Reading input from a socket.
+ * In order to run this test in linux, one must run
+ *     echo hello | nc localhost 12345
+ * in a terminal twice. The script run_tests_on_linux.sh does this automatically
+ * after a few seconds. If the test hangs, you probably need to increase the
+ * sleep in the script.
+ */
 
 TEST_CASE("socket") {
 	printf("Socket test\n");

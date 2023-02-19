@@ -16,11 +16,10 @@ fn sys_wait4(
     rusage: ?UserPtr(*linux.rusage),
     regs: *Process.UserRegs,
 ) !?linux.pid_t {
-    _ = wstatus;
     _ = options;
     _ = rusage;
 
-    return try scheduler.processWaitPid(self, pid, regs);
+    return try scheduler.processWaitPid(self, pid, wstatus, regs);
 }
 
 pub fn handle_sys_wait4(

@@ -206,7 +206,7 @@ pub const PageTable = struct {
     /// Map a virtual address to a physical address with given options.
     /// Can't return error.AlreadyMapped if options.discardAlreadyMapped is set.
     pub fn mapPage(self: *PageTable, virt: usize, phys: usize, options: MappingOptions) MappingError!void {
-        // log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
+        log.debug("mapping 0x{x} to 0x{x}\n", .{ virt, phys });
         // Make sure addresses are aligned.
         assert(mem.isPageAligned(virt));
         assert(mem.isPageAligned(phys));
@@ -243,12 +243,12 @@ pub const PageTable = struct {
         if (!pte.isPresent())
             return UnmappingError.NotMapped;
 
-        // TODO: should we be freeing here?
+        // TODO: ref counting for freeing the frame
         // Free frame and clear PTE
-        mem.pmm.freeFrame(pte.frameBase());
+        log.debug("unmapped 0x{x} (phys 0x{x})\n", .{ virt, pte.frameBase() });
+        // mem.pmm.freeFrame(pte.frameBase());
         pte.clear();
         x86.flush_tlb_entry(virt);
-        log.debug("unmapped 0x{x}\n", .{virt});
     }
 
     pub const SetPermsError = error{NotMapped};
@@ -374,8 +374,10 @@ pub const PageTable = struct {
         const copy = mem.pmm.physToVirt(RawType, page_table_frame);
 
         for (table) |*entry, i| {
-            if (!entry.isPresent())
+            if (!entry.isPresent()) {
+                assert(entry.raw == 0);
                 continue;
+            }
             var frame = if (entry.isShared())
                 entry.frameBase()
             else if (level > 1)

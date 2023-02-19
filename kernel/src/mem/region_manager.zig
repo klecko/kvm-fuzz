@@ -18,6 +18,12 @@ pub const RegionManager = struct {
     /// Array of regions ordered by addr_start
     regions: std.ArrayList(Region),
 
+    pub fn dump(self: RegionManager) void {
+        for (self.regions.items) |region| {
+            common.print("0x{x} - 0x{x}\n", .{ region.addr_start, region.addr_end });
+        }
+    }
+
     pub fn initCheckNotMapped(
         allocator: Allocator,
         addr_start: usize,
@@ -46,6 +52,14 @@ pub const RegionManager = struct {
 
     pub fn deinit(self: RegionManager) void {
         self.regions.deinit();
+    }
+
+    // TODO: set self as constant when upgrading zig
+    pub fn clone(self: *RegionManager) !RegionManager {
+        return .{
+            .total = self.total,
+            .regions = try self.regions.clone(),
+        };
     }
 
     fn regionInsideTotal(self: RegionManager, addr_start: usize, addr_end: usize) ?Region {

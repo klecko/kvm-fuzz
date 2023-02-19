@@ -42,7 +42,7 @@ fn futexWait(
         .uaddr = uaddr.flat(),
         .mask = mask,
     };
-    self.state = Process.State{ .waiting_for_futex = futex };
+    self.state = Process.State{ .futex = futex };
 
     scheduler.schedule(regs);
     if (scheduler.current() == self)
@@ -54,7 +54,7 @@ fn futexWake(
     uaddr: UserPtr(*const u32),
     val: u32,
     mask: u32,
-) u32 {
+) usize {
     _ = self;
     std.debug.assert(mask != 0);
     return scheduler.wakeProcessesWaitingForFutex(uaddr.flat(), mask, val);
@@ -69,7 +69,7 @@ fn sys_futex(
     uaddr2: ?UserPtr(*u32),
     val3: u32,
     regs: *Process.UserRegs,
-) !u32 {
+) !usize {
     // TODO: timeouts
     _ = arg;
     _ = uaddr2;
@@ -78,13 +78,13 @@ fn sys_futex(
     switch (op) {
         linux.FUTEX.WAIT => {
             try futexWait(self, uaddr, val, linux.FUTEX_BITSET_MATCH_ANY, regs);
-            return 0;
+            return regs.rax; // we have switched: don't overwrite rax
         },
         linux.FUTEX.WAIT_BITSET => {
             if (val3 == 0)
                 return error.InvalidArgument;
             try futexWait(self, uaddr, val, val3, regs);
-            return 0;
+            return regs.rax; // we have switched: don't overwrite rax
         },
         linux.FUTEX.WAKE => {
             return futexWake(self, uaddr, val, linux.FUTEX_BITSET_MATCH_ANY);

@@ -34,100 +34,111 @@ fn areChildAndParent(child: *const Process, parent: *const Process) bool {
 
 // Returns whether `process` should be waken up when `removing_process` finishes
 fn shouldWakeUp(process: *const Process, removing_process: *const Process) bool {
-    // print("shouldWakeUp {}\n", .{process.state});
-    return areChildAndParent(removing_process, process) and switch (process.state) {
-        .waiting_for_any_with_pgid => |pgid| pgid == removing_process.pgid,
-        .waiting_for_tgid => |tgid| tgid == removing_process.tgid,
-        .waiting_for_any => true,
-        else => false,
-    };
+    if (!areChildAndParent(removing_process, process))
+        return false;
+    if (process.state != .waiting)
+        return false;
+    const pid_wait = process.state.waiting.pid;
+    return if (pid_wait < -1)
+        removing_process.pgid == -pid_wait
+    else if (pid_wait == -1)
+        true
+    else if (pid_wait == 0)
+        removing_process.pgid == process.pgid
+    else
+        removing_process.tgid == pid_wait;
 }
 
 fn removeProcess(idx: usize) void {
     // TODO: free it?
-    print("removing process {}\n", .{processes.items[idx].pid});
+    log.debug("removing process {}\n", .{processes.items[idx].pid});
     _ = processes.orderedRemove(idx);
     std.debug.assert(idx != active_idx);
     if (active_idx > idx)
         active_idx -= 1;
 }
 
-pub fn exitCurrentProcessAndSchedule(frame: *Process.UserRegs) void {
+fn writeExitCode(exit_code: i32, wstatus_ptr: ?mem.safe.UserPtr(*i32)) void {
+    if (wstatus_ptr) |ptr| {
+        const wstatus: i32 = exit_code << 8;
+        mem.safe.copyToUserSingle(i32, ptr, &wstatus) catch {};
+    }
+}
+
+pub fn exitCurrentProcessAndSchedule(exit_code: i32, frame: *Process.UserRegs) void {
     const removing_process = current();
     const removing_process_idx = active_idx;
+    std.debug.assert(removing_process.state == .active);
     // print("exiting process {}\n", .{removing_process.pid});
 
-    // First wake up other processes
-    var was_waited_for = false;
+    // Check if there's a process waiting for us. If that's the case, wake it up
+    // and switch to it.
     for (processes.items) |process| {
         if (shouldWakeUp(process, removing_process)) {
-            was_waited_for = true;
-            // print("waking up {}\n", .{process.pid});
-            process.state = .active;
+            log.debug("waking up {}\n", .{process.pid});
+
             // Set rax for wait syscall return value
             process.user_regs.rax = @intCast(usize, removing_process.pid);
+
+            // Switch
+            const wstatus_ptr = process.state.waiting.wstatus_ptr;
+            process.state = .active;
+            switchToProcess(process, frame);
+
+            // Now that we are in the waken up process context, write status
+            writeExitCode(exit_code, wstatus_ptr);
+
+            // Remove the process that exited, since it has already been waited for
+            removeProcess(removing_process_idx);
+            return;
         }
     }
 
-    // Check if this is the last active process
-    if (!was_waited_for) {
-        var active_processes: usize = 0;
-        for (processes.items) |process| {
-            if (process.state == .active) active_processes += 1;
-        }
-        if (active_processes == 1) {
-            for (processes.items) |stuck_process| {
-                if (stuck_process.state != .active) {
-                    if (stuck_process.state == .exited) {
+    // Check if this is the last active process. In that case, check if there's
+    // any stuck or zombie process and end the run.
+    var active_processes: usize = 0;
+    for (processes.items) |process| {
+        if (process.state == .active) active_processes += 1;
+    }
+    if (active_processes == 1) {
+        for (processes.items) |stuck_process| {
+            switch (stuck_process.state) {
+                .exited => {
+                    // Emit warning if it's a thread from a different process
+                    if (stuck_process.tgid != removing_process.tgid)
                         log.warn("zombie process {}, tgid {}\n", .{ stuck_process.pid, stuck_process.tgid });
-                    } else {
-                        log.warn("stuck process {}, state {}\n", .{ stuck_process.pid, stuck_process.state });
-                    }
-                }
+                },
+                .active => {}, // this is removing_process
+                else => log.warn("stuck process {}, state {}\n", .{ stuck_process.pid, stuck_process.state }),
             }
-            hypercalls.endRun(.Exit, null);
         }
+        hypercalls.endRun(.Exit, null);
     }
 
-    // Now schedule and check deadlock
+    // Keep the process with exited state, in case any other process waits for it
+    removing_process.state = .{ .exited = exit_code };
+
+    // Finally, schedule
     schedule(frame);
-    if (current() == removing_process)
-        panic("deadlock\n", .{});
-
-    // Remove process from list only if it was waited for. Otherwise keep it
-    // with exited state, in case any other process waits for it.
-    if (was_waited_for) {
-        removeProcess(removing_process_idx);
-    } else {
-        removing_process.state = .exited;
-    }
-
-    // const idx = for (processes.items) |proc, i| {
-    //     if (proc == process) break i;
-    // } else panic("attempt to remove not found process\n", .{});
-    // _ = processes.orderedRemove(idx);
-
 }
 
 // Implements process waiting for a given pid, with semantics as in wait4 syscall.
 // If the process we waited for has already exited, it returns its tgid and it
 // doesn't schedule. Otherwise, it returns null, sets process state to waiting
 // and schedules.
-pub fn processWaitPid(process: *Process, pid: linux.pid_t, regs: *Process.UserRegs) !?linux.pid_t {
+pub fn processWaitPid(
+    process: *Process,
+    pid: linux.pid_t,
+    wstatus_ptr: ?mem.safe.UserPtr(*i32),
+    regs: *Process.UserRegs,
+) !?linux.pid_t {
     std.debug.assert(current() == process);
 
     // Update state
-    process.state = if (pid < -1)
-        State{ .waiting_for_any_with_pgid = -pid }
-    else if (pid == -1)
-        State{ .waiting_for_any = {} }
-    else if (pid == 0)
-        State{ .waiting_for_any_with_pgid = process.pgid }
-    else
-        State{ .waiting_for_tgid = pid };
+    process.state = State{ .waiting = .{ .pid = pid, .wstatus_ptr = wstatus_ptr } };
     errdefer process.state = .active;
 
-    // Make sure there's some wakeable child
+    // Make sure there's some child that could wake us up when he finishes
     blk: {
         for (processes.items) |child| {
             if (shouldWakeUp(process, child)) break :blk;
@@ -139,12 +150,14 @@ pub fn processWaitPid(process: *Process, pid: linux.pid_t, regs: *Process.UserRe
     for (processes.items) |exited_process, i| {
         if (exited_process.state != .exited) continue;
         if (shouldWakeUp(process, exited_process)) {
+            // No need to sleep
+            process.state = .active;
+
+            writeExitCode(exited_process.state.exited, wstatus_ptr);
+
             // Actually remove exited process, so we can't wait for it twice
             const ret = exited_process.tgid;
             removeProcess(i);
-
-            // No need to sleep
-            process.state = .active;
             return ret;
         }
     }
@@ -160,14 +173,14 @@ pub fn wakeProcessesWaitingForFutex(
     uaddr: usize,
     mask: u32,
     num: u32,
-) u32 {
+) usize {
     if (num == 0)
         return 0;
 
-    var woken_up: u32 = 0;
+    var woken_up: usize = 0;
     for (processes.items) |process| {
-        if (process.state == .waiting_for_futex) {
-            const futex = process.state.waiting_for_futex;
+        if (process.state == .futex) {
+            const futex = process.state.futex;
             if (futex.uaddr == uaddr and futex.mask & mask != 0) {
                 // print("waking up from futex process {}\n", .{process.pid});
                 process.state = .active;
@@ -181,28 +194,30 @@ pub fn wakeProcessesWaitingForFutex(
     return woken_up;
 }
 
-fn nextProcess() void {
+fn getNextProcessIdx() usize {
     const prev_idx = active_idx;
-    active_idx = (active_idx + 1) % processes.items.len;
-    while (processes.items[active_idx].state != .active) {
-        active_idx = (active_idx + 1) % processes.items.len;
-        if (active_idx == prev_idx + 1)
+    var i = (active_idx + 1) % processes.items.len;
+    while (processes.items[i].state != .active) {
+        i = (i + 1) % processes.items.len;
+        if (i == prev_idx + 1)
             @panic("deadlock: no active process");
     }
+    return i;
 }
 
-pub fn schedule(frame: anytype) void {
-    if (processes.items.len == 1)
-        return;
+pub fn switchToProcess(next: *const Process, frame: anytype) void {
+    const next_idx = std.mem.indexOfScalar(*const Process, processes.items, next) orelse unreachable;
+    return switchToProcessIdx(next_idx, frame);
+}
+
+pub fn switchToProcessIdx(next_idx: usize, frame: anytype) void {
+    std.debug.assert(next_idx != active_idx);
+    std.debug.assert(processes.items[next_idx].state == .active);
 
     const cur = current();
-    nextProcess();
-    const next = current();
-
-    if (next == cur)
-        return;
-
-    log.info("scheduling from {} to {}\n", .{ cur.pid, next.pid });
+    const next = processes.items[next_idx];
+    active_idx = next_idx;
+    log.info("switching from {} to {}\n", .{ cur.pid, next.pid });
 
     // Save current process registers
     cur.user_regs.rax = frame.rax;
@@ -222,6 +237,7 @@ pub fn schedule(frame: anytype) void {
     cur.user_regs.r15 = frame.r15;
     cur.user_regs.rip = frame.rip;
     cur.user_regs.rsp = frame.rsp;
+    cur.user_regs.rflags = frame.rflags;
 
     // Set next process registers
     frame.rax = next.user_regs.rax;
@@ -241,6 +257,7 @@ pub fn schedule(frame: anytype) void {
     frame.r15 = next.user_regs.r15;
     frame.rip = next.user_regs.rip;
     frame.rsp = next.user_regs.rsp;
+    frame.rflags = next.user_regs.rflags;
 
     // Switch address space if needed
     if (!std.meta.eql(cur.space, next.space)) {
@@ -250,11 +267,21 @@ pub fn schedule(frame: anytype) void {
     }
 
     // Change fs base if needed
+    std.debug.assert(x86.rdmsr(.FS_BASE) == cur.fs_base);
     if (cur.fs_base != next.fs_base) {
         x86.wrmsr(.FS_BASE, next.fs_base);
     }
+}
 
-    // switchTasksAsm();
+pub fn schedule(frame: anytype) void {
+    if (processes.items.len == 1)
+        return;
+
+    const next_idx = getNextProcessIdx();
+    if (next_idx == active_idx)
+        return;
+
+    switchToProcessIdx(next_idx, frame);
 }
 
 pub fn processWithPID(pid: linux.pid_t) ?*Process {

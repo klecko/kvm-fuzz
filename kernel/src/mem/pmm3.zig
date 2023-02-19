@@ -124,6 +124,9 @@ pub fn allocFrames(allocator: std.mem.Allocator, n: usize) Error![]usize {
         memsetFrame(frame, 0);
     }
     // number_of_allocations += n;
+    for (frames) |frame| {
+        log.debug("allocated frame: 0x{x}\n", .{frame});
+    }
     return frames;
 }
 

@@ -16,7 +16,7 @@ var allocations_base_addr: usize = 0;
 var free_bitset = std.StaticBitSet(bitset_size).initFull();
 
 /// Each page of bitset allows for 4096*8 pages of virtual memory, which is 128MB.
-const bitset_size_bytes = std.mem.page_size * 2;
+const bitset_size_bytes = std.mem.page_size * 4;
 const bitset_size = bitset_size_bytes * std.mem.byte_size_in_bits;
 const max_memory = bitset_size * std.mem.page_size;
 

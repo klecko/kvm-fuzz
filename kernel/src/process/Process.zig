@@ -69,11 +69,14 @@ pub const UserRegs = x86.Regs;
 
 pub const State = union(enum) {
     active,
-    waiting_for_any_with_pgid: linux.pid_t,
-    waiting_for_tgid: linux.pid_t,
-    waiting_for_any,
-    waiting_for_futex: futex.Futex,
-    exited,
+    waiting: WaitInfo,
+    futex: futex.Futex,
+    exited: i32,
+};
+
+pub const WaitInfo = struct {
+    pid: linux.pid_t,
+    wstatus_ptr: ?mem.safe.UserPtr(*i32),
 };
 
 // This is different than linux.sigset_t, which seems to be the definition used by libc.
@@ -203,6 +206,7 @@ const handle_sys_getrandom = @import("syscalls/random.zig").handle_sys_getrandom
 const handle_sys_tgkill = @import("syscalls/kill.zig").handle_sys_tgkill;
 const handle_sys_futex = futex.handle_sys_futex;
 const handle_sys_sched_getaffinity = @import("syscalls/sched.zig").handle_sys_sched_getaffinity;
+const handle_sys_sched_yield = @import("syscalls/sched.zig").handle_sys_sched_yield;
 const handle_sys_rt_sigaction = @import("syscalls/signals.zig").handle_sys_rt_sigaction;
 const handle_sys_rt_sigprocmask = @import("syscalls/signals.zig").handle_sys_rt_sigprocmask;
 const handle_sys_set_robust_list = robust_list.handle_sys_set_robust_list;
@@ -277,6 +281,7 @@ pub noinline fn handleSyscall(
         .futex => self.handle_sys_futex(arg0, arg1, arg2, arg3, arg4, arg5, regs),
         .set_robust_list => self.handle_sys_set_robust_list(arg0, arg1),
         .sched_getaffinity => self.handle_sys_sched_getaffinity(arg0, arg1, arg2),
+        .sched_yield => self.handle_sys_sched_yield(regs),
         .rt_sigaction => self.handle_sys_rt_sigaction(arg0, arg1, arg2, arg3),
         .rt_sigprocmask => self.handle_sys_rt_sigprocmask(arg0, arg1, arg2, arg3),
         .getuid, .getgid, .geteuid, .getegid => @as(usize, 1000),
@@ -285,7 +290,6 @@ pub noinline fn handleSyscall(
         .setitimer,
         .madvise,
         .setsockopt,
-        .sched_yield,
         .fadvise64,
         .alarm,
         .ioctl,
