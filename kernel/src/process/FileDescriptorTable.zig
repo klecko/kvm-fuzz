@@ -20,7 +20,7 @@ ref: RefCounter,
 cloexec: std.DynamicBitSet,
 
 const HashMap = std.AutoHashMap(linux.fd_t, *fs.FileDescription);
-const RefCounter = utils.RefCounter(FileDescriptorTable);
+const RefCounter = utils.RefCounter(u8, FileDescriptorTable);
 
 fn destroy(self: *FileDescriptorTable) void {
     // Deinit and free the object

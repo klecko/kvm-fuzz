@@ -145,7 +145,7 @@ pub const FileDescription = struct {
     is_socket: bool = false,
 
     const ReadError = mem.safe.Error || error{NotConnected};
-    const RefCounter = utils.RefCounter(FileDescription);
+    const RefCounter = utils.RefCounter(u16, FileDescription);
     const O_ACCMODE = 3;
 
     pub fn isReadable(self: *const FileDescription) bool {

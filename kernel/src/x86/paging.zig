@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = @import("../mem/mem.zig");
+const common = @import("../common.zig");
 const x86 = @import("x86.zig");
 const log = std.log.scoped(.paging);
 
@@ -36,129 +37,131 @@ pub const PAGE_SIZE: usize = 1 << PTL1_SHIFT;
 pub const PAGE_MASK: usize = ~(PAGE_SIZE - 1);
 pub const PHYS_MASK: usize = 0x000FFFFFFFFFF000;
 
-pub const PageTableEntry = struct {
-    raw: usize,
-
-    // zig fmt: off
-    pub const Flags = enum(usize) {
-        Present   = (1 << 0),
-        ReadWrite = (1 << 1),
-        User      = (1 << 2),
-        Accessed  = (1 << 5),
-        Dirty     = (1 << 6),
-        Huge      = (1 << 7),
-        Global    = (1 << 8),
-        Shared    = (1 << 9),
-        NoExecute = (1 << 63)
-    };
-    // zig fmt: on
+pub const PageTableEntry = packed struct {
+    present: bool,
+    writable: bool,
+    user: bool,
+    write_through: bool,
+    cache_disable: bool,
+    accesed: bool,
+    dirty: bool,
+    huge: bool,
+    global: bool,
+    shared: bool, // custom
+    unused1: u2,
+    phys: u40,
+    ref_count: u7, // custom
+    pk: u4,
+    nx: bool,
 
     pub fn frameBase(self: PageTableEntry) usize {
-        return self.raw & PHYS_MASK;
+        return self.phys << 12;
     }
 
     pub fn flags(self: PageTableEntry) usize {
-        return self.raw & ~PHYS_MASK;
+        return @bitCast(usize, self) & ~PHYS_MASK;
+    }
+
+    pub fn ref(self: *PageTableEntry) void {
+        assert(self.user);
+        assert(self.ref_count != 0);
+        self.ref_count += 1;
+    }
+
+    pub fn unref(self: *PageTableEntry) void {
+        assert(self.user);
+        self.ref_count -= 1;
+        if (self.ref_count == 0) {
+            mem.pmm.freeFrame(self.frameBase());
+            self.clear();
+        }
     }
 
     pub fn setFrameBase(self: *PageTableEntry, base: usize) void {
         assert((base & PHYS_MASK) == base);
-        self.raw &= ~PHYS_MASK;
-        self.raw |= base;
+        self.phys = @intCast(u40, base >> 12);
     }
 
     pub fn setFlags(self: *PageTableEntry, flags_value: usize) void {
         assert((flags_value & ~PHYS_MASK) == flags_value);
-        self.raw &= PHYS_MASK;
-        self.raw |= flags_value;
+        const self_usize = @ptrCast(*usize, self);
+        self_usize.* = (self_usize.* & PHYS_MASK) | flags_value;
+        // self.raw &= PHYS_MASK;
+        // self.raw |= flags_value;
     }
 
     pub fn clear(self: *PageTableEntry) void {
-        self.raw = 0;
+        const self_usize = @ptrCast(*usize, self);
+        self_usize.* = 0;
     }
 
-    // The only reason we don't expose hasFlag() and setFlag() and instead we
-    // do wrappers for every flag is because that would allow calling
-    // hasFlag(.Present), while we want it to be isPresent() for handling
-    // frames with prot none correctly.
-    fn hasFlag(self: PageTableEntry, flag: Flags) bool {
-        return (self.raw & @enumToInt(flag)) != 0;
-    }
-
-    fn setFlag(self: *PageTableEntry, flag: Flags, value: bool) void {
-        if (value) {
-            self.raw |= @enumToInt(flag);
-        } else {
-            self.raw &= ~@enumToInt(flag);
-        }
-    }
     pub fn isPresent(self: PageTableEntry) bool {
         // Frames without Present but with Global are actually present as
         // prot none.
-        return self.hasFlag(.Present) or self.hasFlag(.Global);
+        return self.present or self.global;
     }
 
     pub fn setPresent(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.Present, value);
+        self.present = value;
     }
 
     pub fn isWritable(self: PageTableEntry) bool {
-        return self.hasFlag(.ReadWrite);
+        return self.writable;
     }
 
     pub fn setWritable(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.ReadWrite, value);
+        self.writable = value;
     }
 
     pub fn isUser(self: PageTableEntry) bool {
-        return self.hasFlag(.User);
+        return self.user;
     }
 
     pub fn setUser(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.User, value);
+        self.user = value;
     }
 
     pub fn isHuge(self: PageTableEntry) bool {
-        return self.hasFlag(.Huge);
+        return self.huge;
     }
 
     pub fn setHuge(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.Huge, value);
+        self.huge = value;
     }
 
     pub fn isGlobal(self: PageTableEntry) bool {
-        return self.hasFlag(.Global);
+        return self.global;
     }
 
     pub fn setGlobal(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.Global, value);
+        self.global = value;
     }
 
     pub fn isProtNone(self: PageTableEntry) bool {
         // Frames with no protections are marked as not present and global,
         // though they are actually present.
-        return !self.hasFlag(.Present) and self.hasFlag(.Global);
+        return !self.present and self.global;
     }
 
     pub fn setProtNone(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.Present, !value);
-        self.setFlag(.Global, value);
+        self.present = !value;
+        self.global = value;
     }
 
     pub fn isShared(self: PageTableEntry) bool {
-        return self.hasFlag(.Shared);
+        return self.shared;
     }
 
     pub fn setShared(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.Shared, value);
+        self.shared = value;
     }
 
     pub fn isNoExecute(self: PageTableEntry) bool {
-        return self.hasFlag(.NoExecute);
+        return self.nx;
     }
 
     pub fn setNoExecute(self: *PageTableEntry, value: bool) void {
-        self.setFlag(.NoExecute, value);
+        self.nx = value;
     }
 };
 
@@ -169,6 +172,8 @@ pub const PageTableLevel4Entry = PageTableEntry;
 
 comptime {
     assert(@sizeOf(PageTableEntry) == @sizeOf(usize));
+    assert(@bitOffsetOf(PageTableEntry, "phys") == 12);
+    assert(@bitOffsetOf(PageTableEntry, "ref_count") == 52);
 }
 
 pub const PageTable = struct {
@@ -218,7 +223,7 @@ pub const PageTable = struct {
         // return error.
         if (pte.isPresent()) {
             if (options.discardAlreadyMapped) {
-                mem.pmm.freeFrame(pte.frameBase());
+                mem.vmm.kernel_page_table.unrefFrame(pte.frameBase());
             } else {
                 return MappingError.AlreadyMapped;
             }
@@ -226,6 +231,7 @@ pub const PageTable = struct {
 
         // Set the given frame and options, and flush the TLB entry
         pte.setFrameBase(phys);
+        mem.vmm.kernel_page_table.refFrame(phys);
         setOptionsToPTE(pte, options);
         x86.flush_tlb_entry(virt);
 
@@ -243,10 +249,9 @@ pub const PageTable = struct {
         if (!pte.isPresent())
             return UnmappingError.NotMapped;
 
-        // TODO: ref counting for freeing the frame
         // Free frame and clear PTE
         log.debug("unmapped 0x{x} (phys 0x{x})\n", .{ virt, pte.frameBase() });
-        // mem.pmm.freeFrame(pte.frameBase());
+        mem.vmm.kernel_page_table.unrefFrame(pte.frameBase());
         pte.clear();
         x86.flush_tlb_entry(virt);
     }
@@ -374,21 +379,41 @@ pub const PageTable = struct {
         const copy = mem.pmm.physToVirt(RawType, page_table_frame);
 
         for (table) |*entry, i| {
-            if (!entry.isPresent()) {
-                assert(entry.raw == 0);
+            if (!entry.isPresent())
                 continue;
-            }
             var frame = if (entry.isShared())
                 entry.frameBase()
             else if (level > 1)
                 try clonePageTable(level - 1, pageTablePointedBy(entry))
             else
                 try mem.pmm.dupFrame(entry.frameBase());
+            mem.vmm.kernel_page_table.refFrame(frame);
             copy[i].setFrameBase(frame);
             copy[i].setFlags(entry.flags());
         }
 
         return page_table_frame;
+    }
+
+    pub fn deinit(self: *PageTable) void {
+        // TODO
+        // deinitPageTable(4, self.ptl4);
+        _ = self;
+    }
+
+    // This doesn't work yet
+    fn deinitPageTable(level: usize, table: RawType) void {
+        for (table) |*entry| {
+            if (!entry.isPresent())
+                continue;
+            if (level == 1) {
+                common.print("unrefing {x}\n", .{entry.frameBase()});
+                mem.vmm.kernel_page_table.unrefFrame(entry.frameBase());
+            } else {
+                deinitPageTable(level - 1, pageTablePointedBy(entry));
+            }
+        }
+        mem.vmm.kernel_page_table.unrefFrame(mem.pmm.virtToPhys(table));
     }
 };
 
@@ -411,6 +436,29 @@ pub const KernelPageTable = struct {
     pub fn unmapPage(self: *KernelPageTable, virt: usize) PageTable.UnmappingError!void {
         assert(mem.safe.isAddressInKernelRange(virt));
         return self.page_table.unmapPage(virt);
+    }
+
+    fn getPhysmapPTE(self: KernelPageTable, frame: usize) ?*PageTableEntry {
+        if (frame >= mem.pmm.memoryLength())
+            return null;
+        const virt = mem.pmm.physToVirt(usize, frame);
+        const pte = self.page_table.getPTE(virt).?;
+        assert(pte.frameBase() == frame);
+        return pte;
+    }
+
+    pub fn refFrame(self: *KernelPageTable, frame: usize) void {
+        const pte = self.getPhysmapPTE(frame) orelse return;
+        pte.ref_count += 1;
+    }
+
+    pub fn unrefFrame(self: *KernelPageTable, frame: usize) void {
+        const pte = self.getPhysmapPTE(frame) orelse return;
+        assert(pte.ref_count > 0);
+        pte.ref_count -= 1;
+        if (pte.ref_count == 0) {
+            mem.pmm.freeFrame(frame);
+        }
     }
 
     // pub fn ensurePTE(self: *KernelPageTable, page_vaddr: usize) !*PageTableEntry {

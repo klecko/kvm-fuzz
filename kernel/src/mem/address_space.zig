@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const common = @import("../common.zig");
 const mem = @import("mem.zig");
 const x86 = @import("../x86/x86.zig");
+const utils = @import("../utils/utils.zig");
 const PageTable = x86.paging.PageTable;
 const Allocator = std.mem.Allocator;
 
@@ -17,14 +18,16 @@ pub const Perms = packed struct {
 };
 
 pub const AddressSpace = struct {
-    allocator: Allocator,
     page_table: PageTable,
     user_mappings: mem.RegionManager,
+    ref: RefCounter,
 
-    pub fn fromCurrent(allocator: Allocator) AddressSpace {
+    const RefCounter = utils.RefCounter(u8, AddressSpace);
+
+    pub fn createFromCurrent(allocator: Allocator) !*AddressSpace {
         const page_table = PageTable.fromCurrent();
-        return AddressSpace{
-            .allocator = allocator,
+        const space = try allocator.create(AddressSpace);
+        space.* = .{
             .page_table = page_table,
             .user_mappings = mem.RegionManager.initCheckNotMapped(
                 allocator,
@@ -32,7 +35,15 @@ pub const AddressSpace = struct {
                 mem.layout.user_end,
                 page_table,
             ),
+            .ref = RefCounter.init(allocator, destroy),
         };
+        return space;
+    }
+
+    pub fn destroy(self: *AddressSpace) void {
+        self.page_table.deinit();
+        self.user_mappings.deinit();
+        self.ref.allocator.destroy(self);
     }
 
     pub fn load(self: *AddressSpace) void {
@@ -70,8 +81,8 @@ pub const AddressSpace = struct {
 
         // Attempt to allocate physical memory for the range
         const num_frames = @divExact(length, std.mem.page_size);
-        var frames = try mem.pmm.allocFrames(self.allocator, num_frames);
-        defer self.allocator.free(frames);
+        var frames = try mem.pmm.allocFrames(self.ref.allocator, num_frames);
+        defer self.ref.allocator.free(frames);
 
         // Get the mapping options acording to memory permissions and mapping flags
         const mapping_options = x86.paging.PageTable.MappingOptions{
@@ -172,14 +183,16 @@ pub const AddressSpace = struct {
     }
 
     // TODO: set self as constant when upgrading zig
-    pub fn clone(self: *AddressSpace) !AddressSpace {
-        const page_table = try self.page_table.clone();
+    pub fn clone(self: *AddressSpace) !*AddressSpace {
         //errdefer TODO
+        const page_table = try self.page_table.clone();
         const user_mappings = try self.user_mappings.clone();
-        return AddressSpace{
-            .allocator = self.allocator,
+        const copy = try self.ref.allocator.create(AddressSpace);
+        copy.* = .{
             .page_table = page_table,
             .user_mappings = user_mappings,
+            .ref = RefCounter.init(self.ref.allocator, destroy),
         };
+        return copy;
     }
 };

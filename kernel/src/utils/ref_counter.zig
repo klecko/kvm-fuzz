@@ -37,11 +37,16 @@ const std = @import("std");
 /// object we want to count references of. In that case, A must define a destroy
 /// method which will receive a pointer to B (ParentT), and which should use
 /// @fieldParentPtr to get its pointer and free it.
-/// If ParentT is the type of the ref-counted object, then there's no need to
-/// provide a destroy function. The RefCounter will free the parent object itself.
-pub fn RefCounter(comptime ParentT: type) type {
+/// If ParentT is the type of the ref-counted object, the destroy function is
+/// also useful if the object requires to free other resources before freeing
+/// itself. If that's not the case, there's no need to provide a destroy
+/// function: the RefCounter will free the parent object itself.
+pub fn RefCounter(comptime RefCountT: type, comptime ParentT: type) type {
+    if (@typeInfo(RefCountT) != .Int) {
+        @compileError("RefCountT should be an integer type, but found " ++ RefCountT);
+    }
     return struct {
-        ref_count: usize,
+        ref_count: RefCountT,
         allocator: std.mem.Allocator,
         destroyFn: ?DestroyFn,
 
@@ -70,10 +75,12 @@ pub fn RefCounter(comptime ParentT: type) type {
         /// Initialize the reference counter. `allocator` is the allocator that
         /// will free the ref-counted object, and `destroyFn` is the function in
         /// charge of doing that. If the ref-counted object is the one of type
-        /// ParentT that holds us, then there's no need to provide a destroy
-        /// function. If it isn't (e.g. it's an object that holds our parent),
-        /// then it must be provided. An example of this can be seen in
-        /// FileDescription.
+        /// ParentT that holds us and it is only needed to free the object,
+        /// then there's no need to provide a destroy function. If that's not
+        /// the case (e.g. the ref-counted object is the parent of the object
+        /// that holds us, as in FileDescription; or more resources need to be
+        /// freed before freeing the object, as in FileDescriptionTable), then
+        /// `destroyFn` must be provided.
         pub fn init(allocator: std.mem.Allocator, destroyFn: ?DestroyFn) Self {
             return Self{
                 .ref_count = 1,
@@ -91,6 +98,7 @@ pub fn RefCounter(comptime ParentT: type) type {
         /// Decrement the reference counter, freeing the ref-counted object if
         /// it reached 0.
         pub fn unref(self: *Self) void {
+            std.debug.assert(self.ref_count > 0);
             self.ref_count -= 1;
             if (self.ref_count == 0) {
                 const parent = @fieldParentPtr(ParentT, field_name, self);

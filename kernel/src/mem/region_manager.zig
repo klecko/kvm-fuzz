@@ -50,8 +50,9 @@ pub const RegionManager = struct {
         };
     }
 
-    pub fn deinit(self: RegionManager) void {
+    pub fn deinit(self: *RegionManager) void {
         self.regions.deinit();
+        self.* = undefined;
     }
 
     // TODO: set self as constant when upgrading zig

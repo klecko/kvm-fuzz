@@ -52,6 +52,7 @@ fn shouldWakeUp(process: *const Process, removing_process: *const Process) bool 
 fn removeProcess(idx: usize) void {
     // TODO: free it?
     log.debug("removing process {}\n", .{processes.items[idx].pid});
+    processes.items[idx].destroy();
     _ = processes.orderedRemove(idx);
     std.debug.assert(idx != active_idx);
     if (active_idx > idx)

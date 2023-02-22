@@ -29,7 +29,7 @@ ptgid: linux.pid_t,
 
 state: State,
 
-space: mem.AddressSpace,
+space: *mem.AddressSpace,
 
 files: *FileDescriptorTable,
 
@@ -98,7 +98,7 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path = try allocator.alloc(u8, elf_path_len);
     std.mem.copy(u8, elf_path, info.elf_path[0..elf_path_len]);
 
-    var signal_handlers = try allocator.create([linux._NSIG]Sigaction);
+    const signal_handlers = try allocator.create([linux._NSIG]Sigaction);
     signal_handlers.* = [_]Sigaction{.{
         .handler = linux.SIG.DFL,
         .flags = 0,
@@ -116,7 +116,7 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
         .pgid = pid,
         .ptgid = 1,
         .state = .active,
-        .space = mem.AddressSpace.fromCurrent(allocator),
+        .space = try mem.AddressSpace.createFromCurrent(allocator),
         .files = try FileDescriptorTable.createDefault(allocator, limits.nofile.hard),
         .elf_path = elf_path,
         .brk = info.brk,
@@ -131,6 +131,12 @@ pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
         .robust_list_head = null,
         .clear_child_tid_ptr = null,
     };
+}
+
+pub fn destroy(self: *Process) void {
+    self.files.ref.unref();
+    self.space.ref.unref();
+    self.allocator.destroy(self);
 }
 
 pub fn getNextPid() linux.pid_t {

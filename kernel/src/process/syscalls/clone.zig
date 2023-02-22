@@ -46,7 +46,7 @@ fn sys_clone(
     const pid = Process.getNextPid();
     const tgid = if (is_thread) self.tgid else pid;
     const ptgid = if (is_thread) self.ptgid else self.tgid;
-    const space = if (share_vm) self.space else try self.space.clone();
+    const space = if (share_vm) self.space.ref.ref() else try self.space.clone();
     const files = if (share_files) self.files.ref.ref() else try self.files.clone();
     const fs_base = if (flags & linux.CLONE.SETTLS != 0) tls else self.fs_base;
     const signal_handlers = if (share_signal_handlers)
@@ -60,7 +60,7 @@ fn sys_clone(
     };
     const clear_child_tid_ptr = if (flags & linux.CLONE.CHILD_CLEARTID != 0) child_tid_ptr.? else null;
 
-    var new_process = try self.allocator.create(Process);
+    const new_process = try self.allocator.create(Process);
     new_process.* = Process{
         .allocator = self.allocator,
         .pid = pid,
