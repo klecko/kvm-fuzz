@@ -4,6 +4,7 @@ const panic = common.panic;
 const mem = @import("../mem/mem.zig");
 const x86 = @import("../x86/x86.zig");
 const linux = @import("../linux.zig");
+const scheduler = @import("../scheduler.zig");
 const hypercalls = @import("../hypercalls.zig");
 const FileDescriptorTable = @import("FileDescriptorTable.zig");
 const futex = @import("syscalls/futex.zig");
@@ -316,7 +317,11 @@ pub noinline fn handleSyscall(
         },
     } catch |err| linux.errorToErrno(err);
 
-    log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ self.pid, @tagName(syscall), ret });
+    // Small footgun here: we may have handled exit syscall. If this was not the
+    // last process, we have switched to another process, this process has been
+    // freed and the run continues. Therefore, we can't access self now. Instead,
+    // use `scheduler.current()` to get the process we switched to.
+    log.debug("<-- [{}] syscall {s} returned 0x{x}\n", .{ scheduler.current().pid, @tagName(syscall), ret });
     // if (syscall == .openat) {
     //     const stacktrace_regs = hypercalls.StackTraceRegs.from(regs);
     //     hypercalls.printStackTrace(&stacktrace_regs);
