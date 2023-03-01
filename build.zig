@@ -48,6 +48,16 @@ fn buildKernel(
         "Enable guest output to stdout and stderr. Default is disabled.",
     ) orelse false;
 
+    const TracingUnit = enum {
+        instructions,
+        cycles,
+    };
+    const tracing_unit = b.option(
+        TracingUnit,
+        "tracing-unit",
+        "Tracing unit used with -T option. Default is cycles.",
+    ) orelse .cycles;
+
     // Kernel build options
     const build_options = b.addOptions();
     build_options.addOption(
@@ -56,6 +66,7 @@ fn buildKernel(
         shared_options.instruction_count,
     );
     build_options.addOption(bool, "enable_guest_output", enable_guest_output);
+    build_options.addOption(TracingUnit, "tracing_unit", tracing_unit);
     exe.addOptions("build_options", build_options);
 
     exe.install();

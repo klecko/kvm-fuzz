@@ -201,7 +201,7 @@ private:
 	vaddr_t m_tracing_addr;
 	struct {
 		std::string name;
-		uint64_t instructions_start;
+		uint64_t measure_start;
 	} m_syscall;
 	size_t m_next_trace_id;
 	std::vector<std::pair<std::string, size_t>> m_trace;
@@ -245,8 +245,8 @@ private:
 	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	                        vaddr_t load_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr);
-	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr);
-	void do_hc_notify_syscall_end();
+	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr, size_t measure_start);
+	void do_hc_notify_syscall_end(size_t measure_end);
 
 	/* void handle_syscall();
 	*/

@@ -3,6 +3,7 @@ const x86 = @import("x86/x86.zig");
 const linux = @import("linux.zig");
 const fs = @import("fs/fs.zig");
 const common = @import("common.zig");
+const build_options = @import("build_options");
 const printFmt = common.print;
 const panic = common.panic;
 
@@ -218,8 +219,8 @@ extern fn submitTracingPointer(tracing_ptr: *bool) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
-extern fn _notifySyscallStart(syscall_name: [*:0]const u8) void;
-extern fn _notifySyscallEnd() void;
+extern fn _notifySyscallStart(syscall_name: [*:0]const u8, measure_start: usize) void;
+extern fn _notifySyscallEnd(measure_end: usize) void;
 extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
@@ -261,14 +262,21 @@ pub fn init() void {
     submitTracingPointer(&tracing_enabled);
 }
 
+fn getTracingMeasure() usize {
+    return switch (build_options.tracing_unit) {
+        .cycles => x86.rdtsc(),
+        .instructions => x86.perf.instructionsExecuted(),
+    };
+}
+
 pub fn notifySyscallStart(syscall_n: linux.SYS) void {
     if (tracing_enabled)
-        _notifySyscallStart(@tagName(syscall_n));
+        _notifySyscallStart(@tagName(syscall_n), getTracingMeasure());
 }
 
 pub fn notifySyscallEnd() void {
     if (tracing_enabled)
-        _notifySyscallEnd();
+        _notifySyscallEnd(getTracingMeasure());
 }
 
 const buf_len = 1024;

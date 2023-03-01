@@ -175,19 +175,19 @@ void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 	m_running = false;
 }
 
-void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr) {
+void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr, size_t measure_start) {
 	m_syscall.name = m_mmu.read_string(syscall_name_addr);
 	if (m_syscall.name == "exit_group")
 		m_trace.push_back({m_syscall.name, 0});
 	else
-		m_syscall.instructions_start = read_msr(MSR_FIXED_CTR0);
+		m_syscall.measure_start = measure_start;
 }
 
-void Vm::do_hc_notify_syscall_end() {
-	uint64_t instructions = read_msr(MSR_FIXED_CTR0) - m_syscall.instructions_start;
-	ASSERT(instructions != 0, "instructions executed by syscall is 0, did you forget "
-	                          "compiling with -Dinstruction-count=all ?");
-	m_trace.push_back({m_syscall.name, instructions});
+void Vm::do_hc_notify_syscall_end(size_t measure_end) {
+	uint64_t measure = measure_end - m_syscall.measure_start;
+	ASSERT(measure != 0, "measure traced by syscall is 0, did you compile with "
+	                     "-Dtracing-unit=instructions and forgot -Dinstruction-count=all ?");
+	m_trace.push_back({m_syscall.name, measure});
 	m_syscall = {};
 }
 
@@ -231,10 +231,10 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			do_hc_end_run(reason, m_regs->rsi);
 			break;
 		case Hypercall::NotifySyscallStart:
-			do_hc_notify_syscall_start(m_regs->rdi);
+			do_hc_notify_syscall_start(m_regs->rdi, m_regs->rsi);
 			break;
 		case Hypercall::NotifySyscallEnd:
-			do_hc_notify_syscall_end();
+			do_hc_notify_syscall_end(m_regs->rdi);
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);
