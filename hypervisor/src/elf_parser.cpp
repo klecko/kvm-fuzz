@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <limits>
+#include <algorithm>
 #include "elf_parser.h"
 #include "utils.h"
 
@@ -214,6 +215,69 @@ void ElfParser::init() {
 	}
 	// exit(0);
 
+	// Get relocations
+	for (const section_t& section : m_sections) {
+		if (section.type != SHT_RELA)
+			continue;
+
+		section_t sec_sym = m_sections[section.link];
+		section_t sec_str = m_sections[sec_sym.link];
+		Elf_Sym* syms = (Elf_Sym*)sec_sym.data;
+		const char* strs = (char*)sec_str.data;
+		Elf_Rela* relas = (Elf_Rela*)section.data;
+		size_t n_relas = section.size / sizeof(Elf_Rela);
+		for (i = 0; i < n_relas; i++) {
+			// There's more information we are not getting because we don't need
+			// it for now.
+			Elf_Sym sym = syms[ELF_R_SYM(relas[i].r_info)];
+			relocation_t relocation = {
+				.name = string(strs + sym.st_name),
+				.addr = relas[i].r_offset,
+				.type = (uint32_t)ELF_R_TYPE(relas[i].r_info),
+			};
+			m_relocations.push_back(relocation);
+		}
+	}
+
+	// Some hack to get PLT symbols (such as puts@plt). We iterate .plt and
+	// .plt.sec looking for instructions in the form of JMP QWORD [jmp_addr].
+	// We get jmp_addr (which corresponds to a GOT entry), and check if any of
+	// our relocations has that address. In that case, we found its corresponding
+	// PLT stub.
+	const size_t plt_entry_size = 0x10; // TODO how to get this value
+	for (const section_t& section : m_sections) {
+		if (section.name != ".plt" && section.name != ".plt.sec")
+			continue;
+		const uint8_t* sec_data = (const uint8_t*)section.data;
+		for (i = 0; i < section.size - 2 - sizeof(int32_t); i += 1) {
+			if (sec_data[i] == 0xff && sec_data[i+1] == 0x25) { // JMP QWORD [jmp_addr]
+				int32_t offset;
+				memcpy(&offset, sec_data + i + 2, sizeof(offset));
+				vaddr_t offset_addr = section.addr + i + 2;
+				vaddr_t jmp_addr = offset_addr + sizeof(offset) + offset;
+
+				for (const relocation_t& relocation : m_relocations) {
+					if (relocation.type == R_JUMP_SLOT && relocation.addr == jmp_addr) {
+						m_symbols.push_back(symbol_t{
+							.name = relocation.name + "@plt",
+							.size = plt_entry_size,
+							.value = offset_addr & ~(plt_entry_size - 1), // super hacky
+						});
+					}
+				}
+				i += 1 + sizeof(offset);
+
+			}
+		}
+	}
+
+	// Sort symbols by address, from higher to lower. This is taken advantage
+	// of in addr_to_symbol.
+	sort(m_symbols.begin(), m_symbols.end(), [](const symbol_t& s1, const symbol_t& s2) {
+		return s1.value > s2.value;
+	});
+
+
 	m_debug = ElfDebug(m_data, m_size);
 
 	// Load debug elf if it was specified and it exists
@@ -264,6 +328,9 @@ void ElfParser::set_load_addr(vaddr_t load_addr) {
 	}
 	for (symbol_t& symbol : m_symbols) {
 		symbol.value += diff;
+	}
+	for (relocation_t& relocation : m_relocations) {
+		relocation.addr += diff;
 	}
 
 	if (m_debug_elf)
@@ -356,13 +423,28 @@ vaddr_t ElfParser::resolve_symbol(const string& symbol_name) const {
 }
 
 bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
+	// Here we take advantage of symbols being sorted by address from higher to
+	// lower. So we take the symbol that is closest to the address. This appears
+	// to work better than just checking if addr is in the symbol range
+	// (symbol.value, symbol.value + symbol.size), because some symbols (such as
+	// deregister_tm_clones or do_global_dtors_aux) seem to have a size of 0.
 	for (const symbol_t& symbol : symbols()) {
-		if (addr >= symbol.value && addr < symbol.value + symbol.size) {
+		if (addr >= symbol.value) {
 			result = symbol;
 			return true;
 		}
 	}
 	return false;
+}
+
+bool ElfParser::addr_to_symbol_str(vaddr_t pc, string& result) const {
+	symbol_t symbol;
+	bool have_symbol = addr_to_symbol(pc, symbol);
+	if (have_symbol) {
+		size_t offset = pc - symbol.value;
+		result = symbol.name + " + 0x" + utils::to_hex(offset);
+	}
+	return have_symbol;
 }
 
 string ElfParser::addr_to_source(vaddr_t addr) const {

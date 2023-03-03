@@ -6,22 +6,43 @@ from collections import defaultdict
 import networkx as nx
 # import matplotlib.pyplot as plt
 
+class TracingType:
+	User = 0
+	Kernel = 1
 
 dir = Path("traces")
 
+tracing_type = None
 first_syscall = None
 first_syscall_filename = None
+last_syscall = None
+last_syscall_filename = None
 traces = []
 for filename in dir.iterdir():
 	with open(filename) as f:
 		trace = f.readlines()
 		if not trace:
 			continue
-		trace = [(line.split()[0], int(line.split()[1])) for line in trace]
+
+		if tracing_type == None:
+			if "+" in trace[0].split()[0]:
+				tracing_type = TracingType.User
+			else:
+				tracing_type = TracingType.Kernel
+
+		trace = [(" ".join(line.split()[:-1]), int(line.split()[-1])) for line in trace]
 
 		# Check last syscall
-		if trace[-1][0] != "exit_group":
-			print(f"Warning: trace '{filename}' has '{trace[-1][0]}' as last syscall, ignoring")
+		if not last_syscall:
+			last_syscall = trace[-1][0]
+			last_syscall_filename = filename
+			if tracing_type == TracingType.Kernel and last_syscall != "exit_group":
+				print(f"Last syscall in trace file '{filename}' is '{last_syscall}'" +
+				      f"instead of 'exit_group'. Aborting.")
+				exit()
+		if trace[-1][0] != last_syscall:
+			print(f"Warning: trace '{filename}' has '{trace[-1][0]}' as last syscall, while " +
+			      f"trace '{last_syscall_filename}' ends with '{last_syscall}'. Skipping.")
 			continue
 
 		# Check first syscall
@@ -35,6 +56,7 @@ for filename in dir.iterdir():
 
 		traces.append(trace)
 
+print(f"Read {len(traces)} traces")
 
 # get syscalls instructions
 syscalls_instructions = defaultdict(list)
@@ -54,7 +76,7 @@ for trace in traces:
 	trace = [line[0] for line in trace] # get only names
 	for i in range(1, len(trace)):
 		successors[trace[i-1]].append(trace[i])
-successors["exit_group"] = []
+successors[last_syscall] = []
 
 successors_probs = {syscall: dict() for syscall in successors.keys()}
 for syscall, succs in successors.items():
@@ -91,9 +113,6 @@ print(f"calculated is {100*(result_calculated - result_real)/result_real:.4f}% m
 
 
 
-
-
-print()
 
 
 # drawing stuff

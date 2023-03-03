@@ -12,6 +12,7 @@
 #include "coverage.h"
 #include "files.h"
 #include "elfs.h"
+#include "tracing.h"
 #ifdef ENABLE_COVERAGE_INTEL_PT
 #include <libxdc.h>
 #endif
@@ -32,6 +33,7 @@ public:
 	ElfParser& elf();
 	psize_t memsize() const;
 	FaultInfo fault() const;
+	Tracing& tracing();
 	uint64_t get_instructions_executed_and_reset();
 
 	void setup_coverage();
@@ -118,14 +120,10 @@ public:
 	// finish with RunEndReason::Timeout.
 	void set_timeout(size_t microsecs);
 
-	uint64_t read_msr(uint64_t msr);
+	uint64_t read_msr(uint64_t msr) const;
 
 	size_t stack_pop();
 	void stack_push(size_t value);
-
-	// Syscall tracing
-	void set_tracing(bool tracing);
-	void dump_trace(size_t id = 0);
 
 	void print_current_stacktrace(size_t num_frames=-1);
 	void print_stacktrace(const kvm_regs& regs, size_t num_frames=-1);
@@ -197,14 +195,7 @@ private:
 	vaddr_t m_timeout_addr;
 
 	// Syscall tracing
-	bool m_tracing;
-	vaddr_t m_tracing_addr;
-	struct {
-		std::string name;
-		uint64_t measure_start;
-	} m_syscall;
-	size_t m_next_trace_id;
-	std::vector<std::pair<std::string, size_t>> m_trace;
+	Tracing m_tracing;
 
 	int create_vm();
 	void setup_kvm();
@@ -240,13 +231,13 @@ private:
 	void do_hc_submit_file_pointers(size_t n, vaddr_t buf_addr,
 	                                vaddr_t length_addr);
 	void do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr);
-	void do_hc_submit_tracing_pointer(vaddr_t tracing_addr);
+	void do_hc_submit_tracing_type_pointer(vaddr_t tracing_type_addr);
 	void do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr);
 	void do_hc_load_library(vaddr_t filename_ptr, vsize_t filename_len,
 	                        vaddr_t load_addr);
 	void do_hc_end_run(RunEndReason reason, vaddr_t info_addr);
-	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr, size_t measure_start);
-	void do_hc_notify_syscall_end(size_t measure_end);
+	void do_hc_notify_syscall_start(vaddr_t syscall_name_addr);
+	void do_hc_notify_syscall_end();
 
 	/* void handle_syscall();
 	*/

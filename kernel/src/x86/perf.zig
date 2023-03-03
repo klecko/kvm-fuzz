@@ -22,6 +22,10 @@ const CountMode = struct {
     const All: usize = Kernel | User;
 };
 
+const IA32_FIXED_CTR0_ENABLE = 1 << 32;
+const IA32_FIXED_CTR1_ENABLE = 1 << 33;
+const IA32_FIXED_CTR2_ENABLE = 1 << 34;
+
 fn initInstructionCount() void {
     const count_mode = switch (build_options.instruction_count) {
         .kernel => CountMode.Kernel,
@@ -30,12 +34,12 @@ fn initInstructionCount() void {
         .none => return,
     };
 
-    // Set performance counter CTR0 (which counts number of instructions)
-    // to count when in given mode
-    x86.wrmsr(.FIXED_CTR_CTRL, count_mode);
+    // Set performance counter CTR0 (which counts number of instructions) and
+    // CTR1 (which counts number of cycles) to count when in given mode
+    x86.wrmsr(.FIXED_CTR_CTRL, count_mode | (count_mode << 4));
 
-    // Enable CTR0
-    x86.wrmsr(.PERF_GLOBAL_CTRL, 1 << 32);
+    // Enable CTR0 and CTR1
+    x86.wrmsr(.PERF_GLOBAL_CTRL, IA32_FIXED_CTR0_ENABLE | IA32_FIXED_CTR1_ENABLE);
 }
 
 pub fn init() void {

@@ -25,6 +25,7 @@
 #define ELF_R_TYPE ELF32_R_TYPE
 #define ELF_R_SYM ELF32_R_SYM
 #define ELFCLASS ELFCLASS32
+#define R_JUMP_SLOT R_386_JMP_SLOT
 #define EM EM_386
 #define EM_S "EM_386"
 
@@ -43,6 +44,7 @@
 #define ELF_R_TYPE ELF64_R_TYPE
 #define ELF_R_SYM ELF64_R_SYM
 #define ELFCLASS ELFCLASS64
+#define R_JUMP_SLOT R_X86_64_JUMP_SLOT
 #define EM EM_X86_64
 #define EM_S "EM_X86_64"
 #endif
@@ -89,9 +91,10 @@ struct symbol_t {
 	vsize_t size;
 };
 
-// Coming Soon™
 struct relocation_t {
-
+	std::string name;
+	vaddr_t addr;
+	uint32_t type;
 };
 
 class ElfParser {
@@ -139,6 +142,7 @@ class ElfParser {
 
 		vaddr_t resolve_symbol(const std::string& symbol_name) const;
 		bool addr_to_symbol(vaddr_t addr, symbol_t& result) const;
+		bool addr_to_symbol_str(vaddr_t addr, std::string& result) const;
 		std::string addr_to_source(vaddr_t addr) const;
 		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs,
 		                                    size_t num_frames, Mmu& mmu) const;
@@ -172,7 +176,7 @@ class ElfParser {
 		std::vector<section_t> m_sections;
 		std::vector<segment_t> m_segments;
 		std::vector<symbol_t> m_symbols;
-		//std::vector<relocation_t> m_relocations;
+		std::vector<relocation_t> m_relocations;
 
 		// Debug information of this binary
 		ElfDebug m_debug;

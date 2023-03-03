@@ -10,6 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <getopt.h>
+#include <string.h>
 #include "args.h"
 #include "utils.h"
 
@@ -61,7 +62,8 @@ void print_usage() {
 	"                            each file: -f file1 -f file2\n"
 	"  -s, --single-run [=path]  Perform a single run, optionally specifying an\n"
 	"                            input file\n"
-	"  -T, --tracing             Enable syscall tracing\n"
+	"  -T, --tracing type        Enable syscall tracing. Type can be kernel or user\n"
+	"      --tracing-unit unit   Tracing unit. It can be instructions or cycles (default cycles)\n"
 	"  -h, --help                Print usage\n"
 	, Args::DEFAULT_NUM_THREADS);
 }
@@ -69,6 +71,7 @@ void print_usage() {
 enum LongOptions {
 	MinimizeCorpus = 0x100,
 	MinimizeCrashes,
+	TracingUnit,
 };
 
 bool Args::parse(int argc, char** argv) {
@@ -83,13 +86,14 @@ bool Args::parse(int argc, char** argv) {
 		{"output", required_argument, nullptr, 'o'},
 		{"file", required_argument, nullptr, 'f'},
 		{"single-run", optional_argument, nullptr, 's'},
-		{"tracing", no_argument, nullptr, 'T'},
+		{"tracing", required_argument, nullptr, 'T'},
+		{"tracing-unit", required_argument, nullptr, LongOptions::TracingUnit},
 		{"help", no_argument, nullptr, 'h'},
 		{0, 0, 0, 0},
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "j:m:t:k:i:o:f:s::Th", long_options, nullptr)) > 0) {
+	while ((opt = getopt_long(argc, argv, "j:m:t:k:i:o:f:s::T:h", long_options, nullptr)) > 0) {
 		switch (opt) {
 			case LongOptions::MinimizeCorpus:
 				minimize_corpus = true;
@@ -99,18 +103,22 @@ bool Args::parse(int argc, char** argv) {
 				break;
 			case 'j':
 				if ((sscanf(optarg, "%u", &jobs) < 1) || (jobs == 0)) {
+					printf("Option -j, --jobs must be followed by a number.\n\n");
 					print_usage();
 					return false;
 				}
 				break;
 			case 'm':
 				if (!parse_memory(optarg, memory)) {
+					printf("Option -m, --memory must be followed by a number, "
+					       "optionally followed by K, M, or G.\n\n");
 					print_usage();
 					return false;
 				}
 				break;
 			case 't':
 				if (sscanf(optarg, "%lu", &timeout) < 1) {
+					printf("Option -t, --timeout must be followed by a number.\n\n");
 					print_usage();
 					return false;
 				}
@@ -133,7 +141,26 @@ bool Args::parse(int argc, char** argv) {
 					single_run_input_path = optarg;
 				break;
 			case 'T':
-				tracing = true;
+				if (!strcmp(optarg, "kernel"))
+					tracing_type = Tracing::Type::Kernel;
+				else if (!strcmp(optarg, "user"))
+					tracing_type = Tracing::Type::User;
+				else {
+					printf("Option -T, --tracing must be followed by 'kernel' or 'user'\n\n");
+					print_usage();
+					return false;
+				}
+				break;
+			case LongOptions::TracingUnit:
+				if (!strcmp(optarg, "cycles"))
+					tracing_unit = Tracing::Unit::Cycles;
+				else if (!strcmp(optarg, "instructions"))
+					tracing_unit = Tracing::Unit::Instructions;
+				else {
+					printf("Option --tracing-unit must be followed by 'instructions' or 'cycles'\n\n");
+					print_usage();
+					return false;
+				}
 				break;
 			case 'h':
 			case '?':
@@ -163,7 +190,21 @@ bool Args::parse(int argc, char** argv) {
 		return false;
 	}
 
-	if (tracing && timeout != 0) {
+#ifdef ENABLE_COVERAGE_INTEL_PT
+	if (tracing_type == Tracing::Type::User) {
+		printf("Tracing user is not available with Intel PT.\n");
+		return false;
+	}
+#endif
+
+#ifndef ENABLE_COVERAGE
+	if (tracing_type != Tracing::Type::None) {
+		printf("Tracing enabled but coverage is disabled.\n");
+		return false;
+	}
+#endif
+
+	if (tracing_type != Tracing::Type::None && timeout != 0) {
 		printf("Tracing and timeout are both enabled, you may want to disable timeout to avoid incomplete traces.\n\n");
 	}
 

@@ -122,6 +122,13 @@ pub const RunEndReason = enum(c_int) {
     Unknown,
 };
 
+// Keep this the same as in the hypervisor
+pub const TracingType = enum(c_int) {
+    None,
+    Kernel,
+    User,
+};
+
 fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
     if (@enumToInt(hc) != n) {
         @compileError("woops, hypercall " ++ @tagName(hc) ++ " has wrong value");
@@ -161,7 +168,7 @@ comptime {
         \\  mov $7, %rax
         \\  jmp hypercall
         \\
-        \\submitTracingPointer:
+        \\submitTracingTypePointer:
         \\  mov $8, %rax
         \\  jmp hypercall
         \\
@@ -215,12 +222,14 @@ pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
 
 pub extern fn submitFilePointers(n: usize, buf: [*]u8, length_ptr: *usize) void;
 pub extern fn submitTimeoutPointers(timer_ptr: *usize, timeout_ptr: *usize) void;
-extern fn submitTracingPointer(tracing_ptr: *bool) void;
+extern fn submitTracingTypePointer(tracing_type_ptr: *TracingType) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
-extern fn _notifySyscallStart(syscall_name: [*:0]const u8, measure_start: usize) void;
-extern fn _notifySyscallEnd(measure_end: usize) void;
+extern fn _notifySyscallStart(
+    syscall_name: [*:0]const u8,
+) void;
+extern fn _notifySyscallEnd() void;
 extern fn getRip() usize;
 
 pub fn print(s: []const u8) void {
@@ -256,27 +265,20 @@ pub fn printStackTrace(stacktrace_regs: ?*const StackTraceRegs) void {
 }
 
 // Syscall tracing
-var tracing_enabled: bool = undefined;
+var tracing_type: TracingType = undefined;
 
 pub fn init() void {
-    submitTracingPointer(&tracing_enabled);
-}
-
-fn getTracingMeasure() usize {
-    return switch (build_options.tracing_unit) {
-        .cycles => x86.rdtsc(),
-        .instructions => x86.perf.instructionsExecuted(),
-    };
+    submitTracingTypePointer(&tracing_type);
 }
 
 pub fn notifySyscallStart(syscall_n: linux.SYS) void {
-    if (tracing_enabled)
-        _notifySyscallStart(@tagName(syscall_n), getTracingMeasure());
+    if (tracing_type == .Kernel)
+        _notifySyscallStart(@tagName(syscall_n));
 }
 
 pub fn notifySyscallEnd() void {
-    if (tracing_enabled)
-        _notifySyscallEnd(getTracingMeasure());
+    if (tracing_type == .Kernel)
+        _notifySyscallEnd();
 }
 
 const buf_len = 1024;

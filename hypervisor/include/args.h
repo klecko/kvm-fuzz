@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <tracing.h>
 
 struct Args {
 	static const uint DEFAULT_NUM_THREADS;
@@ -20,7 +21,8 @@ struct Args {
 	std::string single_run_input_path;
 	bool minimize_corpus = false;
 	bool minimize_crashes = false;
-	bool tracing = false;
+	Tracing::Type tracing_type = Tracing::Type::None;
+	Tracing::Unit tracing_unit = Tracing::Unit::Cycles;
 
 	// Args(int argc, char** argv);
 	bool parse(int argc, char** argv);

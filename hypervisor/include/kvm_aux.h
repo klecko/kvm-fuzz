@@ -87,6 +87,8 @@ struct kvm_dirty_gfn {
 #define MSR_KERNEL_GS_BASE   0xc0000102 /* SwapGS GS shadow */
 #define MSR_TSC_AUX          0xc0000103 /* Auxiliary TSC */
 #define MSR_FIXED_CTR0       0x00000309
+#define MSR_FIXED_CTR1       0x0000030A
+#define MSR_FIXED_CTR2       0x0000030B
 #define MSR_FIXED_CTR_CTRL   0x0000038D
 #define MSR_PERF_GLOBAL_CTRL 0x0000038F
 

@@ -17,7 +17,7 @@ enum Hypercall : size_t {
 	GetFileInfo,
 	SubmitFilePointers,
 	SubmitTimeoutPointers,
-	SubmitTracingPointer,
+	SubmitTracingTypePointer,
 	PrintStacktrace,
 	LoadLibrary,
 	EndRun,
@@ -142,9 +142,8 @@ void Vm::do_hc_submit_timeout_pointers(vaddr_t timer_addr, vaddr_t timeout_addr)
 	m_timeout_addr = timeout_addr;
 }
 
-void Vm::do_hc_submit_tracing_pointer(vaddr_t tracing_addr) {
-	m_tracing_addr = tracing_addr;
-	m_mmu.write(m_tracing_addr, m_tracing);
+void Vm::do_hc_submit_tracing_type_pointer(vaddr_t tracing_type_addr) {
+	m_tracing.set_type_addr(tracing_type_addr);
 }
 
 void Vm::do_hc_print_stacktrace(vaddr_t stacktrace_regs_addr) {
@@ -175,20 +174,16 @@ void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 	m_running = false;
 }
 
-void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr, size_t measure_start) {
-	m_syscall.name = m_mmu.read_string(syscall_name_addr);
-	if (m_syscall.name == "exit_group")
-		m_trace.push_back({m_syscall.name, 0});
-	else
-		m_syscall.measure_start = measure_start;
+void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr) {
+	ASSERT(m_tracing.type() == Tracing::Type::Kernel, "hc_notify_syscall_start "
+	       "but we are not tracing kernel");
+	m_tracing.prepare(m_mmu.read_string(syscall_name_addr));
 }
 
-void Vm::do_hc_notify_syscall_end(size_t measure_end) {
-	uint64_t measure = measure_end - m_syscall.measure_start;
-	ASSERT(measure != 0, "measure traced by syscall is 0, did you compile with "
-	                     "-Dtracing-unit=instructions and forgot -Dinstruction-count=all ?");
-	m_trace.push_back({m_syscall.name, measure});
-	m_syscall = {};
+void Vm::do_hc_notify_syscall_end() {
+	ASSERT(m_tracing.type() == Tracing::Type::Kernel, "hc_notify_syscall_end "
+	       "but we are not tracing kernel");
+	m_tracing.trace();
 }
 
 void Vm::handle_hypercall(RunEndReason& reason) {
@@ -217,8 +212,8 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 		case Hypercall::SubmitTimeoutPointers:
 			do_hc_submit_timeout_pointers(m_regs->rdi, m_regs->rsi);
 			break;
-		case Hypercall::SubmitTracingPointer:
-			do_hc_submit_tracing_pointer(m_regs->rdi);
+		case Hypercall::SubmitTracingTypePointer:
+			do_hc_submit_tracing_type_pointer(m_regs->rdi);
 			break;
 		case Hypercall::PrintStacktrace:
 			do_hc_print_stacktrace(m_regs->rdi);
@@ -231,10 +226,10 @@ void Vm::handle_hypercall(RunEndReason& reason) {
 			do_hc_end_run(reason, m_regs->rsi);
 			break;
 		case Hypercall::NotifySyscallStart:
-			do_hc_notify_syscall_start(m_regs->rdi, m_regs->rsi);
+			do_hc_notify_syscall_start(m_regs->rdi);
 			break;
 		case Hypercall::NotifySyscallEnd:
-			do_hc_notify_syscall_end(m_regs->rdi);
+			do_hc_notify_syscall_end();
 			break;
 		default:
 			ASSERT(false, "unknown hypercall: %llu", m_regs->rax);

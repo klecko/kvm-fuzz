@@ -164,7 +164,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 			local_stats.report_cov_cycles += rdtsc1() - cycles;
 
 			// Dump trace of syscalls
-			runner.dump_trace(id);
+			runner.tracing().dump_trace(id);
 
 			// Reset vm
 			cycles = rdtsc1();
@@ -184,7 +184,7 @@ void worker(int id, const Vm& base, Corpus& corpus, Stats& stats) {
 int main(int argc, char** argv) {
 	Args args;
 	if (!args.parse(argc, argv))
-		return 0;
+		return EXIT_FAILURE;
 
 	system("rm -rf traces; mkdir traces");
 
@@ -243,7 +243,8 @@ int main(int argc, char** argv) {
 	// we want to put breakpoints to get code coverage in those areas.
 	vm.setup_coverage();
 
-	vm.set_tracing(args.tracing);
+	vm.tracing().set_type(args.tracing_type);
+	vm.tracing().set_unit(args.tracing_unit);
 
 	if (args.single_run) {
 		// Just perform a single run and exit.

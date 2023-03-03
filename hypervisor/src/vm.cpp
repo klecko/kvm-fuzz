@@ -46,9 +46,7 @@ Vm::Vm(vsize_t mem_size, const string& kernel_path, const string& binary_path,
 	, m_instructions_executed_prev(0)
 	, m_timer_addr(0)
 	, m_timeout_addr(0)
-	, m_tracing(false)
-	, m_tracing_addr(0)
-	, m_next_trace_id(0)
+	, m_tracing(*this)
 {
 	m_mmu.create_physmap();
 	s_elfs.init(binary_path, kernel_path);
@@ -71,9 +69,7 @@ Vm::Vm(const Vm& other)
 	, m_instructions_executed_prev(other.m_instructions_executed_prev)
 	, m_timer_addr(other.m_timer_addr)
 	, m_timeout_addr(other.m_timeout_addr)
-	, m_tracing(other.m_tracing)
-	, m_tracing_addr(other.m_tracing_addr)
-	, m_next_trace_id(other.m_next_trace_id)
+	, m_tracing(*this, other.m_tracing)
 {
 	// Elfs are already relocated by the other VM, we can init vmx pt
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -89,10 +85,11 @@ Vm::Vm(const Vm& other)
 	memcpy(m_sregs, other.m_sregs, sizeof(*m_sregs));
 
 	// Copy MSRs
-	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*8;
+	size_t n_msrs = 9;
+	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*n_msrs;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
 	memset(msrs, 0, sz);
-	msrs->nmsrs = 8;
+	msrs->nmsrs = n_msrs;
 	msrs->entries[0].index = MSR_LSTAR;
 	msrs->entries[1].index = MSR_STAR;
 	msrs->entries[2].index = MSR_SYSCALL_MASK;
@@ -101,6 +98,7 @@ Vm::Vm(const Vm& other)
 	msrs->entries[5].index = MSR_FIXED_CTR_CTRL;
 	msrs->entries[6].index = MSR_PERF_GLOBAL_CTRL;
 	msrs->entries[7].index = MSR_FIXED_CTR0;
+	msrs->entries[8].index = MSR_FIXED_CTR1;
 	ioctl_chk(other.m_vcpu_fd, KVM_GET_MSRS, msrs);
 	ioctl_chk(m_vcpu_fd, KVM_SET_MSRS, msrs);
 
@@ -402,7 +400,11 @@ FaultInfo Vm::fault() const {
 	return m_fault;
 }
 
-uint64_t Vm::read_msr(uint64_t msr) {
+Tracing& Vm::tracing() {
+	return m_tracing;
+}
+
+uint64_t Vm::read_msr(uint64_t msr) const {
 	size_t sz = sizeof(kvm_msrs) + sizeof(kvm_msr_entry)*1;
 	kvm_msrs* msrs = (kvm_msrs*)alloca(sz);
 	memset(msrs, 0, sz);
@@ -467,6 +469,8 @@ void Vm::reset(const Vm& other, Stats& stats) {
 	// kvm_lapic_state lapic;
 	// ioctl_chk(other.m_vcpu_fd, KVM_GET_LAPIC, &lapic);
 	// ioctl_chk(m_vcpu_fd, KVM_SET_LAPIC, &lapic);
+
+	m_tracing.reset(other.m_tracing);
 
 	// Indicate we have dirtied registers
 	set_regs_dirty();
@@ -604,10 +608,30 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	}
 
 #ifdef ENABLE_COVERAGE_BREAKPOINTS
-	// If it's a coverage breakpoint, add address to basic block hits and
-	// remove it
+	// If it's a coverage breakpoint, add address to basic block hits, and
+	// remove it only if we are not tracing user. If we are tracing user, we
+	// want to keep it to have full coverage.
 	if (bp.type & Breakpoint::Type::Coverage) {
-		remove_breakpoint(addr, Breakpoint::Coverage);
+		if (m_tracing.type() == Tracing::Type::User) {
+			string symbol;
+			if (!elf().addr_to_symbol_str(addr, symbol))
+				symbol = utils::to_hex(addr);
+			m_tracing.trace_and_prepare(symbol);
+
+			// Remove breakpoint, single step, and enable it again. Hopefully
+			// this isn't as buggy as above lol
+			remove_breakpoint(addr, Breakpoint::Coverage);
+			Stats dummy;
+			RunEndReason reason_ss = single_step(dummy);
+			if (reason_ss == RunEndReason::Debug && !m_single_stepping)
+				m_running = true;
+			else
+				reason = reason_ss;
+			set_breakpoint(addr, Breakpoint::Type::Coverage);
+		} else {
+			remove_breakpoint(addr, Breakpoint::Coverage);
+		}
+
 		m_coverage.add(addr);
 	}
 #endif
@@ -749,10 +773,11 @@ void Vm::set_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 		Breakpoint& bp = m_breakpoints[addr];
 		if (bp.type == Breakpoint::Coverage)
 			*m_mmu.get(addr) = 0xCC;
+		else
+			ASSERT((bp.type & type) == 0, "set breakpoint twice at 0x%lx, type %d\n",
+				   addr, type);
 
 		// Add type to breakpoint
-		ASSERT((bp.type & type) == 0, "set breakpoint twice at 0x%lx, type %d\n",
-		       addr, type);
 		bp.type |= type;
 	}
 }
@@ -773,18 +798,15 @@ bool Vm::try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type) {
 	// type left. We never remove coverage breakpoints from m_breakpoints.
 	// This is because the original VM we forked from has the breakpoints set
 	// in its memory. Removing the breakpoint from our memory doesn't dirty
-	// memory, so it isn't resetted, but guest could write to that memory and
-	// dirty it. In that case the breakpoint will appear again in memory when
-	// it's resetted, so we have to keep it in m_breakpoints to handle it.
+	// memory (unless m_breakpoints_dirty is set), so the breakpoint isn't
+	// resetted. But guest could write to that memory and dirty it, in which
+	// case the breakpoint will appear again in memory when it's resetted. So
+	// we have to keep it in m_breakpoints to handle it in that case.
 	if (type == Breakpoint::Type::Coverage) {
 		if (bp.type == type)
 			remove_breakpoint_from_memory(addr, bp.original_byte);
 		return true;
 	}
-	// if (type == Breakpoint::Type::Coverage && bp.type == type) {
-	// 	remove_breakpoint_from_memory(addr, bp.original_byte);
-	// 	return true;
-	// }
 
 	bp.type &= ~type;
 
@@ -866,39 +888,19 @@ void Vm::stack_push(size_t value) {
 	mmu().write<size_t>(regs().rsp, value);
 }
 
-void Vm::set_tracing(bool tracing) {
-	ASSERT(m_tracing_addr, "kernel didn't submit tracing addr");
-	m_tracing = tracing;
-	m_mmu.write(m_tracing_addr, m_tracing);
-}
-
-void Vm::dump_trace(size_t id) {
-	if (!m_tracing)
-		return;
-
-	string filename = "traces/" + to_string(id) + "_" + to_string(m_next_trace_id++);
-	ofstream out(filename);
-	for (pair<string, size_t> element : m_trace) {
-		out << element.first << " " << to_string(element.second) << endl;
-	}
-	m_trace.clear();
-}
-
 void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
 	// PC is the return address, which means it points to the instruction after
 	// the 'call' instruction. We substract 1 to that PC to get the symbol and
 	// source information of the 'call' instruction and not the instruction
 	// after it. However, we want to print the actual PC and the actual offset
 	// within the symbol.
-	symbol_t symbol;
-	bool have_symbol = elf.addr_to_symbol(pc - 1, symbol);
+	string symbol;
+	bool have_symbol = elf.addr_to_symbol_str(pc - 1, symbol);
 	string source = elf.addr_to_source(pc - 1);
 
 	printf("#%lu 0x%016lx", i, pc);
-	if (have_symbol) {
-		size_t offset = pc - symbol.value;
-		printf(" %s + 0x%lx", symbol.name.c_str(), offset);
-	}
+	if (have_symbol)
+		printf(" %s", symbol.c_str());
 	if (!source.empty())
 		printf(" at %s", source.c_str());
 	else
