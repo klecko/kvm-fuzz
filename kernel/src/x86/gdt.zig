@@ -184,13 +184,16 @@ comptime {
 /// Our TSS, initialized at runtime.
 pub var tss: TaskStateSegment = undefined;
 
+const KernelPrivilegeLevel = 0;
+const UserPrivigeLevel = 3;
+
 /// Segment selectors, which represent offsets into the GDT for each segment.
 pub const SegmentSelector = enum(u16) {
     Null = 0,
-    KernelCode = 0x08,
-    KernelData = 0x10,
-    UserData = 0x18,
-    UserCode = 0x20,
+    KernelCode = 0x08 | KernelPrivilegeLevel,
+    KernelData = 0x10 | KernelPrivilegeLevel,
+    UserData = 0x18 | UserPrivigeLevel,
+    UserCode = 0x20 | UserPrivigeLevel,
     TaskStateSegment = 0x28,
 };
 
@@ -205,16 +208,16 @@ var gdt = blk: {
     gdt_tmp[0] = GlobalDescriptor.init_null();
 
     // Kernel code
-    gdt_tmp[1] = GlobalDescriptor.init(.code, 0);
+    gdt_tmp[1] = GlobalDescriptor.init(.code, KernelPrivilegeLevel);
 
     // Kernel data
-    gdt_tmp[2] = GlobalDescriptor.init(.data, 0);
+    gdt_tmp[2] = GlobalDescriptor.init(.data, KernelPrivilegeLevel);
 
     // User dada
-    gdt_tmp[3] = GlobalDescriptor.init(.data, 3);
+    gdt_tmp[3] = GlobalDescriptor.init(.data, UserPrivigeLevel);
 
     // User code
-    gdt_tmp[4] = GlobalDescriptor.init(.code, 3);
+    gdt_tmp[4] = GlobalDescriptor.init(.code, UserPrivigeLevel);
 
     // TSS descriptor is initialized at runtime
     break :blk gdt_tmp;

@@ -33,7 +33,7 @@ fn sys_mmap(
 
     const supported_flags: i32 = linux.MAP.PRIVATE | linux.MAP.SHARED |
         linux.MAP.ANONYMOUS | linux.MAP.FIXED | linux.MAP.DENYWRITE |
-        linux.MAP.STACK | linux.MAP.NORESERVE;
+        linux.MAP.STACK | linux.MAP.NORESERVE | linux.MAP.POPULATE;
     if (flags & supported_flags != flags) {
         panic("mmap unsupported flags: 0x{x}\n", .{flags & ~supported_flags});
     }

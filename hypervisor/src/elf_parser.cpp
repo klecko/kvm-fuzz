@@ -221,6 +221,9 @@ void ElfParser::init() {
 			continue;
 
 		section_t sec_sym = m_sections[section.link];
+		if (sec_sym.type != SHT_SYMTAB && sec_sym.type != SHT_DYNSYM)
+			continue;
+
 		section_t sec_str = m_sections[sec_sym.link];
 		Elf_Sym* syms = (Elf_Sym*)sec_sym.data;
 		const char* strs = (char*)sec_str.data;
@@ -437,14 +440,14 @@ bool ElfParser::addr_to_symbol(vaddr_t addr, symbol_t& result) const {
 	return false;
 }
 
-bool ElfParser::addr_to_symbol_str(vaddr_t pc, string& result) const {
+string ElfParser::addr_to_symbol_str(vaddr_t pc) const {
+	string result;
 	symbol_t symbol;
-	bool have_symbol = addr_to_symbol(pc, symbol);
-	if (have_symbol) {
+	if (addr_to_symbol(pc, symbol)) {
 		size_t offset = pc - symbol.value;
 		result = symbol.name + " + 0x" + utils::to_hex(offset);
 	}
-	return have_symbol;
+	return result;
 }
 
 string ElfParser::addr_to_source(vaddr_t addr) const {

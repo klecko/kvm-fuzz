@@ -25,7 +25,7 @@ for filename in dir.iterdir():
 			continue
 
 		if tracing_type == None:
-			if "+" in trace[0].split()[0]:
+			if "+" in trace[0].split()[1]:
 				tracing_type = TracingType.User
 			else:
 				tracing_type = TracingType.Kernel

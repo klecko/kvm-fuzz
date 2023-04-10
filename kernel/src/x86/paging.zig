@@ -363,6 +363,7 @@ pub const PageTable = struct {
             entry.setWritable(true);
             entry.setUser(true); // TODO: remove me and see what happens
             x86.flush_tlb_entry(mem.pmm.physToVirt(usize, frame));
+            log.debug("mapping page table at 0x{x}\n", .{frame});
         }
     }
 

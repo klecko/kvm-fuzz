@@ -302,6 +302,42 @@ fn buildHypervisorTests(b: *std.build.Builder, std_target: CrossTarget, std_mode
     install.step.dependOn(&test_files_install.step);
 }
 
+fn buildExperiments(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
+    const exe = b.addExecutable("resets_exp", null);
+    exe.setTarget(std_target);
+    exe.setBuildMode(std_mode);
+    exe.addIncludePath("hypervisor/include");
+    exe.addCSourceFiles(&.{
+        "hypervisor/experiments/resets/resets_exp.cpp",
+        "hypervisor/src/elf_debug.cpp",
+        "hypervisor/src/elf_parser.cpp",
+        "hypervisor/src/elfs.cpp",
+        "hypervisor/src/files.cpp",
+        "hypervisor/src/hypercalls.cpp",
+        "hypervisor/src/mmu.cpp",
+        "hypervisor/src/page_walker.cpp",
+        "hypervisor/src/utils.cpp",
+        "hypervisor/src/tracing.cpp",
+        "hypervisor/src/vm.cpp",
+    }, &.{
+        "-std=c++11",
+    });
+    exe.defineCMacro("ENABLE_INSTRUCTION_COUNT", null);
+    exe.linkLibC();
+    exe.linkLibCpp();
+    exe.linkSystemLibrary("dwarf");
+    exe.linkSystemLibrary("elf");
+    exe.linkSystemLibrary("crypto");
+    const install = b.addInstallArtifact(exe);
+    const build_step = b.step("experiments", "Build experiments");
+    build_step.dependOn(&install.step);
+
+    const resets_test_exe = b.addExecutable("resets_test", "hypervisor/experiments/resets/resets_test.c");
+    resets_test_exe.linkLibC();
+    const resets_test_install = b.addInstallArtifact(resets_test_exe);
+    install.step.dependOn(&resets_test_install.step);
+}
+
 pub fn build(b: *std.build.Builder) void {
     const std_target = b.standardTargetOptions(.{});
 
@@ -321,4 +357,5 @@ pub fn build(b: *std.build.Builder) void {
     buildHypervisor(b, std_target, std_mode, shared_options);
     buildSyscallsTests(b, std_target, std_mode);
     buildHypervisorTests(b, std_target, std_mode);
+    buildExperiments(b, std_target, std_mode);
 }

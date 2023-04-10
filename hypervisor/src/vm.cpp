@@ -613,8 +613,8 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	// want to keep it to have full coverage.
 	if (bp.type & Breakpoint::Type::Coverage) {
 		if (m_tracing.type() == Tracing::Type::User) {
-			string symbol;
-			if (!elf().addr_to_symbol_str(addr, symbol))
+			string symbol = elf().addr_to_symbol_str(addr);
+			if (symbol.empty())
 				symbol = utils::to_hex(addr);
 			m_tracing.trace_and_prepare(symbol);
 
@@ -894,12 +894,11 @@ void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
 	// source information of the 'call' instruction and not the instruction
 	// after it. However, we want to print the actual PC and the actual offset
 	// within the symbol.
-	string symbol;
-	bool have_symbol = elf.addr_to_symbol_str(pc - 1, symbol);
+	string symbol = elf.addr_to_symbol_str(pc - 1);
 	string source = elf.addr_to_source(pc - 1);
 
 	printf("#%lu 0x%016lx", i, pc);
-	if (have_symbol)
+	if (!symbol.empty())
 		printf(" %s", symbol.c_str());
 	if (!source.empty())
 		printf(" at %s", source.c_str());
