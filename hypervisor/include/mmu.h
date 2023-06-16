@@ -143,8 +143,6 @@ private:
 	// and there doesn't seem to be a way to update it. For now, those pages
 	// are saved here.
 	std::vector<paddr_t> m_dirty_extra;
-
-	void init_page_table();
 };
 
 template<class T>

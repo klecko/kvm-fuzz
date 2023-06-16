@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <limits>
+#include <iomanip>
+#include <sstream>
 #include <algorithm>
 #include "elf_parser.h"
 #include "utils.h"
@@ -409,6 +411,8 @@ vector<string> ElfParser::get_dependencies() const {
 		if (pos1 == string::npos)
 			continue;
 		pos1 += 3;
+		if (line.substr(pos1) == "not found")
+			continue;
 		size_t pos2 = line.find(" ", pos1); // assume path doesn't have spaces :')
 		if (pos2 == string::npos)
 			continue;
@@ -461,6 +465,27 @@ string ElfParser::addr_to_source(vaddr_t addr) const {
 		src = m_debug_elf->m_debug.addr_to_source(addr);
 	}
 	return src;
+}
+
+string ElfParser::addr_to_symbol_and_source(vaddr_t addr, bool is_ret_addr) const {
+	// If addr is a return address, it means it points to the instruction after
+	// the 'call' instruction. We substract 1 to that PC to get the symbol and
+	// source information of the 'call' instruction and not the instruction
+	// after it. However, we want to print the actual PC and the actual offset
+	// within the symbol.
+	vaddr_t addr_symbol = is_ret_addr ? addr - 1 : addr;
+	string symbol = addr_to_symbol_str(addr_symbol);
+	string source = addr_to_source(addr_symbol);
+
+	stringstream ss;
+	ss << "0x" << std::setfill('0') << std::setw(sizeof(addr)*2) << std::hex << addr;
+	if (!symbol.empty())
+		ss << " " << symbol;
+	if (!source.empty())
+		ss << " at " << source;
+	else
+		ss << " from " << m_path;
+	return ss.str();
 }
 
 void kvm_to_dwarf_regs(const kvm_regs& kregs, vsize_t regs[DwarfReg::MAX]) {

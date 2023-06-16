@@ -61,7 +61,7 @@ const GlobalDescriptor = packed struct {
         code,
     };
 
-    pub fn init_base(base: u32, limit: u20, access: AccessBits, flags: FlagsBits) GlobalDescriptor {
+    fn init_base(base: u32, limit: u20, access: AccessBits, flags: FlagsBits) GlobalDescriptor {
         return GlobalDescriptor{
             .base_low = @intCast(u16, base & 0xFFFF),
             .base_mid = @intCast(u8, (base >> 16) & 0xFF),
@@ -74,8 +74,7 @@ const GlobalDescriptor = packed struct {
     }
 
     pub fn init_null() GlobalDescriptor {
-        // return std.mem.zeroes(GlobalDescriptor);
-        return init_base(0, 0, std.mem.zeroes(AccessBits), std.mem.zeroes(FlagsBits));
+        return std.mem.zeroes(GlobalDescriptor);
     }
 
     pub fn init(comptime type_: Type, privilege: u2) GlobalDescriptor {

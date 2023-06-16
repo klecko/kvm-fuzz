@@ -6,6 +6,11 @@
 #include "vm.h"
 #include "utils.h"
 
+enum Exception : uint32_t {
+	Debug = 1,
+	Breakpoint = 3,
+};
+
 using namespace std;
 
 int g_kvm_fd = -1;
@@ -486,6 +491,7 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 		cycles = rdtsc2();
 		ioctl_chk(m_vcpu_fd, KVM_RUN, 0);
 		stats.kvm_cycles += rdtsc2() - cycles;
+		cycles = rdtsc2();
 		stats.vm_exits++;
 		switch (m_vcpu_run->exit_reason) {
 			case KVM_EXIT_HLT:
@@ -498,24 +504,29 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 				{
 					// This will change `reason` in case it sets `m_running`
 					// to false
-					cycles = rdtsc2();
 					handle_hypercall(reason);
-					stats.hypercall_cycles += rdtsc2() - cycles;
 					stats.vm_exits_hc++;
 				} else {
 					vm_err("IO");
 				}
 				break;
 
-			case KVM_EXIT_DEBUG:
+			case KVM_EXIT_DEBUG: {
 				stats.vm_exits_debug++;
-				if (m_breakpoints.count(m_regs->rip))
-					handle_breakpoint(reason);
-				else {
-					reason = RunEndReason::Debug;
-					m_running = false;
+				uint32_t exception = m_vcpu_run->debug.arch.exception;
+				switch (exception) {
+					case Exception::Debug:
+						reason = RunEndReason::Debug;
+						m_running = false;
+						break;
+					case Exception::Breakpoint:
+						handle_breakpoint(reason);
+						break;
+					default:
+						ASSERT(false, "unknown exception %lu", exception);
 				}
 				break;
+			}
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
 			case KVM_EXIT_VMX_PT_TOPA_MAIN_FULL:
@@ -539,6 +550,8 @@ Vm::RunEndReason Vm::run(Stats& stats) {
 			default:
 				vm_err("UNKNOWN EXIT " + to_string(m_vcpu_run->exit_reason));
 		}
+
+		stats.vm_exits_cycles += rdtsc2() - cycles;
 	}
 
 #ifdef ENABLE_COVERAGE_INTEL_PT
@@ -613,10 +626,7 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	// want to keep it to have full coverage.
 	if (bp.type & Breakpoint::Type::Coverage) {
 		if (m_tracing.type() == Tracing::Type::User) {
-			string symbol = elf().addr_to_symbol_str(addr);
-			if (symbol.empty())
-				symbol = utils::to_hex(addr);
-			m_tracing.trace_and_prepare(symbol);
+			tracing_add_addr(addr);
 
 			// Remove breakpoint, single step, and enable it again. Hopefully
 			// this isn't as buggy as above lol
@@ -636,6 +646,14 @@ void Vm::handle_breakpoint(RunEndReason& reason) {
 	}
 #endif
 
+}
+
+void Vm::tracing_add_addr(vaddr_t addr) {
+	ASSERT(m_tracing.type() == Tracing::Type::User, "tracing type is not user");
+	string symbol = elf().addr_to_symbol_str(addr);
+	if (symbol.empty())
+		symbol = utils::to_hex(addr);
+	m_tracing.trace_and_prepare(symbol);
 }
 
 void Vm::run_until(vaddr_t pc, Stats& stats) {
@@ -853,12 +871,12 @@ void Vm::maybe_write_file_to_guest(
 	const GuestFile& file,
 	CheckCopied check
 ) {
-	if (file.guest.data_addr) {
+	if (file.guest_ptrs.data_addr) {
 		// File already existed and kernel submitted its pointers. Write file
 		// data and length into kernel memory. Note this should be done before
 		// guest opens the file.
-		m_mmu.write_mem(file.guest.data_addr, file.data.ptr, file.data.length);
-		m_mmu.write<vaddr_t>(file.guest.length_addr, file.data.length);
+		m_mmu.write_mem(file.guest_ptrs.data_addr, file.data.ptr, file.data.length);
+		m_mmu.write<vsize_t>(file.guest_ptrs.length_addr, file.data.length);
 	} else {
 		// File didn't exist or kernel didn't submit its pointers with
 		// hc_set_file_pointers yet.
@@ -888,25 +906,6 @@ void Vm::stack_push(size_t value) {
 	mmu().write<size_t>(regs().rsp, value);
 }
 
-void print_stacktrace_line(const ElfParser& elf, size_t i, vaddr_t pc) {
-	// PC is the return address, which means it points to the instruction after
-	// the 'call' instruction. We substract 1 to that PC to get the symbol and
-	// source information of the 'call' instruction and not the instruction
-	// after it. However, we want to print the actual PC and the actual offset
-	// within the symbol.
-	string symbol = elf.addr_to_symbol_str(pc - 1);
-	string source = elf.addr_to_source(pc - 1);
-
-	printf("#%lu 0x%016lx", i, pc);
-	if (!symbol.empty())
-		printf(" %s", symbol.c_str());
-	if (!source.empty())
-		printf(" at %s", source.c_str());
-	else
-		printf(" from %s", elf.path().c_str());
-	printf("\n");
-}
-
 void Vm::print_current_stacktrace(size_t num_frames) {
 	print_stacktrace(regs(), num_frames);
 }
@@ -921,7 +920,7 @@ void Vm::print_stacktrace(const kvm_regs& kregs, size_t num_frames){
 	for (size_t i = 0; i < stacktrace.size(); i++) {
 		vaddr_t pc = stacktrace[i].first;
 		const ElfParser& elf = *stacktrace[i].second;
-		print_stacktrace_line(elf, i, pc);
+		printf("#%lu %s\n", i, elf.addr_to_symbol_and_source(pc, true).c_str());
 	}
 
 	if (stacktrace.size() <= 1) {

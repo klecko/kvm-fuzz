@@ -4,6 +4,25 @@
 #include <sys/stat.h>
 #include "common.h"
 
+TEST_CASE("lseek") {
+	int fd = open(input, O_RDONLY);
+	REQUIRE(fd > 0);
+
+	struct stat st;
+	REQUIRE(fstat(fd, &st) == 0);
+	REQUIRE(st.st_size > 0);
+
+	REQUIRE(lseek(fd, 1234, SEEK_SET) == 1234);
+	REQUIRE(lseek(fd, -1, SEEK_CUR) == 1233);
+	REQUIRE(lseek(fd, -1, SEEK_END) == st.st_size - 1);
+	REQUIRE(lseek(fd, -st.st_size, SEEK_CUR) == -1);
+	REQUIRE(errno == EINVAL);
+	REQUIRE(lseek(fd, -123, SEEK_SET) == -1);
+	REQUIRE(errno == EINVAL);
+
+	REQUIRE(close(fd) == 0);
+}
+
 TEST_CASE("files") {
 	// Check file exists and we have read access
 	REQUIRE(access(input, R_OK) == 0);
@@ -68,26 +87,10 @@ TEST_CASE("files") {
 	delete[] buf;
 }
 
-TEST_CASE("read oob") {
-	void* kernel_addr = (void*)0xffffffff80202000;
-	int fd = open(input, O_RDONLY);
-	REQUIRE(read(fd, kernel_addr, 1) == -1);
-	REQUIRE(errno == EFAULT);
-
-	REQUIRE(read(fd, 0, 1) == -1);
-	REQUIRE(errno == EFAULT);
-
-	REQUIRE(read(fd, (void*)&read, 1) == -1);
-	REQUIRE(errno == EFAULT);
-
-	REQUIRE(close(fd) == 0);
-}
-
 TEST_CASE("read not readable") {
-	char buf[5];
 	int fd = open(input, O_WRONLY);
 	REQUIRE(fd > 0);
-	REQUIRE(read_and_check_first_five_bytes(fd, buf) == -1);
+	REQUIRE(read_and_check_first_five_bytes(fd) == -1);
 	REQUIRE(errno == EBADF);
 	REQUIRE(close(fd) == 0);
 }

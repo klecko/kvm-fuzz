@@ -12,11 +12,12 @@ fn sys_sched_getaffinity(
     mask_ptr: UserSlice([]u8),
 ) !usize {
     std.debug.assert(pid == 0 or pid == self.pid);
-    if (mask_ptr.len() < 8)
+    const mask = [_]u8{ 1, 0, 0, 0, 0, 0, 0, 0 };
+    const size = @sizeOf(@TypeOf(mask));
+    if (mask_ptr.len() < size)
         return error.InvalidArgument;
 
-    const mask = [_]u8{ 1, 0, 0, 0, 0, 0, 0, 0 };
-    try mem.safe.copyToUser(u8, mask_ptr, &mask);
+    try mem.safe.copyToUser(u8, mask_ptr.sliceTo(size), &mask);
     return @sizeOf(@TypeOf(mask)); // number of bytes written
 }
 

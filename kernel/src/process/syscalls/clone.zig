@@ -126,9 +126,9 @@ pub fn handle_sys_clone(
     regs: *Process.UserRegs,
 ) !usize {
     const flags = arg0;
-    const stack_ptr = UserPtr(*u8).fromFlatMaybeNull(arg1);
-    const parent_tid_ptr = UserPtr(*linux.pid_t).fromFlatMaybeNull(arg2);
-    const child_tid_ptr = UserPtr(*linux.pid_t).fromFlatMaybeNull(arg3);
+    const stack_ptr = try UserPtr(*u8).fromFlatMaybeNull(arg1);
+    const parent_tid_ptr = try UserPtr(*linux.pid_t).fromFlatMaybeNull(arg2);
+    const child_tid_ptr = try UserPtr(*linux.pid_t).fromFlatMaybeNull(arg3);
     const tls = arg4;
     const ret = try sys_clone(self, flags, stack_ptr, parent_tid_ptr, child_tid_ptr, tls, regs);
     return cast(usize, ret);

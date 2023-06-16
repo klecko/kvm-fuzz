@@ -9,7 +9,8 @@
 const char input[] = "./tests/input_hello_world";
 
 __attribute__((warn_unused_result))
-inline int read_and_check_first_five_bytes(int fd, char* buf) {
+inline int read_and_check_first_five_bytes(int fd) {
+	char buf[6];
 	if (read(fd, buf, 5) != 5)
 		return -1;
 	buf[5] = 0;
@@ -19,7 +20,8 @@ inline int read_and_check_first_five_bytes(int fd, char* buf) {
 }
 
 __attribute__((warn_unused_result))
-inline int read_and_check_next_seven_bytes(int fd, char* buf) {
+inline int read_and_check_next_seven_bytes(int fd) {
+	char buf[8];
 	if (read(fd, buf, 7) != 7)
 		return -1;
 	buf[7] = 0;

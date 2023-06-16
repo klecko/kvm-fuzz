@@ -5,6 +5,7 @@ const linux = @import("../linux.zig");
 const fs = @import("fs.zig");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.FileManager);
+const common = @import("../common.zig");
 
 var file_contents: std.StringHashMap([]u8) = undefined;
 
@@ -26,15 +27,14 @@ pub fn init(allocator: Allocator, num_files: usize) void {
         var size: usize = undefined;
         hypercalls.getFileInfo(i, &filename_buf, &size);
 
-        // Calculate filename length, allocate a buffer and copy it
+        // Calculate filename length and allocate it into a buffer
         const filename_len = std.mem.indexOfScalar(u8, &filename_buf, 0).?;
-        var filename = allocator.alloc(u8, filename_len) catch unreachable;
-        std.mem.copy(u8, filename, filename_buf[0..filename_len]);
+        const filename = allocator.dupe(u8, filename_buf[0..filename_len]) catch unreachable;
 
         // Allocate a buffer for the file, insert it into file_contents
         // and submit buf and length pointers to the hypervisor, which will
         // fill the buffer with the file content.
-        var buf = allocator.alloc(u8, size) catch unreachable;
+        const buf = allocator.alloc(u8, size) catch unreachable;
         file_contents.put(filename, buf) catch unreachable;
         const length_ptr = &file_contents.getPtr(filename).?.*.len;
         hypercalls.submitFilePointers(i, buf.ptr, length_ptr);

@@ -121,7 +121,7 @@ pub fn handle_sys_futex(
         linux.FUTEX.WAIT_BITSET,
         linux.FUTEX.LOCK_PI,
         linux.FUTEX.WAIT_REQUEUE_PI,
-        => VariantArg{ .timeout = UserPtr(*linux.timespec).fromFlatMaybeNull(arg3) },
+        => VariantArg{ .timeout = try UserPtr(*linux.timespec).fromFlatMaybeNull(arg3) },
         // These interpret the argument as val2
         linux.FUTEX.CMP_REQUEUE,
         linux.FUTEX.WAKE_OP,

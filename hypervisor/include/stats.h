@@ -16,6 +16,7 @@
 typedef unsigned long long cycle_t;
 
 // STATS
+// TODO join update_cov and report_cov?
 struct Stats {
 	uint64_t cases {0};
 	uint64_t instr {0};
@@ -29,7 +30,7 @@ struct Stats {
 	cycle_t  reset_cycles {0};
 	cycle_t  reset_pages {0};
 	cycle_t  run_cycles {0};
-	cycle_t  hypercall_cycles {0};
+	cycle_t  vm_exits_cycles {0};
 	cycle_t  kvm_cycles {0};
 	cycle_t  mut_cycles {0};
 	cycle_t  mut1_cycles {0};
@@ -54,7 +55,7 @@ struct Stats {
 		reset_cycles      = other.reset_cycles;
 		reset_pages       = other.reset_pages;
 		run_cycles        = other.run_cycles;
-		hypercall_cycles  = other.hypercall_cycles;
+		vm_exits_cycles   = other.vm_exits_cycles;
 		kvm_cycles        = other.kvm_cycles;
 		mut_cycles        = other.mut_cycles;
 		mut1_cycles       = other.mut1_cycles;
@@ -78,7 +79,7 @@ struct Stats {
 		reset_cycles      += stats.reset_cycles;
 		reset_pages       += stats.reset_pages;
 		run_cycles        += stats.run_cycles;
-		hypercall_cycles  += stats.hypercall_cycles;
+		vm_exits_cycles   += stats.vm_exits_cycles;
 		kvm_cycles        += stats.kvm_cycles;
 		mut_cycles        += stats.mut_cycles;
 		mut1_cycles       += stats.mut1_cycles;

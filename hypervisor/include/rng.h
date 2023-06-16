@@ -1,3 +1,6 @@
+#ifndef _RNG_H
+#define _RNG_H
+
 #include <x86intrin.h> // _rdtsc()
 #include "common.h"
 
@@ -40,3 +43,5 @@ class Rng {
 			return rnd(min, x);
 		}
 };
+
+#endif

@@ -39,7 +39,7 @@ fn sys_time(self: *Process, time_ptr: ?UserPtr(*linux.time_t)) !linux.time_t {
 }
 
 pub fn handle_sys_time(self: *Process, arg0: usize) !usize {
-    const time_ptr = UserPtr(*linux.time_t).fromFlatMaybeNull(arg0);
+    const time_ptr = try UserPtr(*linux.time_t).fromFlatMaybeNull(arg0);
     const ret = try sys_time(self, time_ptr);
     return cast(usize, ret);
 }
@@ -60,8 +60,8 @@ fn sys_gettimeofday(
 }
 
 pub fn handle_sys_gettimeofday(self: *Process, arg0: usize, arg1: usize) !usize {
-    const tv_ptr = UserPtr(*linux.timeval).fromFlatMaybeNull(arg0);
-    const timezone_ptr = UserPtr(*linux.timezone).fromFlatMaybeNull(arg1);
+    const tv_ptr = try UserPtr(*linux.timeval).fromFlatMaybeNull(arg0);
+    const timezone_ptr = try UserPtr(*linux.timezone).fromFlatMaybeNull(arg1);
     try sys_gettimeofday(self, tv_ptr, timezone_ptr);
     return 0;
 }

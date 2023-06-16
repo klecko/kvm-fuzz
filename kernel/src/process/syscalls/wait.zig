@@ -31,9 +31,9 @@ pub fn handle_sys_wait4(
     regs: *Process.UserRegs,
 ) !usize {
     const pid = cast(linux.pid_t, arg0);
-    const wstatus = UserPtr(*i32).fromFlatMaybeNull(arg1);
+    const wstatus = try UserPtr(*i32).fromFlatMaybeNull(arg1);
     const options = cast(i32, arg2);
-    const rusage = UserPtr(*linux.rusage).fromFlatMaybeNull(arg3);
+    const rusage = try UserPtr(*linux.rusage).fromFlatMaybeNull(arg3);
     if (try sys_wait4(self, pid, wstatus, options, rusage, regs)) |ret| {
         // The process we waited for has already exited, we didn't switch
         // processes and can continue.

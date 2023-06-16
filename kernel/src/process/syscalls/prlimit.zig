@@ -71,8 +71,8 @@ pub fn handle_sys_prlimit(
 ) !usize {
     const pid = cast(linux.pid_t, arg0);
     const resource = std.meta.intToEnum(linux.rlimit_resource, arg1) catch return error.InvalidArgument;
-    const new_limit_ptr = UserPtr(*const linux.rlimit).fromFlatMaybeNull(arg2);
-    const old_limit_ptr = UserPtr(*linux.rlimit).fromFlatMaybeNull(arg3);
+    const new_limit_ptr = try UserPtr(*const linux.rlimit).fromFlatMaybeNull(arg2);
+    const old_limit_ptr = try UserPtr(*linux.rlimit).fromFlatMaybeNull(arg3);
     try sys_prlimit(self, pid, resource, new_limit_ptr, old_limit_ptr);
     return 0;
 }

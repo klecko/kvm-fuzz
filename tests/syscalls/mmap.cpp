@@ -42,6 +42,7 @@ TEST_CASE("mmap file") {
 	REQUIRE(p != MAP_FAILED);
 	REQUIRE(strcmp(p, "hello world1\nhello world2") == 0);
 	REQUIRE(munmap(p, PAGE_SIZE) == 0);
+	REQUIRE(close(fd) == 0);
 }
 
 TEST_CASE("mmap no file no anon") {

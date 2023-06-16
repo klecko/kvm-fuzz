@@ -202,11 +202,11 @@ private:
 	void load_elfs();
 #ifdef ENABLE_COVERAGE_INTEL_PT
 	void update_coverage(Stats& stats);
+	void* fetch_page(uint64_t page, bool* success);
 #endif
 	void setup_kernel_execution(const std::vector<std::string>& argv);
 	void set_regs_dirty();
 	void set_sregs_dirty();
-	void* fetch_page(uint64_t page, bool* success);
 	void set_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	void remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
 	bool try_remove_breakpoint(vaddr_t addr, Breakpoint::Type type);
@@ -218,11 +218,11 @@ private:
 		const GuestFile& file,
 		CheckCopied check
 	);
-	std::pair<std::string, GuestFile> get_file_entry(size_t n);
+	GuestFileEntry file_entry(size_t n);
+	void tracing_add_addr(vaddr_t addr);
 	void vm_err(const std::string& err);
 
 	void handle_hypercall(RunEndReason&);
-	vaddr_t do_hc_mmap(vaddr_t addr, vsize_t size, uint64_t page_flags, int flags);
 	void do_hc_print(vaddr_t msg_addr);
 	void do_hc_get_mem_info(vaddr_t mem_info_addr);
 	vaddr_t do_hc_get_kernel_brk();

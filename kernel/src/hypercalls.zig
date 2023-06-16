@@ -16,7 +16,7 @@ pub const Hypercall = enum(c_int) {
     GetFileInfo,
     SubmitFilePointers,
     SubmitTimeoutPointers,
-    SubmitTracingPointer,
+    SubmitTracingTypePointer,
     PrintStackTrace,
     LoadLibrary,
     EndRun,
@@ -203,7 +203,7 @@ comptime {
     checkEquals(.GetFileInfo, 5);
     checkEquals(.SubmitFilePointers, 6);
     checkEquals(.SubmitTimeoutPointers, 7);
-    checkEquals(.SubmitTracingPointer, 8);
+    checkEquals(.SubmitTracingTypePointer, 8);
     checkEquals(.PrintStackTrace, 9);
     checkEquals(.LoadLibrary, 10);
     checkEquals(.EndRun, 11);
@@ -215,7 +215,6 @@ extern fn _print(s: [*]const u8) void;
 pub extern fn getMemInfo(info: *MemInfo) void;
 pub extern fn getKernelBrk() usize;
 pub extern fn getInfo(info: *VmInfo) void;
-pub extern fn getFileLen(n: usize) usize;
 
 // Returns path in `path_buf` and file length in `length_ptr`
 pub extern fn getFileInfo(n: usize, path_buf: [*]u8, length_ptr: *usize) void;
@@ -226,9 +225,7 @@ extern fn submitTracingTypePointer(tracing_type_ptr: *TracingType) void;
 extern fn _printStackTrace(stacktrace_regs: *const StackTraceRegs) void;
 extern fn loadLibrary(filename: [*]const u8, filename_len: usize, load_addr: usize) void;
 pub extern fn endRun(reason: RunEndReason, info: ?*const FaultInfo) noreturn;
-extern fn _notifySyscallStart(
-    syscall_name: [*:0]const u8,
-) void;
+extern fn _notifySyscallStart(syscall_name: [*:0]const u8) void;
 extern fn _notifySyscallEnd() void;
 extern fn getRip() usize;
 

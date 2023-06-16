@@ -68,7 +68,7 @@ fn sys_accept(
 ) !linux.fd_t {
     const file = self.files.table.get(sockfd) orelse return error.BadFD;
     const socket = file.socket() orelse return error.NotSocket;
-    if (!socket.binded or !socket.listening) // bind shouldn't be necessary?
+    if (!socket.bound or !socket.listening) // bind shouldn't be necessary?
         return error.InvalidArgument;
 
     // Create the new socket
@@ -94,8 +94,8 @@ pub fn handle_sys_accept(
     arg2: usize,
 ) !usize {
     const sockfd = cast(linux.fd_t, arg0);
-    const addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg1);
-    const addr_len_ptr = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg2);
+    const addr_ptr = try UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg1);
+    const addr_len_ptr = try UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg2);
     const ret = try sys_accept(self, sockfd, addr_ptr, addr_len_ptr);
     return cast(usize, ret);
 }
@@ -152,7 +152,7 @@ pub fn handle_sys_recvfrom(
     const sockfd = cast(linux.fd_t, arg0);
     const buf = try UserSlice([]u8).fromFlat(arg1, arg2);
     const flags = cast(i32, arg3);
-    const src_addr_ptr = UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg4);
-    const addr_len = UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg5);
+    const src_addr_ptr = try UserPtr(*linux.sockaddr).fromFlatMaybeNull(arg4);
+    const addr_len = try UserPtr(*linux.socklen_t).fromFlatMaybeNull(arg5);
     return sys_recvfrom(self, sockfd, buf, flags, src_addr_ptr, addr_len);
 }

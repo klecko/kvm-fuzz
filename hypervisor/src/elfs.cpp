@@ -71,10 +71,17 @@ void Elfs::add_library(const string& filename, FileRef content) {
 }
 
 void Elfs::set_library_load_addr(const string& filename, vaddr_t load_addr) {
-	ASSERT(m_libraries.count(filename), "library not found %s", filename.c_str());
+	//ASSERT(m_libraries.count(filename), "library not found %s", filename.c_str());
+	if (!m_libraries.count(filename)) {
+		printf("Warning: guest loaded not available library %s at 0x%lx. "
+		       "It won't be possible to get symbols or stacktraces from it.\n",
+			   filename.c_str(), load_addr);
+		return;
+	}
+
 	ElfParser& library = m_libraries.at(filename);
 	if (!library.load_addr()) {
-		m_libraries[filename].set_load_addr(load_addr);
+		library.set_load_addr(load_addr);
 		printf("Guest loaded library %s at 0x%lx\n", filename.c_str(), load_addr);
 	}
 }

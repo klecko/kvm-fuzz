@@ -24,9 +24,13 @@ struct GuestPtrs {
 
 struct GuestFile {
 	FileRef data;
-	GuestPtrs guest;
+	GuestPtrs guest_ptrs;
 };
 
+struct GuestFileEntry {
+	const std::string& path;
+	GuestFile& file;
+};
 
 class FileRefsByPath {
 public:
@@ -35,21 +39,14 @@ public:
 	bool exists(const std::string& path) const;
 
 	FileRef file_content(const std::string& path) const;
-	FileRef file_content(size_t n) const;
-	std::pair<std::string, GuestFile> entry_at_pos(size_t n) const;
-
+	GuestFileEntry entry_at_pos(size_t n);
 	GuestFile set_file(const std::string& path, FileRef content);
 
-	void set_guest_ptrs_at_pos(size_t n, GuestPtrs guest_ptrs);
-
 private:
-	// Files contents indexed by filename. Kernel will synchronize with this
-	// on startup
-	// Files indexed by filename. We are not owner of the contents, which may
-	// live in the Corpus or in the SharedFiles
+	// Files indexed by filename. Kernel will synchronize with this on startup.
+	// We are not owner of the contents, which may live in the Corpus, in the
+	// SharedFiles, or somewhere else.
 	std::unordered_map<std::string, GuestFile> m_files;
-
-	GuestFile& file_at_pos(size_t n);
 };
 
 class SharedFiles : public FileRefsByPath {

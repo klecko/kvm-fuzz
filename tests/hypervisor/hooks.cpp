@@ -32,8 +32,6 @@ TEST_CASE("run_until + hook") {
 }
 
 TEST_CASE("single step + hook") {
-	// Vm vm(8*1024*1024, "zig-out/bin/kernel", "tests/hypervisor/test", {});
-	// vm.set_hook(addr(vm, 9), hook_handler);
 	Vm vm = default_vm();
 
 	vm.run_until(addr(vm, 9), stats);

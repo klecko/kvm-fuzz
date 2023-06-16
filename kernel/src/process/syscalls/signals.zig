@@ -47,8 +47,8 @@ pub fn handle_sys_rt_sigprocmask(
     arg3: usize,
 ) !usize {
     const how = cast(i32, arg0);
-    const set_ptr = UserPtr(*const Sigset).fromFlatMaybeNull(arg1);
-    const oldset_ptr = UserPtr(*Sigset).fromFlatMaybeNull(arg2);
+    const set_ptr = try UserPtr(*const Sigset).fromFlatMaybeNull(arg1);
+    const oldset_ptr = try UserPtr(*Sigset).fromFlatMaybeNull(arg2);
     const sigsetsize = arg3;
     try sys_rt_sigprocmask(self, how, set_ptr, oldset_ptr, sigsetsize);
     return 0;
@@ -98,8 +98,8 @@ pub fn handle_sys_rt_sigaction(
     arg3: usize,
 ) !usize {
     const signum = cast(i32, arg0);
-    const act_ptr = UserPtr(*const Sigaction).fromFlatMaybeNull(arg1);
-    const oldact_ptr = UserPtr(*Sigaction).fromFlatMaybeNull(arg2);
+    const act_ptr = try UserPtr(*const Sigaction).fromFlatMaybeNull(arg1);
+    const oldact_ptr = try UserPtr(*Sigaction).fromFlatMaybeNull(arg2);
     const sigsetsize = arg3;
     try sys_rt_sigaction(self, signum, act_ptr, oldact_ptr, sigsetsize);
     return 0;

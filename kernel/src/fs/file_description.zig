@@ -230,7 +230,7 @@ pub const FileDescriptionRegular = struct {
         const prev_offset = desc.offset;
         const length_moved = desc.moveOffset(buf.len());
         const src_slice = desc.buf[prev_offset .. prev_offset + length_moved];
-        try mem.safe.copyToUser(u8, buf, src_slice);
+        try mem.safe.copyToUser(u8, buf.sliceTo(src_slice.len), src_slice);
         return length_moved;
     }
 
@@ -346,7 +346,6 @@ fn printUserMaybe(buf: UserSlice([]const u8)) mem.safe.Error!usize {
         mem.safe.printUser(buf) catch |err| switch (err) {
             error.OutOfMemory => log.warn("printUser OOM, ignoring\n", .{}),
             error.Fault => return error.Fault,
-            error.NotUserRange => return error.NotUserRange,
         };
     }
 
@@ -356,7 +355,7 @@ fn printUserMaybe(buf: UserSlice([]const u8)) mem.safe.Error!usize {
 pub const FileDescriptionSocket = struct {
     desc: FileDescription,
     socket_type: SocketType,
-    binded: bool,
+    bound: bool,
     listening: bool,
     connected: bool,
 
@@ -383,7 +382,7 @@ pub const FileDescriptionSocket = struct {
                 .is_socket = true,
             },
             .socket_type = socket_type,
-            .binded = false,
+            .bound = false,
             .listening = false,
             .connected = false,
         };
@@ -422,13 +421,13 @@ pub const FileDescriptionSocket = struct {
     ) void {
         _ = addr_ptr;
         _ = addr_len;
-        self.binded = true;
+        self.bound = true;
     }
 
     pub fn listen(self: *FileDescriptionSocket, backlock: i32) void {
-        // In case it is not binded, we must assign the address and the port
+        // In case it is not bound, we must assign the address and the port
         _ = backlock;
-        assert(self.binded);
+        assert(self.bound);
         self.listening = true;
     }
 };

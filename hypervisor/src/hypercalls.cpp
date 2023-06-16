@@ -92,7 +92,7 @@ void Vm::do_hc_get_info(vaddr_t info_addr) {
 	m_mmu.write(info_addr, info);
 }
 
-pair<string, GuestFile> Vm::get_file_entry(size_t n) {
+GuestFileEntry Vm::file_entry(size_t n) {
 	ASSERT(n < s_shared_files.size() + m_files.size(), "OOB n: %lu", n);
 	if (n < s_shared_files.size())
 		return s_shared_files.entry_at_pos(n);
@@ -101,38 +101,30 @@ pair<string, GuestFile> Vm::get_file_entry(size_t n) {
 }
 
 void Vm::do_hc_get_file_info(size_t n, vaddr_t path_buf_addr, vaddr_t length_addr) {
-	auto file_entry = get_file_entry(n);
-	FileRef file = file_entry.second.data;
-	const string& path = file_entry.first;
-	m_mmu.write_mem(path_buf_addr, path.c_str(), path.length() + 1);
-	m_mmu.write<vsize_t>(length_addr, file.length);
+	GuestFileEntry entry = file_entry(n);
+	m_mmu.write_mem(path_buf_addr, entry.path.c_str(), entry.path.length() + 1);
+	m_mmu.write<vsize_t>(length_addr, entry.file.data.length);
 }
 
 void Vm::do_hc_submit_file_pointers(size_t n, vaddr_t data_addr,
                                     vaddr_t length_addr) {
+	GuestFileEntry entry = file_entry(n);
+
 	// Make sure ptrs weren't submitted yet
-	auto file_entry = get_file_entry(n);
-	GuestPtrs current_ptrs = file_entry.second.guest;
 	// TODO: cuando creo una vm, pongo un shared file, se destruye, y creo otra vm,
 	// esta última tiene aún los shared files. pensar como hacerlo.
+	// GuestPtrs current_ptrs = entry.file.guest_ptrs;
 	// ASSERT(current_ptrs.data_addr == 0 && current_ptrs.length_addr == 0,
-	//        "double submite_file_pointers for %s?", file_entry.first.c_str());
+	//        "double submit_file_pointers for %s?", entry.path.c_str());
 
-	// Submit given ptrs
-	GuestPtrs ptrs = {
+	// Set given ptrs
+	entry.file.guest_ptrs = {
 		.data_addr = data_addr,
 		.length_addr = length_addr,
 	};
-	if (n < s_shared_files.size()) {
-		s_shared_files.set_guest_ptrs_at_pos(n, ptrs);
-	} else {
-		m_files.set_guest_ptrs_at_pos(n - s_shared_files.size(), ptrs);
-	}
 
-	// Write the file data and length to given ptrs
-	FileRef file = file_entry.second.data;
-	m_mmu.write_mem(data_addr, file.ptr, file.length);
-	m_mmu.write<vsize_t>(length_addr, file.length);
+	// Now that guest ptrs are available, write the file data and length to them
+	maybe_write_file_to_guest(entry.path, entry.file, CheckCopied::Yes);
 	dbgprintf("kernel set pointers for file '%s': 0x%lx 0x%lx\n",
 	          file_entry.first.c_str(), data_addr, length_addr);
 }
@@ -172,6 +164,9 @@ void Vm::do_hc_end_run(RunEndReason reason, vaddr_t info_addr) {
 	if (reason == RunEndReason::Crash)
 		m_fault = m_mmu.read<FaultInfo>(info_addr);
 	m_running = false;
+
+	if (m_tracing.type() == Tracing::Type::User)
+		tracing_add_addr(m_regs->rip);
 }
 
 void Vm::do_hc_notify_syscall_start(vaddr_t syscall_name_addr) {

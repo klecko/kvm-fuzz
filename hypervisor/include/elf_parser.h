@@ -144,6 +144,7 @@ class ElfParser {
 		bool addr_to_symbol(vaddr_t addr, symbol_t& result) const;
 		std::string addr_to_symbol_str(vaddr_t addr) const;
 		std::string addr_to_source(vaddr_t addr) const;
+		std::string addr_to_symbol_and_source(vaddr_t addr, bool is_ret_addr = false) const;
 		std::vector<vaddr_t> get_stacktrace(const kvm_regs& kregs,
 		                                    size_t num_frames, Mmu& mmu) const;
 

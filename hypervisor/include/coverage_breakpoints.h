@@ -127,18 +127,12 @@ template <class T>
 inline bool SharedCoverageBreakpoints::add(const CoverageBreakpoints<T>& other) {
 	while (m_lock.test_and_set());
 
-	// For each block, attempt to insert it and check if it's new
+	// Insert every block of `other`, and check if any was added.
 	// This could also be done as a bitmap if we want more performance, but
-	// it isn't worth it for now
-	const T& other_blocks = other.blocks();
-	bool inserted, new_cov = false;
-	for (vaddr_t block : other_blocks) {
-		inserted = CoverageBreakpoints::add(block);
-		new_cov |= inserted;
-		// if (inserted) {
-		// 	printf("new cov: 0x%lx\n", block);
-		// }
-	}
+	// it isn't worth it for now.
+	size_t prev_count = count();
+	blocks().insert(other.blocks().begin(), other.blocks().end());
+	bool new_cov = count() != prev_count;
 
 	m_lock.clear();
 	return new_cov;

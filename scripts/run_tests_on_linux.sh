@@ -11,4 +11,4 @@ function socket_test() {
 
 socket_test &
 
-echo "hello" | ./zig-out/bin/syscalls_tests
+echo "hello" | ./zig-out/bin/syscalls_tests "$@"

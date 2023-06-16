@@ -179,8 +179,8 @@ size_t Mmu::reset(const Mmu& other) {
 	// Reset extra pages and clear vector
 	for (paddr_t paddr : m_dirty_extra) {
 		memcpy(m_memory + paddr, other.m_memory + paddr, PAGE_SIZE);
-		count++;
 	}
+	count += m_dirty_extra.size();
 	m_dirty_extra.clear();
 
 	// Reset state

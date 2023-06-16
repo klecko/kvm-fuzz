@@ -25,7 +25,7 @@ fn sys_writev(self: *Process, fd: linux.fd_t, iov_buf: UserSlice([]const linux.i
     while (i < iov_buf.len()) : (i += 1) {
         // Get the iovec and write it
         try mem.safe.copyFromUserSingle(linux.iovec, &iov, iov_buf.ptrAt(i));
-        const user_slice = UserSlice([]const u8).fromSlice(iov.iov_base[0..iov.iov_len]);
+        const user_slice = try UserSlice([]const u8).fromSlice(iov.iov_base[0..iov.iov_len]);
         ret += try file.write(file, user_slice);
 
         // If writing to stderr, assume this is an assertion failed, and report

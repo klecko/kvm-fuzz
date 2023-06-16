@@ -90,4 +90,17 @@ vector<string> split_string(const string& s, const string& delimiter) {
 	return result;
 }
 
+string secs_to_str(size_t seconds) {
+	size_t hours = seconds / 3600;
+	size_t minutes = (seconds / 60) % 60;
+	seconds = seconds % 60;
+	string ret;
+	if (hours)
+		ret += to_string(hours) + "h ";
+	if (minutes || hours)
+		ret += to_string(minutes) + "m ";
+	ret += to_string(seconds) + "s";
+	return ret;
+}
+
 };

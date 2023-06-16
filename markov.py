@@ -10,102 +10,104 @@ class TracingType:
 	User = 0
 	Kernel = 1
 
-dir = Path("traces")
 
-tracing_type = None
-first_syscall = None
-first_syscall_filename = None
-last_syscall = None
-last_syscall_filename = None
-traces = []
-for filename in dir.iterdir():
-	with open(filename) as f:
-		trace = f.readlines()
-		if not trace:
-			continue
+def read_traces(dir_path):
+	dir = Path(dir_path)
+	tracing_type = None
+	first_state = None
+	first_state_filename = None
+	last_state = None
+	last_state_filename = None
+	traces = []
+	for filename in dir.iterdir():
+		with open(filename) as f:
+			trace = f.readlines()
+			if not trace:
+				continue
 
-		if tracing_type == None:
-			if "+" in trace[0].split()[1]:
-				tracing_type = TracingType.User
-			else:
-				tracing_type = TracingType.Kernel
+			if tracing_type == None:
+				if "+" in trace[0].split()[1]:
+					tracing_type = TracingType.User
+				else:
+					tracing_type = TracingType.Kernel
 
-		trace = [(" ".join(line.split()[:-1]), int(line.split()[-1])) for line in trace]
+			trace = [(" ".join(line.split()[:-1]), int(line.split()[-1])) for line in trace]
 
-		# Check last syscall
-		if not last_syscall:
-			last_syscall = trace[-1][0]
-			last_syscall_filename = filename
-			if tracing_type == TracingType.Kernel and last_syscall != "exit_group":
-				print(f"Last syscall in trace file '{filename}' is '{last_syscall}'" +
-				      f"instead of 'exit_group'. Aborting.")
+			# Check last state. We want to warn when traces have different last state,
+			# which may be due to the run crashing, time-outing, or being incomplete
+			# (the program was interrupted while writing it to disk).
+			if not last_state:
+				last_state = trace[-1][0]
+				last_state_filename = filename
+			if trace[-1][0] != last_state:
+				print(f"Warning: trace '{filename}' has '{trace[-1][0]}' as last state, while " +
+					f"trace '{last_state_filename}' ends with '{last_state}'.")
+
+			# Check first state. We require every trace to start at the same point.
+			if not first_state:
+				first_state = trace[0][0]
+				first_state_filename = filename
+			if trace[0][0] != first_state:
+				print(f"Not every trace starts with the same state: file '{first_state_filename}' " +
+					f"starts with '{first_state}', file '{filename}' starts with '{trace[0][0]}'. Aborting.")
 				exit()
-		if trace[-1][0] != last_syscall:
-			print(f"Warning: trace '{filename}' has '{trace[-1][0]}' as last syscall, while " +
-			      f"trace '{last_syscall_filename}' ends with '{last_syscall}'. Skipping.")
-			continue
 
-		# Check first syscall
-		if not first_syscall:
-			first_syscall = trace[0][0]
-			first_syscall_filename = filename
-		if trace[0][0] != first_syscall:
-			print(f"Not every trace starts with the same syscall: file '{first_syscall_filename}' " +
-			      f"starts with '{first_syscall}', file '{filename}' starts with '{trace[0][0]}'. Aborting.")
-			exit()
+			traces.append(trace)
+	return traces
 
-		traces.append(trace)
-
+print("Reading traces")
+traces = read_traces("./traces")
 print(f"Read {len(traces)} traces")
 
-# get syscalls instructions
-syscalls_instructions = defaultdict(list)
+# get states instructions
+states_instructions = defaultdict(list)
 for trace in traces:
 	for line in trace:
-		syscalls_instructions[line[0]].append(line[1])
-syscalls_total_instructions = {
-	syscall: sum(instructions) for syscall, instructions in syscalls_instructions.items()
+		states_instructions[line[0]].append(line[1])
+states_total_instructions = {
+	state: sum(instructions) for state, instructions in states_instructions.items()
 }
-syscalls_avg_instructions = {
-	syscall: sum(instructions)/len(instructions) for syscall, instructions in syscalls_instructions.items()
+states_avg_instructions = {
+	state: sum(instructions)/len(instructions) for state, instructions in states_instructions.items()
 }
 
 # get probability of successors
-successors = defaultdict(list)
+successors = {state:[] for state in states_total_instructions}
 for trace in traces:
 	trace = [line[0] for line in trace] # get only names
 	for i in range(1, len(trace)):
 		successors[trace[i-1]].append(trace[i])
-successors[last_syscall] = []
+	successors[trace[-1]].append(None)
 
-successors_probs = {syscall: dict() for syscall in successors.keys()}
-for syscall, succs in successors.items():
+successors_probs = {state: dict() for state in successors.keys()}
+for state, succs in successors.items():
 	for succ in set(succs):
-		successors_probs[syscall][succ] = succs.count(succ)/len(succs)
+		successors_probs[state][succ] = succs.count(succ)/len(succs)
 
 
 # calculate avg number of instructions
 def avg_instructions():
 	import z3
-	avg_instr_from_syscalls = {syscall: z3.Real(f"avg_instr_from_{syscall}") for syscall in syscalls_instructions.keys()}
+	avg_instr_from_states = {state: z3.Real(f"avg_instr_from_{state}") for state in states_instructions.keys()}
 	s = z3.Solver()
 
-	for syscall, succs_probs in successors_probs.items():
-		val = sum([avg_instr_from_syscalls[succ]*prob for succ, prob in succs_probs.items()])
-		ec = avg_instr_from_syscalls[syscall] == val + syscalls_avg_instructions[syscall]
+	for state, succs_probs in successors_probs.items():
+		val = sum([avg_instr_from_states[succ]*prob for succ, prob in succs_probs.items() if succ])
+		ec = avg_instr_from_states[state] == val + states_avg_instructions[state]
 		s.add(ec)
 
 	assert s.check() == z3.sat
 	m = s.model()
-	first_syscall = traces[0][0][0]
-	result = m[avg_instr_from_syscalls[first_syscall]]
+	first_state = traces[0][0][0]
+	result = m[avg_instr_from_states[first_state]]
 	return result.numerator().as_long() / result.denominator().as_long()
 
 
-# print(avg_instructions_from_syscall(traces[0][0][0]))
+# print(avg_instructions_from_state(traces[0][0][0]))
 instr_count = [sum([line[1] for line in trace]) for trace in traces]
 result_real = sum(instr_count)/len(instr_count)
 result_calculated = avg_instructions()
+# result_calculated = 1
 
 print("calculated:", result_calculated)
 print("real:", result_real)
@@ -118,26 +120,27 @@ print(f"calculated is {100*(result_calculated - result_real)/result_real:.4f}% m
 # drawing stuff
 g = nx.DiGraph()
 
-max_avg_instructions = max(syscalls_avg_instructions.values())
-for syscall, avg_instructions in syscalls_avg_instructions.items():
+max_avg_instructions = max(states_avg_instructions.values())
+for state, avg_instructions in states_avg_instructions.items():
 	# red_intensity = int(avg_instructions*0xff/max_avg_instructions)
 	if avg_instructions == 0: avg_instructions = 1
 	red_intensity = int(math.log(avg_instructions)*0xff/math.log(max_avg_instructions))
-	g.add_node(syscall, color=f"#{red_intensity:02x}0000", penwidth=4)
-# print(syscalls_avg_instructions)
+	g.add_node(state, color=f"#{red_intensity:02x}0000", penwidth=4)
+# print(states_avg_instructions)
 
-# max_total_instructions = max(syscalls_total_instructions.values())
-# for syscall, total_instructions in syscalls_total_instructions.items():
+# max_total_instructions = max(states_total_instructions.values())
+# for state, total_instructions in states_total_instructions.items():
 # 	# red_intensity = int(total_instructions*0xff/max_total_instructions)
 # 	if total_instructions == 0: total_instructions = 1
 # 	red_intensity = int(math.log(total_instructions)*0xff/math.log(max_total_instructions))
-# 	g.add_node(syscall, color=f"#{red_intensity:02x}0000", penwidth=4)
-# print(syscalls_total_instructions)
+# 	g.add_node(state, color=f"#{red_intensity:02x}0000", penwidth=4)
+# print(states_total_instructions)
 
 
-for syscall, succs_probs in successors_probs.items():
+for state, succs_probs in successors_probs.items():
 	for succ, prob in succs_probs.items():
-		g.add_edge(syscall, succ, label=f"{prob:.2f}")
+		if succ:
+			g.add_edge(state, succ, label=f"{prob:.8f}")
 
 
 # g.nodes["write"]["fillcolor"] = "red"

@@ -37,18 +37,17 @@ TEST_CASE("socket") {
 	REQUIRE(client_fd > 0);
 
 	// Read input from sockfd (not connected socket) returns -ENOTCONN
-	char buf[6];
-	REQUIRE(read_and_check_first_five_bytes(sockfd, buf) == -1);
+	REQUIRE(read_and_check_first_five_bytes(sockfd) == -1);
 	REQUIRE(errno == ENOTCONN);
 
 	// Read from client fd
-	REQUIRE(read_and_check_first_five_bytes(client_fd, buf) == 0);
+	REQUIRE(read_and_check_first_five_bytes(client_fd) == 0);
 	REQUIRE(close(client_fd) == 0);
 
 	// Repeat
 	client_fd = accept(sockfd, (sockaddr*)&client_addr, &client_addr_size);
 	REQUIRE(client_fd > 0);
-	REQUIRE(read_and_check_first_five_bytes(client_fd, buf) == 0);
+	REQUIRE(read_and_check_first_five_bytes(client_fd) == 0);
 	REQUIRE(close(client_fd) == 0);
 
 	REQUIRE(close(sockfd) == 0);
@@ -78,4 +77,6 @@ TEST_CASE("not socket") {
 	errno = 0;
 	REQUIRE(accept(fd, (sockaddr*)&client_addr, &client_addr_size) == -1);
 	REQUIRE(errno == ENOTSOCK);
+
+	REQUIRE(close(fd) == 0);
 }

@@ -28,7 +28,7 @@ pub fn wakeRobustFutexes(self: *Process) void {
     var head: linux.robust_list_head = undefined;
     mem.safe.copyFromUserSingle(linux.robust_list_head, &head, head_ptr) catch return;
 
-    var entry = UserPtr(*const linux.robust_list).fromPtr(head.list.next.?);
+    var entry = UserPtr(*const linux.robust_list).fromPtr(head.list.next.?) catch return;
     while (entry.ptr() != &head_ptr.ptr().list) {
         common.print("entry: {*}\n", .{entry.ptr()});
         common.TODO();
@@ -46,7 +46,7 @@ fn sys_set_robust_list(
 }
 
 pub fn handle_sys_set_robust_list(self: *Process, arg0: usize, arg1: usize) !usize {
-    const head_ptr = UserPtr(*const linux.robust_list_head).fromFlatMaybeNull(arg0);
+    const head_ptr = try UserPtr(*const linux.robust_list_head).fromFlatMaybeNull(arg0);
     const len = arg1;
     try sys_set_robust_list(self, head_ptr, len);
     return 0;

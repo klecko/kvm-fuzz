@@ -43,9 +43,10 @@ pub fn isSliceInKernelRange(comptime T: type, slice: []const T) bool {
     return isRangeInKernelRange(@ptrToInt(slice.ptr), slice.len * @sizeOf(T));
 }
 
-/// A wrapper for pointers given from userspace. T is the type of the pointer, e.g. *u8.
-/// Note this doesn't mean the underlying pointer belongs to user range: it could
-/// belong to kernel range or be an invalid address.
+/// A wrapper for userspace pointers. T is the type of the pointer, e.g. *u8.
+/// This checks the underlying pointer belongs to user range, but it could still
+/// be an invalid address (not mapped or mapped with wrong permissions).
+/// TODO: unaligned pointers crash
 pub fn UserPtr(comptime T: type) type {
     assert(@typeInfo(T) == .Pointer);
     if (@typeInfo(T).Pointer.size == .Slice)
@@ -60,25 +61,37 @@ pub fn UserPtr(comptime T: type) type {
             typeInfo.Pointer.is_const = true;
             break :blk @Type(typeInfo);
         };
+        const ChildT = @typeInfo(T).Pointer.child;
 
         /// Create a UserPtr from a regular pointer.
-        pub fn fromPtr(user_ptr: T) Self {
-            return Self{
-                ._ptr = user_ptr,
-            };
+        pub fn fromPtr(user_ptr: T) !Self {
+            return if (!isPtrInUserRange(ChildT, user_ptr))
+                error.NotUserRange
+            else
+                Self{
+                    ._ptr = user_ptr,
+                };
         }
 
         /// Create a UserPtr from an integer.
         pub fn fromFlat(user_ptr: usize) !Self {
-            return if (user_ptr == 0) Error.NotUserRange else Self{
-                ._ptr = @intToPtr(T, user_ptr),
-            };
+            return if (user_ptr == 0 or !isAddressInUserRange(user_ptr))
+                error.NotUserRange
+            else
+                Self{
+                    ._ptr = @intToPtr(T, user_ptr),
+                };
         }
 
-        pub fn fromFlatMaybeNull(user_ptr: usize) ?Self {
-            return if (user_ptr == 0) null else Self{
-                ._ptr = @intToPtr(T, user_ptr),
-            };
+        pub fn fromFlatMaybeNull(user_ptr: usize) !?Self {
+            return if (user_ptr == 0)
+                null
+            else if (!isAddressInUserRange(user_ptr))
+                error.NotUserRange
+            else
+                Self{
+                    ._ptr = @intToPtr(T, user_ptr),
+                };
         }
 
         /// Get the raw pointer.
@@ -93,14 +106,15 @@ pub fn UserPtr(comptime T: type) type {
 
         /// Get the const version of the UserPtr.
         pub fn toConst(self: Self) UserPtr(ConstT) {
-            return UserPtr(ConstT).fromPtr(self._ptr);
+            return UserPtr(ConstT).fromPtr(self._ptr) catch unreachable;
         }
     };
 }
 
 /// A wrapper for userspace slices. T is the type of the slice, e.g. []u8.
-/// Note this doesn't mean the underlying range belongs to user range: it could
-/// belong to kernel range or be an invalid range.
+/// This checks the underlying pointer belongs to user range, but it could still
+/// be an invalid address (not mapped or mapped with wrong permissions).
+/// TODO: unaligned pointers crash
 pub fn UserSlice(comptime T: type) type {
     assert(@typeInfo(T) == .Pointer);
     assert(@typeInfo(T).Pointer.size == .Slice);
@@ -113,17 +127,22 @@ pub fn UserSlice(comptime T: type) type {
             typeInfo.Pointer.is_const = true;
             break :blk @Type(typeInfo);
         };
+        const ChildT = @typeInfo(T).Pointer.child;
 
         /// Create a UserSlice from a regular slice.
-        pub fn fromSlice(user_slice: T) Self {
-            return Self{
-                ._slice = user_slice,
-            };
+        pub fn fromSlice(user_slice: T) !Self {
+            return if (!isSliceInUserRange(ChildT, user_slice))
+                error.NotUserRange
+            else
+                Self{
+                    ._slice = user_slice,
+                };
         }
 
         /// Create a UserSlice from a pointer as integer and a length.
         pub fn fromFlat(user_ptr: usize, length: usize) !Self {
-            if (user_ptr == 0) return Error.NotUserRange;
+            if (user_ptr == 0 or !isRangeInUserRange(user_ptr, length))
+                return error.NotUserRange;
             const PointerT = blk: {
                 comptime var type_info = @typeInfo(T);
                 type_info.Pointer.size = .Many;
@@ -156,8 +175,14 @@ pub fn UserSlice(comptime T: type) type {
         };
 
         pub fn ptrAt(self: Self, idx: usize) UserPtr(PtrAtPointerType) {
+            assert(idx < self.len());
             const ptr = @ptrCast(PtrAtPointerType, self.slice().ptr + idx);
-            return UserPtr(PtrAtPointerType).fromPtr(ptr);
+            return UserPtr(PtrAtPointerType).fromPtr(ptr) catch unreachable;
+        }
+
+        pub fn sliceTo(self: Self, new_len: usize) Self {
+            assert(new_len <= self.len());
+            return Self.fromSlice(self.slice()[0..new_len]) catch unreachable;
         }
     };
 }
@@ -168,23 +193,18 @@ comptime {
 }
 
 // The following functions should be used for copying from UserSlice and UserPtr
-// to kernel memory. They return an error if the copy was not successful.
-// In order to do so, first they check memory is in correct ranges. If the given
-// kernel pointer or slice is not in kernel range, that's a bug. If the given user
-// pointer or slice is not in user range, they will return Error.NotUserRange.
-// If both are correct, then they try to perform the copy. If a fault occurs then,
-// they will return Error.Fault. This can happen because memory is not mapped,
-// or mapped without write permissiong.
+// to kernel memory and viceversa. They return error.Fault if a fault occurred
+// when performing the copy. This can happen because memory is not mapped, or it
+// is mapped with wrong permissions.
 
 pub const UserCString = UserPtr([*:0]const u8);
 
-pub const Error = error{ NotUserRange, Fault };
+pub const Error = error{Fault};
 
 pub fn copyToUser(comptime T: type, dest: UserSlice([]T), src: []const T) Error!void {
     // Make sure we're copying from kernel to user.
     assert(isSliceInKernelRange(T, src));
-    if (!isSliceInUserRange(T, dest.slice()))
-        return Error.NotUserRange;
+    assert(isSliceInUserRange(T, dest.slice()));
 
     // Try to perform copy.
     try copy(T, dest.slice(), src);
@@ -193,8 +213,7 @@ pub fn copyToUser(comptime T: type, dest: UserSlice([]T), src: []const T) Error!
 pub fn copyToUserSingle(comptime T: type, dest: UserPtr(*T), src: *const T) Error!void {
     // Make sure we're copying from kernel to user.
     assert(isPtrInKernelRange(T, src));
-    if (!isPtrInUserRange(T, dest.ptr()))
-        return Error.NotUserRange;
+    assert(isPtrInUserRange(T, dest.ptr()));
 
     // Try to perform copy.
     try copySingle(T, dest.ptr(), src);
@@ -203,8 +222,7 @@ pub fn copyToUserSingle(comptime T: type, dest: UserPtr(*T), src: *const T) Erro
 pub fn copyFromUser(comptime T: type, dest: []T, src: UserSlice([]const T)) Error!void {
     // Make sure we're copying from user to kernel.
     assert(isSliceInKernelRange(T, dest));
-    if (!isSliceInUserRange(T, src.slice()))
-        return Error.NotUserRange;
+    assert(isSliceInUserRange(T, src.slice()));
 
     // Try to perform copy.
     try copy(T, dest, src.slice());
@@ -213,8 +231,7 @@ pub fn copyFromUser(comptime T: type, dest: []T, src: UserSlice([]const T)) Erro
 pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Error!void {
     // Make sure we're copying from user to kernel.
     assert(isPtrInKernelRange(T, dest));
-    if (!isPtrInUserRange(T, src.ptr()))
-        return Error.NotUserRange;
+    assert(isPtrInUserRange(T, src.ptr()));
 
     // Try to perform copy.
     try copySingle(T, dest, src.ptr());
@@ -242,7 +259,7 @@ pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Er
 // The following functions perform copies, and return an Error if a fault
 // occurred.
 fn copy(comptime T: type, dest: []T, src: []const T) Error!void {
-    assert(dest.len >= src.len);
+    assert(dest.len == src.len);
     try copyBase(std.mem.sliceAsBytes(dest), std.mem.sliceAsBytes(src));
 }
 

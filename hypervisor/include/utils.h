@@ -20,4 +20,6 @@ std::string exec_cmd(const std::string& cmd);
 
 std::vector<std::string> split_string(const std::string& s, const std::string& delimiter);
 
+std::string secs_to_str(size_t seconds);
+
 };

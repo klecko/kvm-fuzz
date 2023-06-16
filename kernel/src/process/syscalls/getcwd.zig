@@ -13,7 +13,8 @@ fn sys_getcwd(self: *Process, buf: UserSlice([]u8)) !usize {
     if (buf.len() < cwd.len + 1)
         return error.NumericOutOfRange;
 
-    try mem.safe.copyToUser(u8, buf, std.mem.span(cwd)[0 .. cwd.len + 1]);
+    // Copy including null byte.
+    try mem.safe.copyToUser(u8, buf.sliceTo(cwd.len + 1), cwd[0 .. cwd.len + 1]);
     return cwd.len + 1;
 }
 
