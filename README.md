@@ -16,13 +16,15 @@ Available options:
   -m, --memory arg          Virtual machine memory limit (default: 8M)
   -t, --timeout ms          Timeout for each in run in milliseconds, or 0 for no
                             timeout (default: 2)
-  -k, --kernel path         Kernel path (default: ./kernel/kernel)
+  -k, --kernel path         Kernel path (default: ./zig-out/bin/kernel)
   -i, --input dir           Input folder (initial corpus) (default: ./in)
   -o, --output dir          Output folder (corpus, crashes, etc) (default: ./out)
   -f, --file path           Memory loaded files for the target. Set once for
                             each file: -f file1 -f file2
   -s, --single-run [=path]  Perform a single run, optionally specifying an
                             input file
+  -T, --tracing type        Enable syscall tracing. Type can be kernel or user
+      --tracing-unit unit   Tracing unit. It can be instructions or cycles (default cycles)
   -h, --help                Print usage
 ```
 
