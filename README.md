@@ -43,33 +43,28 @@ python3 -m pip install angr
 Finally, in order to fuzz using Intel PT coverage, you will need [libxdc](https://github.com/klecko/libxdc) and [kAFL](https://github.com/IntelLabs/kAFL) (not tested with the more recent [KVM-Nyx](https://github.com/nyx-fuzz/KVM-Nyx) yet).
 
 ## Building and running tests
-Build kernel and hypervisor, disabling coverage and enabling guest binary output:
+Building kernel and hypervisor with default options is as simple as:
 ```
-zig build -Dcoverage=none -Denable-guest-output
-```
-
-Build tests:
-```
-zig build tests
+zig build
 ```
 
-Run tests on your host machine:
+Syscall tests consist of a binary that uses different syscalls and checks their correct behaviour. In order to build and run it, the following scripts are provided:
 ```
-scripts/run_tests_on_linux.sh
+./scripts/run_tests_on_linux.sh
+./scripts/run_tests_on_kvm-fuzz.sh
 ```
-
-Run tests inside the hypervisor (running kvm-fuzz requires having a non-empty seed corpus, which is by default located at `./in`):
-```
-mkdir in
-touch in/1
-scripts/run_tests_on_kvm-fuzz.sh
-```
-This simply runs the tests binary on kvm-fuzz, specifying some options such as single run and no timeout. If everything went well you should see something like:
+The first one runs the syscall tests binary on your host machine under Linux. The second one runs it inside the hypervisor under our own kernel. If both tests pass, it means the kernel developed for kvm-fuzz correctly mimics Linux behaviour. If everything went well you should see something like:
 ```
 [KERNEL] ===============================================================================
 [KERNEL] All tests passed (2378 assertions in 44 test cases)
 [KERNEL]
 Run ended with reason Exit
+```
+
+Hypervisor tests check the correct functioning of the hypervisor and its different emulation capabilities, such as breakpoints, hooks and virtual files. They can be built and run as follows:
+```
+zig build hypervisor_tests
+./zig-out/bin/hypervisor_tests
 ```
 
 ## Fuzzing example

@@ -88,10 +88,10 @@ void print_stats(const Stats& stats, const Corpus& corpus, size_t jobs) {
 		       utils::secs_to_str(elapsed_total.count()).c_str(), corpus_str, kvm_time, set_input_time);
 		printf(BOLD("  Cases: ") "%-11lu"  BOLD("   Crashes: ") "%s%-19s%s"  BOLD("      Reset: ") "%5.2f%"  BOLD("       Report cov: ") "%5.2f%\n",
 		       cases, (crashes > 0 ? CRED : ""), crashes_str, CRESET, reset_time, report_cov_time);
-		printf(BOLD("   Mips: ") "%-11.3f" BOLD("  Timeouts: ") "%-19lu" BOLD("     Mutate: ") "%5.2f%"      BOLD("   Handle vm exit: ") "%5.2f%\n",
-		       mips, timeouts, mut_time, vm_exits_time);
 		printf(BOLD("    Cov: ") "%-11s"   BOLD("No new cov: ") "%-19s"  BOLD("   Vm exits: ") "%.3f (hc: %.3f, cov: %.3f, debug: %.3f)\n",
 		       cov_str, utils::secs_to_str(no_new_cov_time.count()).c_str(), vm_exits, vm_exits_hc, vm_exits_cov, vm_exits_debug);
+		printf(BOLD("   Mips: ") "%-11.3f" BOLD("  Timeouts: ") "%-19lu" BOLD("     Mutate: ") "%5.2f%"      BOLD("   Handle vm exit: ") "%5.2f%\n",
+		       mips, timeouts, mut_time, vm_exits_time);
 		printf(BOLD("   Fcps: ") "%-42s"                                 BOLD("reset pages: ") "%.3f\n",
 		       fcps_str, reset_pages);
 		printf("\n");
