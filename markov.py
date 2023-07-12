@@ -64,15 +64,12 @@ states_instructions = defaultdict(list)
 for trace in traces:
 	for line in trace:
 		states_instructions[line[0]].append(line[1])
-states_total_instructions = {
-	state: sum(instructions) for state, instructions in states_instructions.items()
-}
 states_avg_instructions = {
 	state: sum(instructions)/len(instructions) for state, instructions in states_instructions.items()
 }
 
 # get probability of successors
-successors = {state:[] for state in states_total_instructions}
+successors = {state:[] for state in states_avg_instructions}
 for trace in traces:
 	trace = [line[0] for line in trace] # get only names
 	for i in range(1, len(trace)):
@@ -93,8 +90,8 @@ def avg_instructions():
 
 	for state, succs_probs in successors_probs.items():
 		val = sum([avg_instr_from_states[succ]*prob for succ, prob in succs_probs.items() if succ])
-		ec = avg_instr_from_states[state] == val + states_avg_instructions[state]
-		s.add(ec)
+		eq = avg_instr_from_states[state] == val + states_avg_instructions[state]
+		s.add(eq)
 
 	assert s.check() == z3.sat
 	m = s.model()
@@ -103,15 +100,14 @@ def avg_instructions():
 	return result.numerator().as_long() / result.denominator().as_long()
 
 
-# print(avg_instructions_from_state(traces[0][0][0]))
 instr_count = [sum([line[1] for line in trace]) for trace in traces]
 result_real = sum(instr_count)/len(instr_count)
 result_calculated = avg_instructions()
-# result_calculated = 1
 
 print("calculated:", result_calculated)
 print("real:", result_real)
 print(f"calculated is {100*(result_calculated - result_real)/result_real:.4f}% more than real")
+assert math.isclose(result_calculated, result_real)
 
 
 
@@ -122,30 +118,25 @@ g = nx.DiGraph()
 
 max_avg_instructions = max(states_avg_instructions.values())
 for state, avg_instructions in states_avg_instructions.items():
-	# red_intensity = int(avg_instructions*0xff/max_avg_instructions)
-	if avg_instructions == 0: avg_instructions = 1
-	red_intensity = int(math.log(avg_instructions)*0xff/math.log(max_avg_instructions))
+	# option 1: linear
+	red_intensity = avg_instructions/max_avg_instructions
+
+	# option 2: logarithmic
+	# if avg_instructions == 0: avg_instructions = 1
+	# red_intensity = math.log(avg_instructions)/math.log(max_avg_instructions)
+
+	red_intensity = int(red_intensity*0xff)
 	g.add_node(state, color=f"#{red_intensity:02x}0000", penwidth=4)
 # print(states_avg_instructions)
-
-# max_total_instructions = max(states_total_instructions.values())
-# for state, total_instructions in states_total_instructions.items():
-# 	# red_intensity = int(total_instructions*0xff/max_total_instructions)
-# 	if total_instructions == 0: total_instructions = 1
-# 	red_intensity = int(math.log(total_instructions)*0xff/math.log(max_total_instructions))
-# 	g.add_node(state, color=f"#{red_intensity:02x}0000", penwidth=4)
-# print(states_total_instructions)
-
 
 for state, succs_probs in successors_probs.items():
 	for succ, prob in succs_probs.items():
 		if succ:
-			g.add_edge(state, succ, label=f"{prob:.8f}")
+			g.add_edge(state, succ, label=f"{prob:.3f}")
 
-
-# g.nodes["write"]["fillcolor"] = "red"
 a = nx.nx_agraph.to_agraph(g)
 a.layout("dot")
+a.draw("output.pdf")
 a.draw("output.png")
 
 

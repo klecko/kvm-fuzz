@@ -25,8 +25,7 @@ fn sys_rt_sigprocmask(
         try mem.safe.copyToUserSingle(Sigset, ptr, &self.blocked_signals);
     }
     if (set_ptr) |ptr| {
-        var set: Sigset = undefined;
-        try mem.safe.copyFromUserSingle(Sigset, &set, ptr);
+        const set = try mem.safe.copyFromUserSingle(Sigset, ptr);
         if (how == SIG.BLOCK) {
             self.blocked_signals.setUnion(set);
         } else if (how == SIG.UNBLOCK) {
@@ -86,7 +85,7 @@ fn sys_rt_sigaction(
 
     if (act_ptr) |ptr| {
         // TODO sanitize?
-        try mem.safe.copyFromUserSingle(Sigaction, &self.signal_handlers[signum - 1], ptr);
+        self.signal_handlers[signum - 1] = try mem.safe.copyFromUserSingle(Sigaction, ptr);
     }
 }
 

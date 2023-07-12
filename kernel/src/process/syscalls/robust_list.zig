@@ -24,9 +24,7 @@ fn fetchNextRobustEntry(entry: UserPtr(*const linux.robust_list)) !UserPtr(*cons
 pub fn wakeRobustFutexes(self: *Process) void {
     //https://elixir.bootlin.com/linux/v6.1.12/source/kernel/futex/core.c#L773
     const head_ptr = self.robust_list_head orelse return;
-    // var head = head_ptr.ptr();
-    var head: linux.robust_list_head = undefined;
-    mem.safe.copyFromUserSingle(linux.robust_list_head, &head, head_ptr) catch return;
+    const head = mem.safe.copyFromUserSingle(linux.robust_list_head, head_ptr) catch return;
 
     var entry = UserPtr(*const linux.robust_list).fromPtr(head.list.next.?) catch return;
     while (entry.ptr() != &head_ptr.ptr().list) {

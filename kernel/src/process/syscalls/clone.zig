@@ -144,8 +144,7 @@ pub fn handle_sys_clone3(
     const size = arg1;
 
     std.debug.assert(@sizeOf(linux.clone_args) == size);
-    var args: linux.clone_args = undefined;
-    try mem.safe.copyFromUserSingle(linux.clone_args, &args, cl_args_ptr);
+    const args = try mem.safe.copyFromUserSingle(linux.clone_args, cl_args_ptr);
 
     // TODO: there are probably many options we are ignoring here
 

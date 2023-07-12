@@ -141,7 +141,7 @@ pub fn UserSlice(comptime T: type) type {
 
         /// Create a UserSlice from a pointer as integer and a length.
         pub fn fromFlat(user_ptr: usize, length: usize) !Self {
-            if (user_ptr == 0 or !isRangeInUserRange(user_ptr, length))
+            if (user_ptr == 0)
                 return error.NotUserRange;
             const PointerT = blk: {
                 comptime var type_info = @typeInfo(T);
@@ -165,7 +165,7 @@ pub fn UserSlice(comptime T: type) type {
         /// Get the const version of the UserSlice.
         pub fn toConst(self: Self) UserSlice(ConstT) {
             comptime assert(T != ConstT);
-            return UserSlice(ConstT).fromSlice(self._slice);
+            return UserSlice(ConstT).fromSlice(self._slice) catch unreachable;
         }
 
         const PtrAtPointerType = blk: {
@@ -228,13 +228,14 @@ pub fn copyFromUser(comptime T: type, dest: []T, src: UserSlice([]const T)) Erro
     try copy(T, dest, src.slice());
 }
 
-pub fn copyFromUserSingle(comptime T: type, dest: *T, src: UserPtr(*const T)) Error!void {
-    // Make sure we're copying from user to kernel.
-    assert(isPtrInKernelRange(T, dest));
+pub fn copyFromUserSingle(comptime T: type, src: UserPtr(*const T)) Error!T {
+    // Make sure we're copying from user.
     assert(isPtrInUserRange(T, src.ptr()));
 
     // Try to perform copy.
-    try copySingle(T, dest, src.ptr());
+    var ret: T = undefined;
+    try copySingle(T, &ret, src.ptr());
+    return ret;
 }
 
 pub fn copyStringFromUser(allocator: Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {

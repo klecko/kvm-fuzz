@@ -1,10 +1,10 @@
 #!/usr/bin/env gnuplot
 
-set title "Rendimiento del mecanismo de snapshots"
+set title "Snapshots mechanism performance"
 set grid
 
-set xlabel "Páginas modificadas"
-set ylabel "Ejecuciones por segundo"
+set xlabel "Modified memory pages"
+set ylabel "Executions per second"
 set logscale x
 set logscale y
 

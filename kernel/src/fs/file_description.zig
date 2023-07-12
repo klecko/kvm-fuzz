@@ -134,9 +134,9 @@ pub const FileDescription = struct {
     offset: usize = 0,
 
     // File operations
-    stat: *const fn (self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void,
-    read: *const fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
-    write: *const fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
+    statFn: *const fn (self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void,
+    readFn: *const fn (self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize,
+    writeFn: *const fn (self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize,
 
     /// Reference counter. It must free the whole object this FileDescription
     /// belongs to, not just the FileDescription.
@@ -147,6 +147,18 @@ pub const FileDescription = struct {
     const ReadError = mem.safe.Error || error{NotConnected};
     const RefCounter = utils.RefCounter(u16, FileDescription);
     const O_ACCMODE = 3;
+
+    pub fn stat(self: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
+        return self.statFn(self, stat_ptr);
+    }
+
+    pub fn read(self: *FileDescription, buf: UserSlice([]u8)) ReadError!usize {
+        return self.readFn(self, buf);
+    }
+
+    pub fn write(self: *FileDescription, buf: UserSlice([]const u8)) mem.safe.Error!usize {
+        return self.writeFn(self, buf);
+    }
 
     pub fn isReadable(self: *const FileDescription) bool {
         const access_mode = self.flags & O_ACCMODE;
@@ -202,9 +214,9 @@ pub const FileDescriptionRegular = struct {
             .desc = FileDescription{
                 .buf = buf,
                 .flags = flags,
-                .stat = stat,
-                .read = read,
-                .write = write,
+                .statFn = stat,
+                .readFn = read,
+                .writeFn = write,
                 .ref = FileDescription.RefCounter.init(allocator, null),
             },
         };
@@ -251,9 +263,9 @@ pub const FileDescriptionStdin = struct {
             .desc = FileDescription{
                 .buf = &([_]u8{}),
                 .flags = linux.O.RDWR,
-                .stat = stat,
-                .read = read,
-                .write = write,
+                .statFn = stat,
+                .readFn = read,
+                .writeFn = write,
                 .ref = FileDescription.RefCounter.init(allocator, destroy),
             },
             .input_opened = false,
@@ -313,9 +325,9 @@ pub const FileDescriptionStdout = struct {
             .desc = FileDescription{
                 .buf = &[_]u8{},
                 .flags = linux.O.RDWR,
-                .stat = stat,
-                .read = read,
-                .write = write,
+                .statFn = stat,
+                .readFn = read,
+                .writeFn = write,
                 .ref = FileDescription.RefCounter.init(allocator, null),
             },
         };
@@ -375,9 +387,9 @@ pub const FileDescriptionSocket = struct {
             .desc = FileDescription{
                 .buf = buf,
                 .flags = linux.O.RDWR,
-                .stat = stat,
-                .read = read,
-                .write = write,
+                .statFn = stat,
+                .readFn = read,
+                .writeFn = write,
                 .ref = FileDescription.RefCounter.init(allocator, destroy),
                 .is_socket = true,
             },

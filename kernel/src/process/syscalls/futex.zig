@@ -32,8 +32,7 @@ fn futexWait(
 ) !void {
     std.debug.assert(mask != 0);
 
-    var word: u32 = undefined;
-    try mem.safe.copyFromUserSingle(u32, &word, uaddr);
+    const word = try mem.safe.copyFromUserSingle(u32, uaddr);
     if (word != val) {
         return error.TryAgain;
     }

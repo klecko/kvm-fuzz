@@ -9,7 +9,7 @@ const cast = std.zig.c_translation.cast;
 
 fn sys_fstat(self: *Process, fd: linux.fd_t, stat_ptr: UserPtr(*linux.Stat)) !void {
     const file = self.files.table.get(fd) orelse return error.BadFD;
-    return file.stat(file, stat_ptr);
+    return file.stat(stat_ptr);
 }
 
 pub fn handle_sys_fstat(self: *Process, arg0: usize, arg1: usize) !usize {

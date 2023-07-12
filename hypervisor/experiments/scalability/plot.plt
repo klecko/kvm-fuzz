@@ -1,7 +1,7 @@
 #!/usr/bin/env -S gnuplot -p
 set grid
-set title "Propiedades de escalado"
-set ylabel "Aceleración"
+set title "Scaling properties"
+set ylabel "Speedup"
 set xlabel "Cores"
 
 # aflpp: empty

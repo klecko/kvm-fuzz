@@ -31,7 +31,7 @@ GuestFile FileRefsByPath::set_file(const string& path, FileRef content) {
 	return file;
 }
 
-GuestFile SharedFiles::set_file(const std::string& path, std::string content) {
+GuestFile SharedFiles::set_file(const string& path, string content) {
 	// Content has been copied (or moved, if it was a rvalue). Move it to our
 	// file contents and set a reference to it.
 	string& content_ref = m_file_contents[path];
@@ -39,7 +39,7 @@ GuestFile SharedFiles::set_file(const std::string& path, std::string content) {
 	return FileRefsByPath::set_file(path, FileRef::from_string(content_ref));
 }
 
-GuestFile SharedFiles::set_file(const std::string& path) {
+GuestFile SharedFiles::set_file(const string& path) {
 	return set_file(path, utils::read_file(path));
 }
 

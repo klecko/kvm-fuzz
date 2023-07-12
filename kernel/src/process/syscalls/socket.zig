@@ -137,7 +137,7 @@ fn sys_recvfrom(
     _ = file.socket() orelse return error.NotSocket;
     if (!file.isReadable())
         return error.BadFD;
-    return file.read(file, buf);
+    return file.read(buf);
 }
 
 pub fn handle_sys_recvfrom(

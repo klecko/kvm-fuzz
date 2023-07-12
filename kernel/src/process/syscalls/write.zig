@@ -8,7 +8,7 @@ const cast = std.zig.c_translation.cast;
 
 fn sys_write(self: *Process, fd: linux.fd_t, buf: UserSlice([]const u8)) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
-    return file.write(file, buf);
+    return file.write(buf);
 }
 
 pub fn handle_sys_write(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
@@ -21,12 +21,11 @@ fn sys_writev(self: *Process, fd: linux.fd_t, iov_buf: UserSlice([]const linux.i
     const file = self.files.table.get(fd) orelse return error.BadFD;
     var ret: usize = 0;
     var i: usize = 0;
-    var iov: linux.iovec = undefined;
     while (i < iov_buf.len()) : (i += 1) {
         // Get the iovec and write it
-        try mem.safe.copyFromUserSingle(linux.iovec, &iov, iov_buf.ptrAt(i));
+        const iov = try mem.safe.copyFromUserSingle(linux.iovec, iov_buf.ptrAt(i));
         const user_slice = try UserSlice([]const u8).fromSlice(iov.iov_base[0..iov.iov_len]);
-        ret += try file.write(file, user_slice);
+        ret += try file.write(user_slice);
 
         // If writing to stderr, assume this is an assertion failed, and report
         // it as crash

@@ -9,7 +9,7 @@ fn sys_read(self: *Process, fd: linux.fd_t, buf: UserSlice([]u8)) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
     if (!file.isReadable())
         return error.BadFD;
-    return file.read(file, buf);
+    return file.read(buf);
 }
 
 pub fn handle_sys_read(self: *Process, arg0: usize, arg1: usize, arg2: usize) !usize {
@@ -34,7 +34,7 @@ fn sys_pread64(
     // Change offset, read and restore offset
     const original_offset = file.offset;
     file.offset = @intCast(usize, offset);
-    const ret = file.read(file, buf);
+    const ret = file.read(buf);
     file.offset = original_offset;
     return ret;
 }
