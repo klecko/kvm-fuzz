@@ -6,8 +6,8 @@ const UserPtr = mem.safe.UserPtr;
 const cast = std.zig.c_translation.cast;
 
 fn unameHelper(comptime string: []const u8) [64:0]u8 {
-    const zeroed_padding = [_:0]u8{0} ** std.math.max(0, 64 - string.len);
-    return @ptrCast(*const [string.len]u8, string.ptr).* ++ zeroed_padding;
+    const zeroed_padding = [_:0]u8{0} ** @max(0, 64 - string.len);
+    return @as(*const [string.len]u8, @ptrCast(string.ptr)).* ++ zeroed_padding;
 }
 
 fn sys_uname(self: *Process, uname_ptr: UserPtr(*linux.utsname)) !void {

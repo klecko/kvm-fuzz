@@ -22,9 +22,9 @@ fn sys_fcntl_dupfd(
 
 fn sys_fcntl(self: *Process, fd: linux.fd_t, cmd: i32, arg: u64) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
-    const ret = switch (cmd) {
+    const ret: i32 = switch (cmd) {
         // F_GETFD and F_SETFD get and set the file descriptor flag FD_CLOEXEC.
-        linux.F.GETFD => if (self.files.isCloexecSet(fd)) linux.FD_CLOEXEC else @as(i32, 0),
+        linux.F.GETFD => if (self.files.isCloexecSet(fd)) linux.FD_CLOEXEC else 0,
         linux.F.SETFD => blk: {
             self.files.setCloexecValue(fd, arg & linux.FD_CLOEXEC != 0);
             break :blk 0;
@@ -36,7 +36,7 @@ fn sys_fcntl(self: *Process, fd: linux.fd_t, cmd: i32, arg: u64) !usize {
         linux.F_DUPFD_CLOEXEC => try sys_fcntl_dupfd(self, file, cast(linux.fd_t, arg), true),
 
         // Get file description flags
-        linux.F.GETFL => file.flags,
+        linux.F.GETFL => @bitCast(file.flags),
 
         linux.F.SETLKW => 0,
 

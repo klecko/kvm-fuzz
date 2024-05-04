@@ -46,7 +46,14 @@ pub const HeapAllocator = struct {
     }
 
     pub fn allocator(self: *HeapAllocator) Allocator {
-        return Allocator.init(self, alloc, resize, free);
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = resize,
+                .free = free,
+            },
+        };
     }
 
     fn more(self: *HeapAllocator, num_pages: usize) Allocator.Error!void {
@@ -60,56 +67,60 @@ pub const HeapAllocator = struct {
     }
 
     fn alloc(
-        self: *HeapAllocator,
+        ctx: *anyopaque,
         len: usize,
-        ptr_align: u29,
-        len_align: u29,
+        log2_ptr_align: u8,
         ret_addr: usize,
-    ) Allocator.Error![]u8 {
-        _ = len_align;
+    ) ?[*]u8 {
         _ = ret_addr;
-
-        const ret_offset = std.mem.alignForward(self.used, ptr_align);
+        const self: *HeapAllocator = @ptrCast(@alignCast(ctx));
+        const ret_offset = std.mem.alignForwardLog2(self.used, log2_ptr_align);
         const free_bytes = self.size - ret_offset;
         if (len > free_bytes) {
             const needed_memory = mem.alignPageForward(len - free_bytes);
             const num_pages = @divExact(needed_memory, std.mem.page_size);
-            try self.more(num_pages);
+            self.more(num_pages) catch return null;
         }
 
         self.used = ret_offset + len;
         assert(self.used <= self.size);
         const ret = self.base + ret_offset;
         log.debug("heap allocator: returns 0x{x}\n", .{ret});
-        return @intToPtr([*]u8, ret)[0..len];
+        return @as([*]u8, @ptrFromInt(ret));
     }
 
     fn resize(
-        self: *HeapAllocator,
+        ctx: *anyopaque,
         buf: []u8,
-        buf_align: u29,
+        log2_buf_align: u8,
         new_len: usize,
-        len_align: u29,
         ret_addr: usize,
-    ) ?usize {
-        _ = self;
+    ) bool {
+        _ = ctx;
         _ = buf;
-        _ = buf_align;
+        _ = log2_buf_align;
         _ = new_len;
-        _ = len_align;
         _ = ret_addr;
         TODO();
     }
 
+    fn isLastAllocation(self: HeapAllocator, buf: []u8) bool {
+        return self.base + self.used - buf.len == @intFromPtr(buf.ptr);
+    }
+
     fn free(
-        self: *HeapAllocator,
+        ctx: *anyopaque,
         buf: []u8,
-        buf_align: u29,
+        log2_buf_align: u8,
         ret_addr: usize,
     ) void {
-        _ = self;
-        _ = buf_align;
+        _ = log2_buf_align;
         _ = ret_addr;
+        const self: *HeapAllocator = @ptrCast(@alignCast(ctx));
+        if (self.isLastAllocation(buf)) {
+            // Rollback
+            self.used -= buf.len;
+        }
         log.debug("heap allocator: frees {*}\n", .{buf});
     }
 };
@@ -127,6 +138,9 @@ pub const BlockAllocator = struct {
     /// The block sizes. There will be a linked list of blocks of each size.
     /// These sizes must be ordered.
     const BLOCK_SIZES = [_]usize{ 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
+    comptime {
+        assert(std.sort.isSorted(usize, &BLOCK_SIZES, {}, std.sort.asc(usize)));
+    }
 
     pub fn init() BlockAllocator {
         return BlockAllocator{
@@ -135,94 +149,97 @@ pub const BlockAllocator = struct {
     }
 
     pub fn allocator(self: *BlockAllocator) Allocator {
-        return Allocator.init(self, alloc, resize, free);
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = resize,
+                .free = free,
+            },
+        };
     }
 
     fn getListIndex(size: usize) ?usize {
-        for (BLOCK_SIZES) |block_size, i| {
+        for (BLOCK_SIZES, 0..) |block_size, i| {
             if (block_size >= size) return i;
         }
         return null;
     }
 
-    fn blockToSlice(block_ptr: *Block, size: usize) []u8 {
-        return @ptrCast([*]u8, block_ptr)[0..size];
-    }
-
     fn sliceToBlock(slice: []u8) *Block {
-        return @ptrCast(*Block, @alignCast(@sizeOf(Block), slice));
+        return @ptrCast(@alignCast(slice));
     }
 
     fn moreBlocksForList(self: *BlockAllocator, list_index: usize) !void {
         const page = try page_allocator.alloc(u8, std.mem.page_size);
         const block_len = BLOCK_SIZES[list_index];
-        var block_addr = @ptrToInt(page.ptr);
-        var page_end = block_addr + std.mem.page_size;
+        var block_addr = @intFromPtr(page.ptr);
+        const page_end = block_addr + std.mem.page_size;
         while (block_addr < page_end - block_len) : (block_addr += block_len) {
-            var block_ptr = @intToPtr(*Block, block_addr);
-            const next_ptr = @intToPtr(*Block, block_addr + block_len);
+            const block_ptr: *Block = @ptrFromInt(block_addr);
+            const next_ptr: *Block = @ptrFromInt(block_addr + block_len);
             block_ptr.next = next_ptr;
         }
-        var last_block = @intToPtr(*Block, block_addr);
+        const last_block: *Block = @ptrFromInt(block_addr);
         last_block.next = null;
         self.list_heads[list_index] = sliceToBlock(page);
     }
 
     fn alloc(
-        self: *BlockAllocator,
+        ctx: *anyopaque,
         len: usize,
-        ptr_align: u29,
-        len_align: u29,
+        log2_ptr_align: u8,
         ret_addr: usize,
-    ) Allocator.Error![]u8 {
+    ) ?[*]u8 {
+        const self: *BlockAllocator = @ptrCast(@alignCast(ctx));
+
         // Get list index corresponding to `len`, or fallback to page allocator
         // if there isn't any
         const list_index = getListIndex(len) orelse {
-            return page_allocator.vtable.alloc(page_allocator.ptr, len, ptr_align, len_align, ret_addr);
+            return page_allocator.vtable.alloc(page_allocator.ptr, len, log2_ptr_align, ret_addr);
         };
 
         // Allocate blocks for the list if there isn't any
         if (self.list_heads[list_index] == null)
-            try self.moreBlocksForList(list_index);
+            self.moreBlocksForList(list_index) catch return null;
 
         // Get the head, and set the next block as the new head
         const block_ptr = self.list_heads[list_index].?;
-        const next = block_ptr.next;
-        self.list_heads[list_index] = next;
+        self.list_heads[list_index] = block_ptr.next;
 
-        // Return the slice with aligned length
-        const block_len = BLOCK_SIZES[list_index];
-        const len_aligned = std.mem.alignAllocLen(block_len, len, len_align);
-        const ret = blockToSlice(block_ptr, len_aligned);
+        // Make sure the alignment is right
+        assert(std.mem.isAlignedLog2(@intFromPtr(block_ptr), log2_ptr_align));
+
+        // Return the block
+        const ret: [*]u8 = @ptrCast(block_ptr);
         log.debug("heap allocator: {} returns {*}\n", .{ len, ret });
         return ret;
     }
 
     fn resize(
-        self: *BlockAllocator,
+        ctx: *anyopaque,
         buf: []u8,
-        buf_align: u29,
+        log2_buf_align: u8,
         new_len: usize,
-        len_align: u29,
         ret_addr: usize,
-    ) ?usize {
-        _ = self;
+    ) bool {
+        _ = ctx;
         _ = buf;
-        _ = buf_align;
+        _ = log2_buf_align;
         _ = new_len;
-        _ = len_align;
         _ = ret_addr;
         TODO();
     }
 
     fn free(
-        self: *BlockAllocator,
+        ctx: *anyopaque,
         buf: []u8,
-        buf_align: u29,
+        log2_buf_align: u8,
         ret_addr: usize,
     ) void {
+        const self: *BlockAllocator = @ptrCast(@alignCast(ctx));
         const list_index = getListIndex(buf.len) orelse {
-            return page_allocator.vtable.free(page_allocator.ptr, buf, buf_align, ret_addr);
+            return page_allocator.vtable.free(page_allocator.ptr, buf, log2_buf_align, ret_addr);
         };
         const freed_block = sliceToBlock(buf);
         freed_block.next = self.list_heads[list_index];
@@ -241,51 +258,36 @@ const PageAllocator = struct {
     fn alloc(
         _: *anyopaque,
         len: usize,
-        ptr_align: u29,
-        len_align: u29,
+        log2_ptr_align: u8,
         ret_addr: usize,
-    ) Allocator.Error![]u8 {
+    ) ?[*]u8 {
         _ = ret_addr;
-        log.debug("page allocator alloc: {} {} {}\n", .{ len, ptr_align, len_align });
-
-        // As we always return a page aligned pointer, with this constraint we
-        // make sure it will be also aligned by ptr_align.
-        assert(ptr_align <= std.mem.page_size);
-
-        // Allocator constraints
+        _ = log2_ptr_align;
         assert(len > 0);
-        assert(std.mem.isValidAlign(ptr_align));
-        if (len_align > 0) {
-            assert(std.mem.isAlignedAnyAlign(len, len_align));
-            assert(len >= len_align);
-        }
+        log.debug("page allocator alloc: {}\n", .{len});
 
         // The pages we're going to allocate
         const num_pages = @divExact(mem.alignPageForward(len), std.mem.page_size);
 
-        // Alocate the pages
-        const range_start = try mem.vmm.allocPages(num_pages, .{
+        // Allocate the pages and return them
+        const range_start = mem.vmm.allocPages(num_pages, .{
             .writable = true,
             .global = true,
             .noExecute = true,
-        });
-
-        // Construct the slice and return it
-        const range_start_ptr = @intToPtr([*]u8, range_start);
-        const slice = range_start_ptr[0..len];
-        log.debug("page allocator alloc return: {*}\n", .{slice.ptr});
-        return slice;
+        }) catch return null;
+        log.debug("page allocator alloc return: 0x{x}\n", .{range_start});
+        return @ptrFromInt(range_start);
     }
 
-    fn free(_: *anyopaque, buf: []u8, buf_align: u29, ret_addr: usize) void {
-        _ = buf_align;
+    fn free(_: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
+        _ = log2_buf_align;
         _ = ret_addr;
 
         // Free pages associated to `buf`.
         log.debug("page allocator free: {*}\n", .{buf});
         const buf_len_aligned = mem.alignPageForward(buf.len);
         const num_pages = @divExact(buf_len_aligned, std.mem.page_size);
-        mem.vmm.freePages(@ptrToInt(buf.ptr), num_pages) catch |err| switch (err) {
+        mem.vmm.freePages(@intFromPtr(buf.ptr), num_pages) catch |err| switch (err) {
             error.NotMapped => unreachable,
         };
     }
@@ -293,35 +295,34 @@ const PageAllocator = struct {
     fn resize(
         _: *anyopaque,
         buf: []u8,
-        buf_align: u29,
+        log2_buf_align: u8,
         new_len: usize,
-        len_align: u29,
         ret_addr: usize,
-    ) ?usize {
-        _ = buf_align;
+    ) bool {
+        _ = log2_buf_align;
         _ = ret_addr;
 
-        // Same as in std.heap.PageAllocator.resize
-        log.debug("page allocator resize: {*} {} {}\n", .{ buf, new_len, len_align });
-        assert(mem.isPageAligned(@ptrToInt(buf.ptr)));
+        // Same as in std.heap.PageAllocator.resize().
+        log.debug("page allocator resize: {*} {}\n", .{ buf, new_len });
+        assert(mem.isPageAligned(@intFromPtr(buf.ptr)));
         const new_len_aligned = mem.alignPageForward(new_len);
         const buf_len_aligned = mem.alignPageForward(buf.len);
 
         // No need to do anything here.
         if (new_len_aligned == buf_len_aligned)
-            return std.heap.alignPageAllocLen(new_len_aligned, new_len, len_align);
+            return true;
 
         // Free pages.
         if (new_len_aligned < buf_len_aligned) {
-            const base = @ptrToInt(buf.ptr) + new_len_aligned;
+            const base = @intFromPtr(buf.ptr) + new_len_aligned;
             const num_pages = @divExact(buf_len_aligned - new_len_aligned, std.mem.page_size);
             mem.vmm.freePages(base, num_pages) catch |err| switch (err) {
                 error.NotMapped => unreachable,
             };
-            return std.heap.alignPageAllocLen(new_len_aligned, new_len, len_align);
+            return true;
         }
 
         // It's asking for an increase in size.
-        return null;
+        return false;
     }
 };

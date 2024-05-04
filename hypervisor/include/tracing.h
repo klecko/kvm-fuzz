@@ -1,7 +1,7 @@
 #ifndef _TRACING_H
 #define _TRACING_H
 
-#include <iostream>
+#include <vector>
 #include "common.h"
 
 class Vm;

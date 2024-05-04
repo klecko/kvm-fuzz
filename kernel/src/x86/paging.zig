@@ -59,7 +59,7 @@ pub const PageTableEntry = packed struct {
     }
 
     pub fn flags(self: PageTableEntry) usize {
-        return @bitCast(usize, self) & ~PHYS_MASK;
+        return @as(usize, @bitCast(self)) & ~PHYS_MASK;
     }
 
     pub fn ref(self: *PageTableEntry) void {
@@ -79,19 +79,19 @@ pub const PageTableEntry = packed struct {
 
     pub fn setFrameBase(self: *PageTableEntry, base: usize) void {
         assert((base & PHYS_MASK) == base);
-        self.phys = @intCast(u40, base >> 12);
+        self.phys = @intCast(base >> 12);
     }
 
     pub fn setFlags(self: *PageTableEntry, flags_value: usize) void {
         assert((flags_value & ~PHYS_MASK) == flags_value);
-        const self_usize = @ptrCast(*usize, self);
+        const self_usize: *usize = @ptrCast(self);
         self_usize.* = (self_usize.* & PHYS_MASK) | flags_value;
         // self.raw &= PHYS_MASK;
         // self.raw |= flags_value;
     }
 
     pub fn clear(self: *PageTableEntry) void {
-        const self_usize = @ptrCast(*usize, self);
+        const self_usize: *usize = @ptrCast(self);
         self_usize.* = 0;
     }
 
@@ -379,18 +379,18 @@ pub const PageTable = struct {
         errdefer mem.pmm.freeFrame(page_table_frame);
         const copy = mem.pmm.physToVirt(RawType, page_table_frame);
 
-        for (table) |*entry, i| {
+        for (table, copy) |*entry, *entry_copy| {
             if (!entry.isPresent())
                 continue;
-            var frame = if (entry.isShared())
+            const frame = if (entry.isShared())
                 entry.frameBase()
             else if (level > 1)
                 try clonePageTable(level - 1, pageTablePointedBy(entry))
             else
                 try mem.pmm.dupFrame(entry.frameBase());
             mem.vmm.kernel_page_table.refFrame(frame);
-            copy[i].setFrameBase(frame);
-            copy[i].setFlags(entry.flags());
+            entry_copy.setFrameBase(frame);
+            entry_copy.setFlags(entry.flags());
         }
 
         return page_table_frame;

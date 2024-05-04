@@ -54,8 +54,8 @@ fn sys_clone(
     else if (clear_signal_handlers)
         common.TODO()
     else blk: {
-        var tmp = try self.allocator.create([linux._NSIG]Process.Sigaction);
-        std.mem.copy(Process.Sigaction, tmp, self.signal_handlers);
+        const tmp = try self.allocator.create(@TypeOf(self.signal_handlers.*));
+        @memcpy(tmp, self.signal_handlers);
         break :blk tmp;
     };
     const clear_child_tid_ptr = if (flags & linux.CLONE.CHILD_CLEARTID != 0) child_tid_ptr.? else null;

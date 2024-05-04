@@ -1,5 +1,3 @@
-ENTRY(kmain)
-
 SECTIONS {
 	. = 0xffffffff80200000;
 

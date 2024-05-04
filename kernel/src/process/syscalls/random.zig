@@ -8,13 +8,8 @@ const cast = std.zig.c_translation.cast;
 fn sys_getrandom(self: *Process, buf: UserSlice([]u8), flags: u32) !usize {
     _ = flags;
     _ = self;
-    var byte: u8 = 0;
-    var i: usize = 0;
-    while (i < buf.len()) : ({
-        i += 1;
-        byte +%= 1;
-    }) {
-        try mem.safe.copyToUserSingle(u8, buf.ptrAt(i), &byte);
+    for (0..buf.len()) |i| {
+        try mem.safe.copyToUserSingle(u8, buf.ptrAt(i), &@truncate(i));
     }
     return buf.len();
 }

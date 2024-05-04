@@ -59,7 +59,7 @@ pub fn rdmsr(msr: MSR) usize {
         : [msr] "{rcx}" (msr),
         : "memory"
     );
-    return (@intCast(u64, high) << 32) | low;
+    return (@as(u64, @intCast(high)) << 32) | low;
 }
 
 pub fn lgdt(gdt_ptr: *const x86.gdt.GDTPtr) void {
@@ -74,7 +74,7 @@ pub fn ltr(tss_segment_selector: x86.gdt.SegmentSelector) void {
     asm volatile (
         \\ltr %[tss_segment_selector]
         :
-        : [tss_segment_selector] "r" (@enumToInt(tss_segment_selector)),
+        : [tss_segment_selector] "r" (@intFromEnum(tss_segment_selector)),
     );
 }
 
@@ -161,5 +161,5 @@ pub fn rdtsc() usize {
         : [high] "={edx}" (high),
           [low] "={eax}" (low),
     );
-    return (@intCast(u64, high) << 32) | low;
+    return (@as(u64, @intCast(high)) << 32) | low;
 }

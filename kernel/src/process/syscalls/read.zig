@@ -33,7 +33,7 @@ fn sys_pread64(
 
     // Change offset, read and restore offset
     const original_offset = file.offset;
-    file.offset = @intCast(usize, offset);
+    file.offset = @intCast(offset);
     const ret = file.read(buf);
     file.offset = original_offset;
     return ret;

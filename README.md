@@ -29,7 +29,7 @@ Available options:
 ```
 
 ## Dependencies
-Building requires a recent build of Zig, which you can get from [here](https://ziglang.org/download/). Zig is in charge of compiling the kernel (in Zig) and the hypervisor and the tests (in C++). It also acts as build system. Other dependencies are `libdwarf`, `libelf` and `libssl`, which you can install from your package manager:
+Building requires Zig 0.12.0, which you can get from [here](https://ziglang.org/download/). Zig is in charge of compiling the kernel (in Zig) and the hypervisor and the tests (in C++). It also acts as build system. Other dependencies are `libdwarf`, `libelf` and `libssl`, which you can install from your package manager:
 ```
 sudo apt install libdwarf-dev libelf-dev libssl-dev
 ```

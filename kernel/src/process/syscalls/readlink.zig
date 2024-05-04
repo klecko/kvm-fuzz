@@ -20,7 +20,7 @@ fn sys_readlink(self: *Process, pathname_ptr: UserCString, buf: UserSlice([]u8))
     };
 
     // Write path. Readlink does not append a null byte to buf.
-    const size = std.math.min(path_result.len, buf.len());
+    const size = @min(path_result.len, buf.len());
     try mem.safe.copyToUser(u8, buf.sliceTo(size), path_result[0..size]);
     return size;
 }

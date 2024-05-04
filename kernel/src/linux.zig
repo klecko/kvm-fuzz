@@ -38,7 +38,7 @@ pub const clone_args = extern struct {
     cgroup: u64,
 };
 
-pub const iovec = std.os.iovec;
+pub const iovec = std.posix.iovec;
 
 pub const FUTEX_BITSET_MATCH_ANY = 0xFFFFFFFF;
 pub const FUTEX_WAITERS = 0x80000000;
@@ -80,5 +80,5 @@ pub fn errorToErrno(err: anyerror) usize {
 }
 
 pub fn errno(linux_errno: linux.E) usize {
-    return @bitCast(usize, -@intCast(isize, @enumToInt(linux_errno)));
+    return @bitCast(-@as(isize, @intFromEnum(linux_errno)));
 }

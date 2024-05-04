@@ -35,7 +35,7 @@ fn sys_sendfile(
     if (offset_ptr) |ptr| {
         const offset = try mem.safe.copyFromUserSingle(linux.off_t, ptr.toConst());
         if (offset < 0) return error.InvalidArgument;
-        in_file.offset = @intCast(usize, offset);
+        in_file.offset = @intCast(offset);
     }
 
     // Perform read and write operations
@@ -44,7 +44,7 @@ fn sys_sendfile(
 
     // Restore offset if needed
     if (offset_ptr) |ptr| {
-        const offset = @intCast(linux.off_t, in_file.offset);
+        const offset: linux.off_t = @intCast(in_file.offset);
         try mem.safe.copyToUserSingle(linux.off_t, ptr, &offset);
         in_file.offset = in_prev_offset;
     }

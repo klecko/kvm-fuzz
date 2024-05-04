@@ -11,11 +11,11 @@ pub fn print(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    var writer = Writer{ .context = {} };
+    const writer = Writer{ .context = {} };
     std.fmt.format(writer, format, args) catch unreachable;
 }
 
-pub fn logRoot(
+pub fn logFn(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,

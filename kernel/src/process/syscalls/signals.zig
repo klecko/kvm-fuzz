@@ -78,7 +78,7 @@ fn sys_rt_sigaction(
     if (signum_ < 1 or signum_ > linux._NSIG or signum_ == SIG.KILL or signum_ == SIG.STOP)
         return error.InvalidArgument;
 
-    const signum = @intCast(usize, signum_);
+    const signum: usize = @intCast(signum_);
     if (oldact_ptr) |ptr| {
         try mem.safe.copyToUserSingle(Sigaction, ptr, &self.signal_handlers[signum - 1]);
     }

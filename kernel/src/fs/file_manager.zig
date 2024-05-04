@@ -21,8 +21,7 @@ pub fn init(allocator: Allocator, num_files: usize) void {
 
     // TODO: this might not work because pointers are changed while inserting
     // items
-    var i: usize = 0;
-    while (i < num_files) : (i += 1) {
+    for (0..num_files) |i| {
         // Get the filename and the file length
         var size: usize = undefined;
         hypercalls.getFileInfo(i, &filename_buf, &size);
@@ -73,7 +72,7 @@ const OpenError = Allocator.Error || error{FileNotFound};
 pub fn open(
     allocator: Allocator,
     filename: []const u8,
-    flags: i32,
+    flags: linux.O,
 ) OpenError!*fs.FileDescription {
     const file_content = fileContent(filename) orelse {
         log.warn("attempt to open unknown file '{s}'\n", .{filename});
@@ -117,5 +116,5 @@ pub fn stat(filename: []const u8, stat_ptr: mem.safe.UserPtr(*linux.Stat)) !void
         log.warn("attempt to stat unknown file '{s}'\n", .{filename});
         return error.FileNotFound;
     };
-    return fs.statRegular(stat_ptr, file_content.len, @ptrToInt(file_content.ptr));
+    return fs.statRegular(stat_ptr, file_content.len, @intFromPtr(file_content.ptr));
 }

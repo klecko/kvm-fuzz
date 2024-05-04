@@ -1,6 +1,4 @@
 const std = @import("std");
-pub const log = @import("log.zig").logRoot;
-pub const panic = @import("panic.zig").panicRoot;
 
 const common = @import("common.zig");
 const x86 = @import("x86/x86.zig");
@@ -11,8 +9,11 @@ const scheduler = @import("scheduler.zig");
 const Process = @import("process/Process.zig");
 const print = common.print;
 
-pub const log_level: std.log.Level = .err;
-// pub const log_level: std.log.Level = .debug;
+pub const std_options = std.Options{
+    .logFn = @import("log.zig").logFn,
+    .log_level = .err,
+};
+pub const panic = @import("panic.zig").panicRoot;
 
 // Stage2 compiler seems to evaluate std.heap.GeneralPurposeAllocator default
 // backing allocator (root.os.heap.page_allocator) although we explicitly

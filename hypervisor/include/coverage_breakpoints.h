@@ -41,8 +41,6 @@ public:
 	using CoverageBreakpoints::operator=;
 	bool add(vaddr_t) = delete;
 
-	SharedCoverageBreakpoints();
-
 	// Number of basic blocks added with `add`
 	size_t count() const;
 
@@ -50,7 +48,7 @@ public:
 	bool add(const CoverageBreakpoints<T>& other);
 
 private:
-	std::atomic_flag m_lock;
+	std::atomic_flag m_lock = ATOMIC_FLAG_INIT;
 };
 
 
@@ -110,13 +108,6 @@ typename T::iterator CoverageBreakpoints<T>::begin() {
 template <class T>
 typename T::iterator CoverageBreakpoints<T>::end() {
 	return m_basic_blocks.end();
-}
-
-
-inline SharedCoverageBreakpoints::SharedCoverageBreakpoints()
-	: CoverageBreakpoints()
-	, m_lock(ATOMIC_FLAG_INIT)
-{
 }
 
 inline size_t SharedCoverageBreakpoints::count() const {

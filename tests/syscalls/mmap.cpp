@@ -119,14 +119,8 @@ TEST_CASE("mmap not open file") {
 	REQUIRE(errno == EBADF);
 }
 
-TEST_CASE("mmap shared and private") {
-	// Both shared and private
-	void* p = mmap(nullptr, PAGE_SIZE, prot, flags | MAP_SHARED, -1, 0);
-	REQUIRE(p == MAP_FAILED);
-	REQUIRE(errno == EINVAL);
-
-	// Not shared and not private
-	p = mmap(nullptr, PAGE_SIZE, prot, MAP_ANONYMOUS, -1, 0);
+TEST_CASE("mmap no map type") {
+	void* p = mmap(nullptr, PAGE_SIZE, prot, MAP_ANONYMOUS, -1, 0);
 	REQUIRE(p == MAP_FAILED);
 	REQUIRE(errno == EINVAL);
 }
@@ -209,6 +203,7 @@ TEST_CASE("mmap partial") {
 	REQUIRE(p2 != MAP_FAILED);
 
 	// p2 is not at p1 - PAGE_SIZE, but that page is now mapped (!!)
+	// TODO: this was changed in modern linux.
 	REQUIRE(p2 != p1 - PAGE_SIZE);
 	REQUIRE(is_mapped(p1 - PAGE_SIZE));
 	REQUIRE(munmap(p1, PAGE_SIZE) == 0);

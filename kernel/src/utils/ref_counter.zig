@@ -58,7 +58,7 @@ pub fn RefCounter(comptime RefCountT: type, comptime ParentT: type) type {
             var name: []const u8 = undefined;
             var found: bool = false;
             for (@typeInfo(ParentT).Struct.fields) |field| {
-                if (field.field_type == Self) {
+                if (field.type == Self) {
                     if (found == false) {
                         name = field.name;
                         found = true;
@@ -92,7 +92,7 @@ pub fn RefCounter(comptime RefCountT: type, comptime ParentT: type) type {
         /// Increment the reference counter and return a pointer to the parent.
         pub fn ref(self: *Self) *ParentT {
             self.ref_count += 1;
-            return @fieldParentPtr(ParentT, field_name, self);
+            return @fieldParentPtr(field_name, self);
         }
 
         /// Decrement the reference counter, freeing the ref-counted object if
@@ -101,7 +101,7 @@ pub fn RefCounter(comptime RefCountT: type, comptime ParentT: type) type {
             std.debug.assert(self.ref_count > 0);
             self.ref_count -= 1;
             if (self.ref_count == 0) {
-                const parent = @fieldParentPtr(ParentT, field_name, self);
+                const parent: *ParentT = @fieldParentPtr(field_name, self);
                 if (self.destroyFn) |destroy| {
                     destroy(parent);
                 } else {

@@ -45,7 +45,7 @@ pub fn init() void {
         info.mem_start += space_needed_bitset;
 
         // Initialize the bitset
-        std.mem.set(u8, free_bitset, 0xFF); // all free
+        @memset(free_bitset, 0xFF); // all free
         var frame: usize = 0;
         while (frame < info.mem_start) : (frame += std.mem.page_size) {
             setFrameAllocated(frame);
@@ -69,7 +69,7 @@ pub fn init() void {
 fn setFrameAllocated(frame: usize) void {
     const i = @divExact(frame, std.mem.page_size);
     const byte = i / 8;
-    const bit = @as(u8, 1) << @intCast(u3, i % 8);
+    const bit = @as(u8, 1) << @intCast(i % 8);
     assert(free_bitset[byte] & bit != 0);
     free_bitset[byte] &= ~bit;
 }
@@ -77,13 +77,13 @@ fn setFrameAllocated(frame: usize) void {
 fn setFrameFree(frame: usize) void {
     const i = @divExact(frame, std.mem.page_size);
     const byte = i / 8;
-    const bit = @as(u8, 1) << @intCast(u3, i % 8);
+    const bit = @as(u8, 1) << @intCast(i % 8);
     assert(free_bitset[byte] & bit == 0);
     free_bitset[byte] |= bit;
 }
 
 fn memsetFrame(frame: usize, value: u8) void {
-    std.mem.set(u8, physToVirt(*[std.mem.page_size]u8, frame), value);
+    @memset(physToVirt(*[std.mem.page_size]u8, frame), value);
 }
 
 pub fn memoryLength() usize {
@@ -111,13 +111,13 @@ pub noinline fn allocFrame() Error!usize {
 pub fn allocFrames(allocator: std.mem.Allocator, n: usize) Error![]usize {
     // It's important to allocate the slice first, because it may also need to
     // allocate frames
-    var frames = try allocator.alloc(usize, n);
+    const frames = try allocator.alloc(usize, n);
     errdefer allocator.free(frames);
 
     if (n > free_frames_len)
         return Error.OutOfMemory;
     free_frames_len -= n;
-    std.mem.copy(usize, frames, free_frames[free_frames_len .. free_frames_len + n]);
+    @memcpy(frames, free_frames[free_frames_len .. free_frames_len + n]);
     for (frames) |frame| {
         if (BITSET_CHECKS)
             setFrameAllocated(frame);
@@ -144,7 +144,7 @@ pub fn freeFrame(frame: usize) void {
 
 /// Free a number of frames.
 pub fn freeFrames(frames: []usize) void {
-    std.mem.copy(usize, free_frames[free_frames_len..], frames);
+    @memcpy(free_frames[free_frames_len .. free_frames_len + frames.len], frames);
     for (frames) |frame| {
         if (BITSET_CHECKS)
             setFrameFree(frame);
@@ -160,7 +160,7 @@ pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
     assert(phys <= memory_length);
     const ret = mem.layout.physmap + phys;
     if (@typeInfo(ptr_type) == .Pointer) {
-        return @intToPtr(ptr_type, ret);
+        return @ptrFromInt(ret);
     } else if (@typeInfo(ptr_type) == .Int) {
         return ret;
     } else {
@@ -172,7 +172,7 @@ pub fn physToVirt(comptime ptr_type: type, phys: usize) ptr_type {
 /// physical one.
 pub fn virtToPhys(virt: anytype) usize {
     assert(@typeInfo(@TypeOf(virt)) == .Pointer);
-    const virt_flat = @ptrToInt(virt);
+    const virt_flat = @intFromPtr(virt);
     const physmap = mem.layout.physmap;
     assert(physmap <= virt_flat and virt_flat < physmap + memoryLength());
     return virt_flat - physmap;
@@ -194,6 +194,6 @@ pub fn dupFrame(frame: usize) Error!usize {
     const new_frame = try allocFrame();
     const new_frame_virt = physToVirt(*[std.mem.page_size]u8, new_frame);
     const frame_virt = physToVirt(*[std.mem.page_size]u8, frame);
-    std.mem.copy(u8, new_frame_virt, frame_virt);
+    @memcpy(new_frame_virt, frame_virt);
     return new_frame;
 }

@@ -63,11 +63,11 @@ const GlobalDescriptor = packed struct {
 
     fn init_base(base: u32, limit: u20, access: AccessBits, flags: FlagsBits) GlobalDescriptor {
         return GlobalDescriptor{
-            .base_low = @intCast(u16, base & 0xFFFF),
-            .base_mid = @intCast(u8, (base >> 16) & 0xFF),
-            .base_high = @intCast(u8, base >> 24),
-            .limit_low = @intCast(u16, limit & 0xFFFF),
-            .limit_high = @intCast(u4, limit >> 16),
+            .base_low = @truncate(base),
+            .base_mid = @truncate(base >> 16),
+            .base_high = @truncate(base >> 24),
+            .limit_low = @truncate(limit),
+            .limit_high = @truncate(limit >> 16),
             .access = access,
             .flags = flags,
         };
@@ -104,7 +104,7 @@ const TaskStateSegmentDescriptor = packed struct {
     zero: u32 = 0,
 
     pub fn init(tss_ptr: *const TaskStateSegment) TaskStateSegmentDescriptor {
-        const tss_ptr_flat = @ptrToInt(tss_ptr);
+        const tss_ptr_flat = @intFromPtr(tss_ptr);
         const access = AccessBits{
             .accessed = 1,
             .read_write = 0,
@@ -120,14 +120,14 @@ const TaskStateSegmentDescriptor = packed struct {
             .granularity = 0,
         };
         const descriptor = GlobalDescriptor.init_base(
-            @intCast(u32, tss_ptr_flat & 0xFFFFFFFF),
+            @truncate(tss_ptr_flat),
             @sizeOf(TaskStateSegment),
             access,
             flags,
         );
         return TaskStateSegmentDescriptor{
             .descriptor = descriptor,
-            .base_higher = @intCast(u32, tss_ptr_flat >> 32),
+            .base_higher = @truncate(tss_ptr_flat >> 32),
         };
     }
 };
@@ -160,8 +160,8 @@ const TaskStateSegment = packed struct {
 
     pub fn init() TaskStateSegment {
         var ret = std.mem.zeroes(TaskStateSegment);
-        ret.rsp0 = @ptrToInt(&stack_rsp0) + stack_rsp0.len;
-        ret.ist1 = @ptrToInt(&stack_ist1) + stack_ist1.len;
+        ret.rsp0 = @intFromPtr(&stack_rsp0) + stack_rsp0.len;
+        ret.ist1 = @intFromPtr(&stack_ist1) + stack_ist1.len;
         return ret;
     }
 };
@@ -223,7 +223,7 @@ var gdt = blk: {
 };
 
 fn segmentIndex(selector: SegmentSelector) u16 {
-    return @enumToInt(selector) / 8;
+    return @intFromEnum(selector) / 8;
 }
 
 comptime {
@@ -242,12 +242,12 @@ pub fn init() void {
     // Create the TSS descriptor and add it to the GDT. The TSS has twice the
     // size of a normal GlobalDescriptor, so we have to bitcast and hack a bit.
     const tss_descriptor = TaskStateSegmentDescriptor.init(&tss);
-    std.mem.copy(GlobalDescriptor, gdt[5..], @bitCast([2]GlobalDescriptor, tss_descriptor)[0..]);
+    @memcpy(gdt[5..], @as([2]GlobalDescriptor, @bitCast(tss_descriptor))[0..]);
 
     // Load the GDT.
     const gdt_ptr = GDTPtr{
         .size = @sizeOf(@TypeOf(gdt)) - 1,
-        .offset = @ptrToInt(&gdt),
+        .offset = @intFromPtr(&gdt),
     };
     x86.lgdt(&gdt_ptr);
 

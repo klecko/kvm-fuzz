@@ -28,11 +28,11 @@ const InterruptDescriptor = packed struct {
         interrupt_stack: u3,
         gate_type: GateType,
     ) InterruptDescriptor {
-        const offset = @ptrToInt(interrupt_handler);
+        const offset = @intFromPtr(interrupt_handler);
         return InterruptDescriptor{
-            .offset_low = @intCast(u16, offset & 0xFFFF),
-            .offset_mid = @intCast(u16, (offset >> 16) & 0xFFFF),
-            .offset_high = @intCast(u32, (offset >> 32)),
+            .offset_low = @truncate(offset),
+            .offset_mid = @truncate(offset >> 16),
+            .offset_high = @truncate(offset >> 32),
             .selector = .KernelCode,
             .ist = interrupt_stack,
             .gate_type = gate_type,
@@ -113,7 +113,7 @@ pub const N_IDT_ENTRIES = 256;
 /// to when a given interrupt occurs.
 const interrupt_handlers_entry_points = blk: {
     var tmp: [N_IDT_ENTRIES]interrupts.InterruptHandlerEntryPoint = undefined;
-    inline for (tmp) |*entry_point, i| {
+    for (&tmp, 0..) |*entry_point, i| {
         entry_point.* = interrupts.getInterruptHandlerEntryPoint(i);
     }
     break :blk tmp;
@@ -124,7 +124,7 @@ var idt: [N_IDT_ENTRIES]InterruptDescriptor = undefined;
 
 pub fn init() void {
     // Initialize IDT
-    for (idt) |*entry, i| {
+    for (&idt, 0..) |*entry, i| {
         const gate_type: InterruptDescriptor.GateType = if (i < 32) .Trap else .Interrupt;
         const interrupt_handler = interrupt_handlers_entry_points[i];
         const interrupt_stack = if (i == ExceptionNumber.DoubleFault) @as(u3, 1) else 0;
@@ -134,7 +134,7 @@ pub fn init() void {
     // Load IDT
     const idt_ptr = IDTPtr{
         .size = @sizeOf(@TypeOf(idt)) - 1,
-        .offset = @ptrToInt(&idt),
+        .offset = @intFromPtr(&idt),
     };
     x86.lidt(&idt_ptr);
 

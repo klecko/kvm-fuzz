@@ -111,14 +111,14 @@ pub fn init() void {
     //   CS.selector = STAR 63:48 + 16
     //   SS.selector = STAR 63:48 + 8
     comptime {
-        assert(@enumToInt(SegmentSelector.KernelData) == @enumToInt(SegmentSelector.KernelCode) + 8);
-        assert(@enumToInt(SegmentSelector.UserCode) == @enumToInt(SegmentSelector.UserData) + 8);
+        assert(@intFromEnum(SegmentSelector.KernelData) == @intFromEnum(SegmentSelector.KernelCode) + 8);
+        assert(@intFromEnum(SegmentSelector.UserCode) == @intFromEnum(SegmentSelector.UserData) + 8);
     }
     var star: usize = 0;
-    star |= @as(usize, @enumToInt(SegmentSelector.KernelCode)) << 32; // for syscall
-    star |= @as(usize, @enumToInt(SegmentSelector.UserData) - 8) << 48; // for sysret
+    star |= @as(usize, @intFromEnum(SegmentSelector.KernelCode)) << 32; // for syscall
+    star |= @as(usize, @intFromEnum(SegmentSelector.UserData) - 8) << 48; // for sysret
     x86.wrmsr(.STAR, star);
-    x86.wrmsr(.LSTAR, @ptrToInt(&syscallEntry));
+    x86.wrmsr(.LSTAR, @intFromPtr(&syscallEntry));
     x86.wrmsr(.SYSCALL_MASK, 0x3F7FD5); // interrupts are disabled on syscall
 
     // Save kernel stack

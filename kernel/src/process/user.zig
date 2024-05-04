@@ -17,7 +17,7 @@ pub fn startUser(
     try self.space.mapRange(stack_top, mem.layout.user_stack_size, perms, .{});
 
     // Set it up
-    const stack_ptr = @intToPtr([*]u8, mem.layout.user_stack);
+    const stack_ptr: [*]u8 = @ptrFromInt(mem.layout.user_stack);
     const rsp = try setupUserStack(self, stack_ptr, argv, info);
 
     // Jump to user code
@@ -33,35 +33,34 @@ fn setupUserStack(
 ) !usize {
     var stack = stack_ptr;
     stack -= 16;
-    std.mem.set(u8, stack[0..16], 0);
+    @memset(stack[0..16], 0);
 
     // Random bytes for auxv
     stack -= 16;
-    var i: u8 = 0;
-    while (i < 16) : (i += 1) {
-        stack[i] = i;
+    for (0..16) |i| {
+        stack[i] = @truncate(i);
     }
-    const random_bytes_addr = @ptrToInt(stack);
+    const random_bytes_addr = @intFromPtr(stack);
 
     // Platform for auxv
     const platfform_string = "x86_64";
     stack -= platfform_string.len + 1;
-    std.mem.copy(u8, stack[0..platfform_string.len], platfform_string);
+    @memcpy(stack[0..platfform_string.len], platfform_string);
     stack[platfform_string.len] = 0;
-    const platform_addr = @ptrToInt(stack);
+    const platform_addr = @intFromPtr(stack);
 
     // Align stack
-    stack = @intToPtr([*]u8, @ptrToInt(stack) & ~@as(usize, 0xF));
+    stack = @ptrFromInt(@intFromPtr(stack) & ~@as(usize, 0xF));
 
     // Write argv strings saving pointers to each arg
     const argv_addrs = try self.allocator.alloc(usize, argv.len);
     defer self.allocator.free(argv_addrs);
-    for (argv) |arg, idx| {
+    for (argv, argv_addrs) |arg, *argv_addr| {
         const arg_slice = std.mem.span(arg);
         stack -= arg_slice.len + 1;
-        std.mem.copy(u8, stack[0..arg_slice.len], arg_slice);
+        @memcpy(stack[0..arg_slice.len], arg_slice);
         stack[arg_slice.len] = 0;
-        argv_addrs[idx] = @ptrToInt(stack);
+        argv_addr.* = @intFromPtr(stack);
     }
 
     // TODO
@@ -73,16 +72,16 @@ fn setupUserStack(
     // Write environ strings saving pointer to each env
     const env_addrs = try self.allocator.alloc(usize, environ.len);
     defer self.allocator.free(env_addrs);
-    for (environ) |env, idx| {
+    for (environ, env_addrs) |env, *env_addr| {
         const env_slice = std.mem.span(env);
         stack -= env_slice.len + 1;
-        std.mem.copy(u8, stack[0..env_slice.len], env_slice);
+        @memcpy(stack[0..env_slice.len], env_slice);
         stack[env_slice.len] = 0;
-        env_addrs[idx] = @ptrToInt(stack);
+        env_addr.* = @intFromPtr(stack);
     }
 
     // Align stack
-    stack = @intToPtr([*]u8, @ptrToInt(stack) & ~@as(usize, 0xF));
+    stack = @ptrFromInt(@intFromPtr(stack) & ~@as(usize, 0xF)); // TODO try remove the as
     if ((env_addrs.len + 1 + argv_addrs.len + 1) & 1 == 0) // not sure
         stack -= 8;
 
@@ -108,17 +107,17 @@ fn setupUserStack(
     };
     const auxv_bytes = std.mem.sliceAsBytes(&auxv);
     stack -= auxv_bytes.len;
-    std.mem.copy(u8, stack[0..auxv_bytes.len], auxv_bytes);
+    @memcpy(stack[0..auxv_bytes.len], auxv_bytes);
 
     // Setup envp
-    var stack_usize_ptr = @ptrCast([*]usize, @alignCast(@sizeOf(usize), stack));
+    var stack_usize_ptr: [*]usize = @ptrCast(@alignCast(stack));
     stack_usize_ptr -= env_addrs.len + 1;
-    std.mem.copy(usize, stack_usize_ptr[0..env_addrs.len], env_addrs);
+    @memcpy(stack_usize_ptr[0..env_addrs.len], env_addrs);
     stack_usize_ptr[env_addrs.len] = 0;
 
     // Setup auxv
     stack_usize_ptr -= argv_addrs.len + 1;
-    std.mem.copy(usize, stack_usize_ptr[0..argv_addrs.len], argv_addrs);
+    @memcpy(stack_usize_ptr[0..argv_addrs.len], argv_addrs);
     stack_usize_ptr[argv_addrs.len] = 0;
 
     // Setup argc
@@ -127,12 +126,12 @@ fn setupUserStack(
 
     // Some debugging
     log.debug("ARGS:\n", .{});
-    for (argv_addrs) |arg_addr, idx| {
-        const arg_slice = std.mem.span(@intToPtr([*:0]const u8, arg_addr));
+    for (argv_addrs, 0..) |arg_addr, idx| {
+        const arg_slice = std.mem.span(@as([*:0]const u8, @ptrFromInt(arg_addr)));
         log.debug("\t{}: {s}\n", .{ idx, arg_slice });
     }
 
-    const stack_usize = @ptrToInt(stack_usize_ptr);
+    const stack_usize = @intFromPtr(stack_usize_ptr);
     assert(stack_usize & ~@as(usize, 0xF) == stack_usize);
     return stack_usize;
 }

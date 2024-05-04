@@ -14,7 +14,7 @@ pub fn isPageAligned(addr: usize) bool {
 }
 
 pub fn alignPageForward(addr: usize) usize {
-    return std.mem.alignForward(addr, std.mem.page_size);
+    return std.mem.alignForward(usize, addr, std.mem.page_size);
 }
 
 pub fn alignPageForwardChecked(addr: usize) error{Overflow}!usize {
@@ -23,5 +23,5 @@ pub fn alignPageForwardChecked(addr: usize) error{Overflow}!usize {
 }
 
 pub fn alignPageBackward(addr: usize) usize {
-    return std.mem.alignBackward(addr, std.mem.page_size);
+    return std.mem.alignBackward(usize, addr, std.mem.page_size);
 }

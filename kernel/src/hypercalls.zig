@@ -130,7 +130,7 @@ pub const TracingType = enum(c_int) {
 };
 
 fn checkEquals(comptime hc: Hypercall, comptime n: u8) void {
-    if (@enumToInt(hc) != n) {
+    if (@intFromEnum(hc) != n) {
         @compileError("woops, hypercall " ++ @tagName(hc) ++ " has wrong value");
     }
 }

@@ -86,12 +86,7 @@ pub const InterruptFrame = struct {
 
 /// Array of interrupt handlers.
 const handlers = blk: {
-    var handlers_tmp: [x86.idt.N_IDT_ENTRIES]InterruptHandler = undefined;
-    var i = 0;
-    while (i < x86.idt.N_IDT_ENTRIES) : (i += 1) {
-        handlers_tmp[i] = defaultInterruptHandler;
-    }
-
+    var handlers_tmp = [_]InterruptHandler{defaultInterruptHandler} ** x86.idt.N_IDT_ENTRIES;
     handlers_tmp[x86.idt.ExceptionNumber.PageFault] = handlePageFault;
     handlers_tmp[x86.idt.ExceptionNumber.Breakpoint] = handleBreakpoint;
     handlers_tmp[x86.idt.ExceptionNumber.GeneralProtectionFault] = handleGeneralProtectionFault;

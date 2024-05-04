@@ -79,7 +79,7 @@ pub fn exitCurrentProcessAndSchedule(exit_code: i32, frame: *Process.UserRegs) v
             log.debug("waking up {}\n", .{process.pid});
 
             // Set rax for wait syscall return value
-            process.user_regs.rax = @intCast(usize, removing_process.pid);
+            process.user_regs.rax = @intCast(removing_process.pid);
 
             // Switch
             const wstatus_ptr = process.state.waiting.wstatus_ptr;
@@ -148,7 +148,7 @@ pub fn processWaitPid(
     }
 
     // Check if the process we are waiting for has already exited
-    for (processes.items) |exited_process, i| {
+    for (processes.items, 0..) |exited_process, i| {
         if (exited_process.state != .exited) continue;
         if (shouldWakeUp(process, exited_process)) {
             // No need to sleep

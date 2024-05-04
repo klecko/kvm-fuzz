@@ -32,7 +32,7 @@ const APIC = struct {
     };
 
     fn getRegPtr(self: *APIC, reg: Register) *volatile u32 {
-        return @intToPtr(*volatile u32, self.apic_vaddr + @enumToInt(reg));
+        return @ptrFromInt(self.apic_vaddr + @intFromEnum(reg));
     }
 
     fn writeReg(self: *APIC, reg: Register, value: u32) void {
@@ -91,7 +91,7 @@ const TimerDivide = struct {
 pub fn init() void {
     // https://wiki.osdev.org/APIC_timer
     // Get APIC phys address
-    var apic_phys_addr: usize = x86.rdmsr(.APIC_BASE);
+    const apic_phys_addr: usize = x86.rdmsr(.APIC_BASE);
     const apic_frame = apic_phys_addr & x86.paging.PHYS_MASK;
 
     // Map it at the end of the phymap

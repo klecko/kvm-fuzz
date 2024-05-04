@@ -12,7 +12,7 @@ pub fn configureSleep(comptime microsecs: u64) void {
     comptime assert(microsecs <= max_microsecs);
 
     // The value we'll write to channel 2
-    const value: u16 = @intCast(u16, microsecs * PIT_RATE / 1_000_000);
+    const value: u16 = @intCast(microsecs * PIT_RATE / 1_000_000);
 
     // Set input
     x86.outb(0x61, x86.inb(0x61) | 1);
@@ -25,14 +25,13 @@ pub fn configureSleep(comptime microsecs: u64) void {
     x86.outb(0x43, channel | access_mode | operating_mode | binary_mode);
 
     // Write value to channel 2
-    x86.outb(0x42, @intCast(u8, value & 0xFF)); // low byte
-    x86.outb(0x42, @intCast(u8, value >> 8)); // high byte
+    x86.outb(0x42, @truncate(value)); // low byte
+    x86.outb(0x42, @truncate(value >> 8)); // high byte
 }
 
 pub fn performSleep() void {
     // Clear input, set it, and wait until output is 0
-    const mask = ~@intCast(u8, 1);
-    x86.outb(0x61, x86.inb(0x61) & mask);
+    x86.outb(0x61, x86.inb(0x61) & ~@as(u8, 1));
     x86.outb(0x61, x86.inb(0x61) | 1);
     while ((x86.inb(0x61) & 0x20) != 0) {}
 }

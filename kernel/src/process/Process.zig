@@ -88,7 +88,7 @@ comptime {
 }
 
 pub const Sigaction = extern struct {
-    handler: ?*const fn (c_int) align(1) callconv(.C) void,
+    handler: ?*const fn (c_int) callconv(.C) void,
     flags: u64,
     restorer: ?*const fn () callconv(.C) void,
     mask: Sigset,
@@ -97,7 +97,7 @@ pub const Sigaction = extern struct {
 pub fn initial(allocator: Allocator, info: *const hypercalls.VmInfo) !Process {
     const elf_path_len = std.mem.indexOfScalar(u8, &info.elf_path, 0).?;
     const elf_path = try allocator.alloc(u8, elf_path_len);
-    std.mem.copy(u8, elf_path, info.elf_path[0..elf_path_len]);
+    @memcpy(elf_path, info.elf_path[0..elf_path_len]);
 
     const signal_handlers = try allocator.create([linux._NSIG]Sigaction);
     signal_handlers.* = [_]Sigaction{.{

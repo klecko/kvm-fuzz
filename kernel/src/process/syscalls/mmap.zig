@@ -24,28 +24,25 @@ fn sys_mmap(
     addr: usize,
     length: usize,
     prot: i32,
-    flags: i32,
+    flags: linux.MAP,
     fd: linux.fd_t,
     offset: usize,
     regs: *Process.UserRegs,
 ) !usize {
-    log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x})\n", .{ addr, length, prot, flags, fd, offset });
+    log.debug("mmap(0x{x}, {}, 0x{x}, 0x{x}, {}, 0x{x})\n", .{ addr, length, prot, @as(u32, @bitCast(flags)), fd, offset });
 
-    const supported_flags: i32 = linux.MAP.PRIVATE | linux.MAP.SHARED |
-        linux.MAP.ANONYMOUS | linux.MAP.FIXED | linux.MAP.DENYWRITE |
-        linux.MAP.STACK | linux.MAP.NORESERVE | linux.MAP.POPULATE;
-    if (flags & supported_flags != flags) {
-        panic("mmap unsupported flags: 0x{x}\n", .{flags & ~supported_flags});
+    // Check not implemented flags
+    if (flags.TYPE == .SHARED_VALIDATE or flags.@"32BIT" or flags.GROWSDOWN or
+        flags.LOCKED or flags.NONBLOCK or flags.HUGETLB or flags.SYNC or
+        flags.FIXED_NOREPLACE)
+    {
+        log.warn("unsupported mmap flag: 0x{x}\n", .{@as(u32, @bitCast(flags))});
+        return error.InvalidArgument;
     }
-
-    const map_private = (flags & linux.MAP.PRIVATE) != 0;
-    const map_shared = (flags & linux.MAP.SHARED) != 0;
-    const map_anonymous = (flags & linux.MAP.ANONYMOUS) != 0;
-    const map_fixed = (flags & linux.MAP.FIXED) != 0;
 
     // Check given file descriptor is valid. There's a TOCTOU vuln here, but we
     // don't have multithreading so who cares.
-    if (!map_anonymous and !self.files.table.contains(fd))
+    if (!flags.ANONYMOUS and !self.files.table.contains(fd))
         return error.BadFD;
 
     // We must return EINVAL if no length, and ENOMEM if it overflows
@@ -53,25 +50,19 @@ fn sys_mmap(
     if (length_aligned == 0)
         return error.InvalidArgument;
 
-    // Shared and private: choose one
-    if (map_shared and map_private)
-        return error.InvalidArgument;
-    if (!map_shared and !map_private)
-        return error.InvalidArgument;
-
     // If MAP_FIXED, addr can't be null or not aligned
-    if (map_fixed and (addr == 0 or !mem.isPageAligned(addr)))
+    if (flags.FIXED and (addr == 0 or !mem.isPageAligned(addr)))
         return error.InvalidArgument;
 
     // Get permisions. If we're mapping a file, map it as writable first
     // so we can write its contents.
     var perms = protToMemPerms(prot);
-    if (!map_anonymous)
+    if (!flags.ANONYMOUS)
         perms.write = true;
 
     const map_flags = mem.AddressSpace.MapFlags{
-        .discardAlreadyMapped = map_fixed,
-        .shared = map_shared,
+        .discardAlreadyMapped = flags.FIXED,
+        .shared = flags.TYPE == .SHARED,
     };
 
     // Perform mapping
@@ -89,7 +80,7 @@ fn sys_mmap(
             error.NotUserRange => {
                 // The given range is invalid. If MAP_FIXED is not set, try
                 // mapping anywhere. Otherwise, we must return ENOMEM.
-                if (!map_fixed) {
+                if (!flags.FIXED) {
                     retry_anywhere = true;
                 } else {
                     return error.OutOfMemory;
@@ -103,11 +94,11 @@ fn sys_mmap(
     }
 
     // If we are mapping a file, copy its content to memory
-    if (!map_anonymous) {
+    if (!flags.ANONYMOUS) {
         const file = self.files.table.get(fd).?;
         assert(offset <= file.size()); // I don't know if this is possible TODO check it
-        const copy_length = std.math.min(file.size() - offset, length);
-        std.mem.copy(u8, @intToPtr([*]u8, ret)[0..copy_length], file.buf[offset .. offset + copy_length]);
+        const copy_length = @min(file.size() - offset, length);
+        @memcpy(@as([*]u8, @ptrFromInt(ret))[0..copy_length], file.buf[offset .. offset + copy_length]);
 
         // If it was read only, remove write permissions after copying content
         if (prot & linux.PROT.WRITE == 0) {
@@ -135,7 +126,11 @@ pub fn handle_sys_mmap(
     const addr = arg0;
     const length = arg1;
     const prot = cast(i32, arg2);
-    const flags = cast(i32, arg3);
+    // Zig defines linux.MAP, which uses the enum linux.MAP_TYPE for flags
+    // MAP_SHARED and MAP_PRIVATE. Check it can actually be converted before
+    // blindly cast it.
+    _ = std.meta.intToEnum(linux.MAP_TYPE, arg3 & 0xF) catch return error.InvalidArgument;
+    const flags: linux.MAP = @bitCast(@as(u32, @truncate(arg3)));
     const fd = cast(linux.fd_t, arg4);
     const offset = arg5;
     const ret = sys_mmap(self, addr, length, prot, flags, fd, offset, regs);

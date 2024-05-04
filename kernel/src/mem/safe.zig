@@ -19,11 +19,11 @@ pub fn isRangeInUserRange(addr: usize, len: usize) bool {
 }
 
 pub fn isPtrInUserRange(comptime T: type, ptr: *const T) bool {
-    return isAddressInUserRange(@ptrToInt(ptr));
+    return isAddressInUserRange(@intFromPtr(ptr));
 }
 
 pub fn isSliceInUserRange(comptime T: type, slice: []const T) bool {
-    return isRangeInUserRange(@ptrToInt(slice.ptr), slice.len * @sizeOf(T));
+    return isRangeInUserRange(@intFromPtr(slice.ptr), slice.len * @sizeOf(T));
 }
 
 pub fn isAddressInKernelRange(addr: usize) bool {
@@ -36,11 +36,11 @@ pub fn isRangeInKernelRange(addr: usize, len: usize) bool {
 }
 
 pub fn isPtrInKernelRange(comptime T: type, ptr: *const T) bool {
-    return isAddressInKernelRange(@ptrToInt(ptr));
+    return isAddressInKernelRange(@intFromPtr(ptr));
 }
 
 pub fn isSliceInKernelRange(comptime T: type, slice: []const T) bool {
-    return isRangeInKernelRange(@ptrToInt(slice.ptr), slice.len * @sizeOf(T));
+    return isRangeInKernelRange(@intFromPtr(slice.ptr), slice.len * @sizeOf(T));
 }
 
 /// A wrapper for userspace pointers. T is the type of the pointer, e.g. *u8.
@@ -57,7 +57,7 @@ pub fn UserPtr(comptime T: type) type {
 
         const Self = @This();
         const ConstT = blk: {
-            comptime var typeInfo = @typeInfo(T);
+            var typeInfo = @typeInfo(T);
             typeInfo.Pointer.is_const = true;
             break :blk @Type(typeInfo);
         };
@@ -79,7 +79,7 @@ pub fn UserPtr(comptime T: type) type {
                 error.NotUserRange
             else
                 Self{
-                    ._ptr = @intToPtr(T, user_ptr),
+                    ._ptr = @ptrFromInt(user_ptr),
                 };
         }
 
@@ -90,7 +90,7 @@ pub fn UserPtr(comptime T: type) type {
                 error.NotUserRange
             else
                 Self{
-                    ._ptr = @intToPtr(T, user_ptr),
+                    ._ptr = @ptrFromInt(user_ptr),
                 };
         }
 
@@ -101,7 +101,7 @@ pub fn UserPtr(comptime T: type) type {
 
         /// Get the pointer as usize.
         pub fn flat(self: Self) usize {
-            return @ptrToInt(self._ptr);
+            return @intFromPtr(self._ptr);
         }
 
         /// Get the const version of the UserPtr.
@@ -123,7 +123,7 @@ pub fn UserSlice(comptime T: type) type {
 
         const Self = @This();
         const ConstT = blk: {
-            comptime var typeInfo = @typeInfo(T);
+            var typeInfo = @typeInfo(T);
             typeInfo.Pointer.is_const = true;
             break :blk @Type(typeInfo);
         };
@@ -148,7 +148,7 @@ pub fn UserSlice(comptime T: type) type {
                 type_info.Pointer.size = .Many;
                 break :blk @Type(type_info);
             };
-            const user_slice = @intToPtr(PointerT, user_ptr)[0..length];
+            const user_slice = @as(PointerT, @ptrFromInt(user_ptr))[0..length];
             return fromSlice(user_slice);
         }
 
@@ -169,15 +169,15 @@ pub fn UserSlice(comptime T: type) type {
         }
 
         const PtrAtPointerType = blk: {
-            comptime var type_info = @typeInfo(T);
+            var type_info = @typeInfo(T);
             type_info.Pointer.size = .One;
             break :blk @Type(type_info);
         };
 
         pub fn ptrAt(self: Self, idx: usize) UserPtr(PtrAtPointerType) {
             assert(idx < self.len());
-            const ptr = @ptrCast(PtrAtPointerType, self.slice().ptr + idx);
-            return UserPtr(PtrAtPointerType).fromPtr(ptr) catch unreachable;
+            const ptr_flat = @intFromPtr(self.slice().ptr + idx); //@ptrCast(PtrAtPointerType, self.slice().ptr + idx);
+            return UserPtr(PtrAtPointerType).fromFlat(ptr_flat) catch unreachable;
         }
 
         pub fn sliceTo(self: Self, new_len: usize) Self {
@@ -210,6 +210,7 @@ pub fn copyToUser(comptime T: type, dest: UserSlice([]T), src: []const T) Error!
     try copy(T, dest.slice(), src);
 }
 
+// TODO: maybe accept src as T
 pub fn copyToUserSingle(comptime T: type, dest: UserPtr(*T), src: *const T) Error!void {
     // Make sure we're copying from kernel to user.
     assert(isPtrInKernelRange(T, src));
@@ -240,7 +241,7 @@ pub fn copyFromUserSingle(comptime T: type, src: UserPtr(*const T)) Error!T {
 
 pub fn copyStringFromUser(allocator: Allocator, string_ptr: UserCString) (Allocator.Error || Error)![]u8 {
     const length = try strlen(string_ptr.ptr());
-    var string = try allocator.alloc(u8, length);
+    const string = try allocator.alloc(u8, length);
     errdefer allocator.free(string);
     const user_string_slice = UserSlice([]const u8).fromFlat(string_ptr.flat(), length) catch unreachable;
     try copyFromUser(u8, string, user_string_slice);
@@ -249,7 +250,7 @@ pub fn copyStringFromUser(allocator: Allocator, string_ptr: UserCString) (Alloca
 
 pub fn printUser(user_buf: UserSlice([]const u8)) (Error || std.mem.Allocator.Error)!void {
     // Allocate a temporary buffer
-    var tmp_buf = try mem.heap.page_allocator.alloc(u8, user_buf.len());
+    const tmp_buf = try mem.heap.page_allocator.alloc(u8, user_buf.len());
     defer mem.heap.page_allocator.free(tmp_buf);
 
     // Copy string from user buffer and print it
@@ -275,10 +276,10 @@ extern const safe_strlen_ins_may_fault: usize;
 extern const safe_strlen_ins_faulted: usize;
 
 pub fn handleSafeAccessFault(frame: *interrupts.InterruptFrame) bool {
-    if (frame.rip == @ptrToInt(&safe_copy_ins_may_fault)) {
-        frame.rip = @ptrToInt(&safe_copy_ins_faulted);
-    } else if (frame.rip == @ptrToInt(&safe_strlen_ins_may_fault)) {
-        frame.rip = @ptrToInt(&safe_strlen_ins_faulted);
+    if (frame.rip == @intFromPtr(&safe_copy_ins_may_fault)) {
+        frame.rip = @intFromPtr(&safe_copy_ins_faulted);
+    } else if (frame.rip == @intFromPtr(&safe_strlen_ins_may_fault)) {
+        frame.rip = @intFromPtr(&safe_strlen_ins_faulted);
     } else return false;
     return true;
 }

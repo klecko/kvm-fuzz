@@ -12,7 +12,7 @@ fn sys_openat(
     self: *Process,
     dirfd: linux.fd_t,
     pathname_ptr: UserCString,
-    flags: i32,
+    flags: linux.O,
     mode: linux.mode_t,
 ) !linux.fd_t {
     _ = mode;
@@ -33,7 +33,7 @@ fn sys_openat(
     try self.files.table.put(fd, file);
 
     // Set file descriptor flags
-    if (flags & linux.O.CLOEXEC != 0)
+    if (flags.CLOEXEC)
         self.files.setCloexec(fd);
 
     return fd;
@@ -48,19 +48,10 @@ pub fn handle_sys_openat(
 ) !usize {
     const dirfd = cast(linux.fd_t, arg0);
     const pathname_ptr = try UserCString.fromFlat(arg1);
-    const flags = cast(i32, arg2);
+    const flags: linux.O = @bitCast(@as(u32, @truncate(arg2)));
     const mode = cast(linux.mode_t, arg3);
     const ret = try sys_openat(self, dirfd, pathname_ptr, flags, mode);
     return cast(usize, ret);
-}
-
-fn sys_open(
-    self: *Process,
-    pathname_ptr: UserCString,
-    flags: i32,
-    mode: linux.mode_t,
-) !linux.fd_t {
-    return sys_openat(self, linux.AT.FDCWD, pathname_ptr, flags, mode);
 }
 
 pub fn handle_sys_open(
@@ -69,11 +60,7 @@ pub fn handle_sys_open(
     arg1: usize,
     arg2: usize,
 ) !usize {
-    const pathname_ptr = try UserCString.fromFlat(arg0);
-    const flags = cast(i32, arg1);
-    const mode = cast(linux.mode_t, arg2);
-    const ret = try sys_open(self, pathname_ptr, flags, mode);
-    return cast(usize, ret);
+    return handle_sys_openat(self, cast(usize, @as(linux.fd_t, linux.AT.FDCWD)), arg0, arg1, arg2);
 }
 
 fn sys_close(self: *Process, fd: linux.fd_t) !void {

@@ -51,8 +51,8 @@ pub fn statRegular(
 
     var st = regular_st_base;
     st.ino = inode;
-    st.size = @intCast(i64, fileSize);
-    st.blocks = @intCast(i64, fileSize / 512 + 1);
+    st.size = @intCast(fileSize);
+    st.blocks = @intCast(fileSize / 512 + 1);
     try mem.safe.copyToUserSingle(linux.Stat, stat_ptr, &st);
 }
 
@@ -128,7 +128,7 @@ pub const FileDescription = struct {
     buf: []const u8,
 
     /// Flags specified when calling open (O_RDONLY, O_RDWR...)
-    flags: i32,
+    flags: linux.O,
 
     /// Cursor offset
     offset: usize = 0,
@@ -161,13 +161,13 @@ pub const FileDescription = struct {
     }
 
     pub fn isReadable(self: *const FileDescription) bool {
-        const access_mode = self.flags & O_ACCMODE;
-        return (access_mode == linux.O.RDONLY) or (access_mode == linux.O.RDWR);
+        const access_mode = self.flags.ACCMODE;
+        return (access_mode == .RDONLY) or (access_mode == .RDWR);
     }
 
     pub fn isWritable(self: *const FileDescription) bool {
-        const access_mode = self.flags & O_ACCMODE;
-        return (access_mode == linux.O.WRONLY) or (access_mode == linux.O.RDWR);
+        const access_mode = self.flags.ACCMODE;
+        return (access_mode == .WRONLY) or (access_mode == .RDWR);
     }
 
     pub fn isOffsetPastEnd(self: *const FileDescription) bool {
@@ -196,7 +196,7 @@ pub const FileDescription = struct {
 
     pub fn socket(self: *FileDescription) ?*FileDescriptionSocket {
         return if (self.is_socket)
-            @fieldParentPtr(FileDescriptionSocket, "desc", self)
+            @fieldParentPtr("desc", self)
         else
             null;
     }
@@ -205,7 +205,7 @@ pub const FileDescription = struct {
 pub const FileDescriptionRegular = struct {
     desc: FileDescription,
 
-    pub fn create(allocator: Allocator, buf: []const u8, flags: i32) Allocator.Error!*FileDescriptionRegular {
+    pub fn create(allocator: Allocator, buf: []const u8, flags: linux.O) Allocator.Error!*FileDescriptionRegular {
         // In this case we can avoid giving a destroy function to the RefCounter
         // because a FileDescriptionRegular is just a FileDescription. We would
         // have to do it if we added more fields, as in FileDescriptionStdin.
@@ -228,7 +228,7 @@ pub const FileDescriptionRegular = struct {
 
     fn stat(desc: *FileDescription, stat_ptr: UserPtr(*linux.Stat)) mem.safe.Error!void {
         // Use the pointer to the buffer as inode, as that's unique for each file.
-        return statRegular(stat_ptr, desc.buf.len, @ptrToInt(desc.buf.ptr));
+        return statRegular(stat_ptr, desc.buf.len, @intFromPtr(desc.buf.ptr));
     }
 
     fn read(desc: *FileDescription, buf: UserSlice([]u8)) mem.safe.Error!usize {
@@ -261,8 +261,8 @@ pub const FileDescriptionStdin = struct {
         const ret = try allocator.create(FileDescriptionStdin);
         ret.* = FileDescriptionStdin{
             .desc = FileDescription{
-                .buf = &([_]u8{}),
-                .flags = linux.O.RDWR,
+                .buf = &[_]u8{},
+                .flags = .{ .ACCMODE = .RDWR },
                 .statFn = stat,
                 .readFn = read,
                 .writeFn = write,
@@ -277,7 +277,7 @@ pub const FileDescriptionStdin = struct {
     // In this case they don't have the same size, as happens with Regular or
     // Stdout, so we must do it.
     fn destroy(desc: *FileDescription) void {
-        const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
+        const self: *FileDescriptionStdin = @fieldParentPtr("desc", desc);
         self.desc.ref.allocator.destroy(self);
     }
 
@@ -293,7 +293,7 @@ pub const FileDescriptionStdin = struct {
         // do this at the beginning, as we wouldn't get the real size from the
         // hypervisor when it updated the input file.
         // TODO: this assumes input file is always "input"
-        const self = @fieldParentPtr(FileDescriptionStdin, "desc", desc);
+        const self: *FileDescriptionStdin = @fieldParentPtr("desc", desc);
         if (!self.input_opened) {
             if (fs.file_manager.fileContent("input")) |content| {
                 self.desc.buf = content;
@@ -324,7 +324,7 @@ pub const FileDescriptionStdout = struct {
         ret.* = FileDescriptionStdout{
             .desc = FileDescription{
                 .buf = &[_]u8{},
-                .flags = linux.O.RDWR,
+                .flags = .{ .ACCMODE = .RDWR },
                 .statFn = stat,
                 .readFn = read,
                 .writeFn = write,
@@ -386,7 +386,7 @@ pub const FileDescriptionSocket = struct {
         ret.* = FileDescriptionSocket{
             .desc = FileDescription{
                 .buf = buf,
-                .flags = linux.O.RDWR,
+                .flags = .{ .ACCMODE = .RDWR },
                 .statFn = stat,
                 .readFn = read,
                 .writeFn = write,
@@ -402,7 +402,7 @@ pub const FileDescriptionSocket = struct {
     }
 
     fn destroy(desc: *FileDescription) void {
-        const self = @fieldParentPtr(FileDescriptionSocket, "desc", desc);
+        const self: *FileDescriptionSocket = @fieldParentPtr("desc", desc);
         self.desc.ref.allocator.destroy(self);
     }
 
@@ -414,7 +414,7 @@ pub const FileDescriptionSocket = struct {
 
     fn read(desc: *FileDescription, buf: UserSlice([]u8)) !usize {
         // Check we're connected, and read as a regular file.
-        const self = @fieldParentPtr(FileDescriptionSocket, "desc", desc);
+        const self: *FileDescriptionSocket = @fieldParentPtr("desc", desc);
         if (!self.connected)
             return error.NotConnected;
         return FileDescriptionRegular.read(&self.desc, buf);

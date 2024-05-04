@@ -20,8 +20,7 @@ pub fn handle_sys_write(self: *Process, arg0: usize, arg1: usize, arg2: usize) !
 fn sys_writev(self: *Process, fd: linux.fd_t, iov_buf: UserSlice([]const linux.iovec)) !usize {
     const file = self.files.table.get(fd) orelse return error.BadFD;
     var ret: usize = 0;
-    var i: usize = 0;
-    while (i < iov_buf.len()) : (i += 1) {
+    for (0..iov_buf.len()) |i| {
         // Get the iovec and write it
         const iov = try mem.safe.copyFromUserSingle(linux.iovec, iov_buf.ptrAt(i));
         const user_slice = try UserSlice([]const u8).fromSlice(iov.iov_base[0..iov.iov_len]);

@@ -65,8 +65,8 @@ pub const RegionManager = struct {
 
     fn regionInsideTotal(self: RegionManager, addr_start: usize, addr_end: usize) ?Region {
         const reg = Region{
-            .addr_start = std.math.max(addr_start, self.total.addr_start),
-            .addr_end = std.math.min(addr_end, self.total.addr_end),
+            .addr_start = @max(addr_start, self.total.addr_start),
+            .addr_end = @min(addr_end, self.total.addr_end),
         };
         return if (reg.addr_end > reg.addr_start) reg else null;
     }

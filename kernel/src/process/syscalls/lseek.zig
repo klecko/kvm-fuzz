@@ -8,15 +8,16 @@ const cast = std.zig.c_translation.cast;
 
 fn sys_lseek(self: *Process, fd: fd_t, offset: off_t, whence: i32) !off_t {
     const file = self.files.table.get(fd) orelse return error.BadFD;
-    var ret = switch (whence) {
-        linux.SEEK.SET => offset,
-        linux.SEEK.CUR => @intCast(off_t, file.offset) + offset,
-        linux.SEEK.END => @intCast(off_t, file.size()) + offset,
+    const from: off_t = switch (whence) {
+        linux.SEEK.SET => 0,
+        linux.SEEK.CUR => @intCast(file.offset),
+        linux.SEEK.END => @intCast(file.size()),
         else => TODO(),
     };
+    const ret = from + offset;
     if (ret < 0)
         return error.InvalidArgument;
-    file.offset = @intCast(usize, ret);
+    file.offset = @intCast(ret);
     return ret;
 }
 

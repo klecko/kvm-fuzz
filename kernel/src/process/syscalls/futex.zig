@@ -125,7 +125,7 @@ pub fn handle_sys_futex(
         linux.FUTEX.CMP_REQUEUE,
         linux.FUTEX.WAKE_OP,
         linux.FUTEX.CMP_REQUEUE_PI,
-        => VariantArg{ .val2 = @truncate(u32, arg3) },
+        => VariantArg{ .val2 = @truncate(arg3) },
         else => undefined,
     };
     const uaddr2 = switch (op) {

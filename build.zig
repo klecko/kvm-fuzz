@@ -1,8 +1,7 @@
 const std = @import("std");
-const CrossTarget = std.zig.CrossTarget;
 const NativeTargetInfo = std.zig.system.NativeTargetInfo;
 
-fn shouldStrip(mode: std.builtin.Mode) bool {
+fn shouldStrip(mode: std.builtin.OptimizeMode) bool {
     return switch (mode) {
         .Debug, .ReleaseSafe => false,
         .ReleaseFast, .ReleaseSmall => true,
@@ -20,26 +19,30 @@ const SharedOptions = struct {
 };
 
 fn buildKernel(
-    b: *std.build.Builder,
-    std_target: CrossTarget,
-    std_mode: std.builtin.Mode,
+    b: *std.Build,
+    std_target: std.Build.ResolvedTarget,
+    std_optimize: std.builtin.OptimizeMode,
     shared_options: SharedOptions,
 ) void {
     // Custom x86_64 freestanding target for the kernel
-    const target = CrossTarget.parse(.{
+    const target = std.Target.Query.parse(.{
         .arch_os_abi = "x86_64-freestanding-none",
         .cpu_features = "x86_64-mmx-sse-sse2+soft_float",
     }) catch unreachable;
 
     // Kernel executable build step
-    const exe = b.addExecutable("kernel", "kernel/src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(std_mode);
-    exe.setLinkerScriptPath(.{ .path = "kernel/linker.ld" });
-    exe.code_model = .kernel;
-    exe.single_threaded = true;
-    exe.red_zone = false;
-    exe.strip = shouldStrip(exe.build_mode);
+    const exe = b.addExecutable(.{
+        .name = "kernel",
+        .root_source_file = b.path("kernel/src/main.zig"),
+        .target = std.Build.resolveTargetQuery(b, target),
+        .optimize = std_optimize,
+        .code_model = .kernel,
+        .single_threaded = true,
+        .strip = shouldStrip(std_optimize),
+    });
+    exe.setLinkerScript(b.path("kernel/linker.ld"));
+    exe.entry = .{ .symbol_name = "kmain" };
+    exe.root_module.red_zone = false;
 
     // zig build options
     const enable_guest_output = b.option(
@@ -56,27 +59,30 @@ fn buildKernel(
         shared_options.instruction_count,
     );
     build_options.addOption(bool, "enable_guest_output", enable_guest_output);
-    exe.addOptions("build_options", build_options);
+    exe.root_module.addOptions("build_options", build_options);
 
-    exe.install();
+    b.installArtifact(exe);
 
     // Unit tests
-    const exe_tests = b.addTest("kernel/src/main.zig");
-    exe_tests.setTarget(std_target);
-    exe_tests.setBuildMode(std_mode);
-    exe_tests.addOptions("build_options", build_options);
+    const exe_tests = b.addTest(.{
+        .root_source_file = b.path("kernel/src/main.zig"),
+        .target = std_target,
+        .optimize = std_optimize,
+    });
+    exe_tests.root_module.addOptions("build_options", build_options);
+    const run_exe_tests = b.addRunArtifact(exe_tests);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&exe_tests.step);
+    test_step.dependOn(&run_exe_tests.step);
 
     // Format step
-    const fmt_step = b.addFmt(&.{"kernel/src"});
+    const fmt_step = b.addFmt(.{ .paths = &.{"kernel/src"} });
     exe.step.dependOn(&fmt_step.step);
 }
 
 fn addHypervisorOptions(
-    b: *std.build.Builder,
-    exe: *std.build.LibExeObjStep,
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
     shared_options: SharedOptions,
 ) void {
     // Mutations
@@ -139,7 +145,7 @@ fn addHypervisorOptions(
     }
 
     // Dirty log ring
-    const kvm_dirty_log_ring_version_required = std.builtin.Version{ .major = 5, .minor = 11 };
+    const kvm_dirty_log_ring_version_required = std.SemanticVersion{ .major = 5, .minor = 11, .patch = 0 };
     const enable_kvm_dirty_log_ring = b.option(
         bool,
         "enable-kvm-dirty-log-ring",
@@ -150,7 +156,7 @@ fn addHypervisorOptions(
         ),
     ) orelse false;
     if (enable_kvm_dirty_log_ring) {
-        const linux_version_range = exe.target_info.target.os.version_range.linux;
+        const linux_version_range = exe.rootModuleTarget().os.version_range.linux;
         const version_ok = linux_version_range.isAtLeast(kvm_dirty_log_ring_version_required) orelse return;
         if (!version_ok) {
             std.log.warn(
@@ -169,50 +175,54 @@ fn addHypervisorOptions(
 }
 
 fn buildHypervisor(
-    b: *std.build.Builder,
-    std_target: CrossTarget,
-    std_mode: std.builtin.Mode,
+    b: *std.Build,
+    std_target: std.Build.ResolvedTarget,
+    std_optimize: std.builtin.OptimizeMode,
     shared_options: SharedOptions,
 ) void {
-    const exe = b.addExecutable("kvm-fuzz", null);
-    exe.setTarget(std_target);
-    exe.setBuildMode(std_mode);
+    const exe = b.addExecutable(.{
+        .name = "kvm-fuzz",
+        .target = std_target,
+        .optimize = std_optimize,
+        .strip = shouldStrip(std_optimize),
+    });
     addHypervisorOptions(b, exe, shared_options);
-    exe.addIncludePath("hypervisor/include");
-    exe.addCSourceFiles(&.{
-        "hypervisor/src/args.cpp",
-        "hypervisor/src/corpus.cpp",
-        "hypervisor/src/elf_debug.cpp",
-        "hypervisor/src/elf_parser.cpp",
-        "hypervisor/src/elfs.cpp",
-        "hypervisor/src/files.cpp",
-        "hypervisor/src/hypercalls.cpp",
-        "hypervisor/src/main.cpp",
-        "hypervisor/src/mutator.cpp",
-        "hypervisor/src/mmu.cpp",
-        "hypervisor/src/page_walker.cpp",
-        "hypervisor/src/tracing.cpp",
-        "hypervisor/src/utils.cpp",
-        "hypervisor/src/vm.cpp",
-    }, &.{
-        "-std=c++11",
-        "-pthread",
-        "-fno-exceptions",
-        "-Wall",
+    exe.addIncludePath(b.path("hypervisor/include"));
+    exe.addCSourceFiles(.{
+        .root = b.path("hypervisor/src"),
+        .files = &.{
+            "args.cpp",
+            "corpus.cpp",
+            "elf_debug.cpp",
+            "elf_parser.cpp",
+            "elfs.cpp",
+            "files.cpp",
+            "hypercalls.cpp",
+            "main.cpp",
+            "mutator.cpp",
+            "mmu.cpp",
+            "page_walker.cpp",
+            "tracing.cpp",
+            "utils.cpp",
+            "vm.cpp",
+        },
+        .flags = &.{
+            "-std=c++11",
+            "-pthread",
+            "-fno-exceptions",
+            "-Wall",
+        },
     });
     exe.linkLibC();
     exe.linkLibCpp();
     exe.linkSystemLibrary("dwarf");
     exe.linkSystemLibrary("elf");
     exe.linkSystemLibrary("crypto");
-    exe.strip = shouldStrip(exe.build_mode);
 
-    exe.install();
+    b.installArtifact(exe);
 }
 
-fn buildSyscallsTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
-    const exe = b.addExecutable("syscalls_tests", null);
-
+fn buildSyscallsTests(b: *std.Build, std_target: std.Build.ResolvedTarget, std_optimize: std.builtin.OptimizeMode) void {
     // It would be great to link this binary statically. We'd need to link with
     // musl instead of glibc, but musl breaks tests. For example, musl implements
     // brk as `return -ENOMEM;` (https://www.openwall.com/lists/musl/2013/12/21/1).
@@ -221,67 +231,78 @@ fn buildSyscallsTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: 
 
     // Use baseline cpu model so it doesn't generate AVX512 or other not supported
     // x86 extensions
-    var target = std_target;
-    target.cpu_model = .baseline;
-    target.setGnuLibCVersion(2, 34, 0); // workaround for libc.so.6 not being a symlink in ubuntu 21+
+    // var target = std_target.query;
+    // target.cpu_model = .baseline;
+    // target.setGnuLibCVersion(2, 34, 0); // workaround for libc.so.6 not being a symlink in ubuntu 21+
 
-    exe.setTarget(target);
-    exe.setBuildMode(std_mode);
-    exe.addIncludePath("./tests");
-    exe.addCSourceFiles(&.{
-        "tests/syscalls/brk.cpp",
-        "tests/syscalls/dup.cpp",
-        "tests/syscalls/fcntl.cpp",
-        "tests/syscalls/files.cpp",
-        "tests/syscalls/fork.cpp",
-        "tests/syscalls/getcwd.cpp",
-        "tests/syscalls/main.cpp",
-        "tests/syscalls/misc.cpp",
-        "tests/syscalls/mmap.cpp",
-        "tests/syscalls/readlink.cpp",
-        "tests/syscalls/safe_mem.cpp",
-        "tests/syscalls/sched.cpp",
-        "tests/syscalls/socket.cpp",
-        "tests/syscalls/stdin.cpp",
-        "tests/syscalls/thread_local.cpp",
-        "tests/syscalls/uname.cpp",
-    }, &.{
-        "-std=c++11",
-        "-Wall",
+    const exe = b.addExecutable(.{
+        .name = "syscalls_tests",
+        .target = std_target, // TODO change with target
+        .optimize = std_optimize,
+        .strip = true,
+    });
+    exe.addIncludePath(b.path("tests"));
+    exe.addCSourceFiles(.{
+        .root = b.path("tests/syscalls"),
+        .files = &.{
+            "brk.cpp",
+            "dup.cpp",
+            "fcntl.cpp",
+            "files.cpp",
+            "fork.cpp",
+            "getcwd.cpp",
+            "main.cpp",
+            "misc.cpp",
+            "mmap.cpp",
+            "readlink.cpp",
+            "safe_mem.cpp",
+            "sched.cpp",
+            "socket.cpp",
+            "stdin.cpp",
+            "thread_local.cpp",
+            "uname.cpp",
+        },
+        .flags = &.{
+            "-std=c++11",
+            "-Wall",
+        },
     });
     exe.linkLibC();
     exe.linkLibCpp();
-    exe.strip = true;
 
-    const install = b.addInstallArtifact(exe);
+    const install = b.addInstallArtifact(exe, .{});
     const build_step = b.step("syscalls_tests", "Build syscalls tests");
     build_step.dependOn(&install.step);
 }
 
-fn buildHypervisorTests(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
-    const exe = b.addExecutable("hypervisor_tests", null);
-
-    exe.setTarget(std_target);
-    exe.setBuildMode(std_mode);
-    exe.addIncludePath("./tests");
-    exe.addIncludePath("hypervisor/include");
-    exe.addCSourceFiles(&.{
-        "hypervisor/src/elf_debug.cpp",
-        "hypervisor/src/elf_parser.cpp",
-        "hypervisor/src/elfs.cpp",
-        "hypervisor/src/files.cpp",
-        "hypervisor/src/hypercalls.cpp",
-        "hypervisor/src/mmu.cpp",
-        "hypervisor/src/page_walker.cpp",
-        "hypervisor/src/tracing.cpp",
-        "hypervisor/src/utils.cpp",
-        "hypervisor/src/vm.cpp",
-        "tests/hypervisor/files.cpp",
-        "tests/hypervisor/hooks.cpp",
-        "tests/hypervisor/inst_count.cpp",
-        "tests/hypervisor/main.cpp",
-    }, &.{
-        "-std=c++11",
+fn buildHypervisorTests(b: *std.Build, std_target: std.Build.ResolvedTarget, std_optimize: std.builtin.OptimizeMode) void {
+    const exe = b.addExecutable(.{
+        .name = "hypervisor_tests",
+        .target = std_target,
+        .optimize = std_optimize,
+    });
+    exe.addIncludePath(b.path("tests"));
+    exe.addIncludePath(b.path("hypervisor/include"));
+    exe.addCSourceFiles(.{
+        .files = &.{
+            "hypervisor/src/elf_debug.cpp",
+            "hypervisor/src/elf_parser.cpp",
+            "hypervisor/src/elfs.cpp",
+            "hypervisor/src/files.cpp",
+            "hypervisor/src/hypercalls.cpp",
+            "hypervisor/src/mmu.cpp",
+            "hypervisor/src/page_walker.cpp",
+            "hypervisor/src/tracing.cpp",
+            "hypervisor/src/utils.cpp",
+            "hypervisor/src/vm.cpp",
+            "tests/hypervisor/files.cpp",
+            "tests/hypervisor/hooks.cpp",
+            "tests/hypervisor/inst_count.cpp",
+            "tests/hypervisor/main.cpp",
+        },
+        .flags = &.{
+            "-std=c++11",
+        },
     });
     exe.defineCMacro("ENABLE_INSTRUCTION_COUNT", null);
     exe.linkLibC();
@@ -290,40 +311,54 @@ fn buildHypervisorTests(b: *std.build.Builder, std_target: CrossTarget, std_mode
     exe.linkSystemLibrary("elf");
     exe.linkSystemLibrary("crypto");
 
-    const install = b.addInstallArtifact(exe);
+    const install = b.addInstallArtifact(exe, .{});
     const build_step = b.step("hypervisor_tests", "Build hypervisor tests");
     build_step.dependOn(&install.step);
 
     // Binaries needed for the tests
-    const test_hooks_exe = b.addExecutable("test_hooks", "tests/hypervisor/binaries/hooks.s");
-    const test_hooks_install = b.addInstallArtifact(test_hooks_exe);
+    const test_hooks_exe = b.addExecutable(.{
+        .name = "test_hooks",
+        .target = std_target,
+    });
+    test_hooks_exe.addAssemblyFile(b.path("tests/hypervisor/binaries/hooks.s"));
+    const test_hooks_install = b.addInstallArtifact(test_hooks_exe, .{});
     install.step.dependOn(&test_hooks_install.step);
 
-    const test_files_exe = b.addExecutable("test_files", "tests/hypervisor/binaries/files.c");
+    const test_files_exe = b.addExecutable(.{
+        .name = "test_files",
+        .target = std_target,
+    });
+    test_files_exe.addCSourceFile(.{ .file = b.path("tests/hypervisor/binaries/files.c") });
     test_files_exe.linkLibC();
-    const test_files_install = b.addInstallArtifact(test_files_exe);
+    const test_files_install = b.addInstallArtifact(test_files_exe, .{});
     install.step.dependOn(&test_files_install.step);
 }
 
-fn buildExperiments(b: *std.build.Builder, std_target: CrossTarget, std_mode: std.builtin.Mode) void {
-    const exe = b.addExecutable("resets_exp", null);
-    exe.setTarget(std_target);
-    exe.setBuildMode(std_mode);
-    exe.addIncludePath("hypervisor/include");
-    exe.addCSourceFiles(&.{
-        "hypervisor/experiments/resets/resets_exp.cpp",
-        "hypervisor/src/elf_debug.cpp",
-        "hypervisor/src/elf_parser.cpp",
-        "hypervisor/src/elfs.cpp",
-        "hypervisor/src/files.cpp",
-        "hypervisor/src/hypercalls.cpp",
-        "hypervisor/src/mmu.cpp",
-        "hypervisor/src/page_walker.cpp",
-        "hypervisor/src/utils.cpp",
-        "hypervisor/src/tracing.cpp",
-        "hypervisor/src/vm.cpp",
-    }, &.{
-        "-std=c++11",
+fn buildExperiments(b: *std.Build, std_target: std.Build.ResolvedTarget, std_optimize: std.builtin.OptimizeMode) void {
+    const exe = b.addExecutable(.{
+        .name = "resets_exp",
+        .target = std_target,
+        .optimize = std_optimize,
+    });
+    exe.addIncludePath(b.path("hypervisor/include"));
+    exe.addCSourceFiles(.{
+        .root = b.path("hypervisor"),
+        .files = &.{
+            "experiments/resets/resets_exp.cpp",
+            "src/elf_debug.cpp",
+            "src/elf_parser.cpp",
+            "src/elfs.cpp",
+            "src/files.cpp",
+            "src/hypercalls.cpp",
+            "src/mmu.cpp",
+            "src/page_walker.cpp",
+            "src/utils.cpp",
+            "src/tracing.cpp",
+            "src/vm.cpp",
+        },
+        .flags = &.{
+            "-std=c++11",
+        },
     });
     exe.defineCMacro("ENABLE_INSTRUCTION_COUNT", null);
     exe.linkLibC();
@@ -331,22 +366,26 @@ fn buildExperiments(b: *std.build.Builder, std_target: CrossTarget, std_mode: st
     exe.linkSystemLibrary("dwarf");
     exe.linkSystemLibrary("elf");
     exe.linkSystemLibrary("crypto");
-    const install = b.addInstallArtifact(exe);
+    const install = b.addInstallArtifact(exe, .{});
     const build_step = b.step("experiments", "Build experiments");
     build_step.dependOn(&install.step);
 
-    const resets_test_exe = b.addExecutable("resets_test", "hypervisor/experiments/resets/resets_test.c");
+    const resets_test_exe = b.addExecutable(.{
+        .name = "resets_test",
+        .root_source_file = b.path("hypervisor/experiments/resets/resets_test.c"),
+        .target = std_target,
+    });
     resets_test_exe.linkLibC();
-    const resets_test_install = b.addInstallArtifact(resets_test_exe);
+    const resets_test_install = b.addInstallArtifact(resets_test_exe, .{});
     install.step.dependOn(&resets_test_install.step);
 }
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const std_target = b.standardTargetOptions(.{});
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const std_mode = b.standardReleaseOptions();
+    const std_optimize = b.standardOptimizeOption(.{});
 
     const shared_options = SharedOptions{
         .instruction_count = b.option(
@@ -356,9 +395,9 @@ pub fn build(b: *std.build.Builder) void {
         ) orelse .user,
     };
 
-    buildKernel(b, std_target, std_mode, shared_options);
-    buildHypervisor(b, std_target, std_mode, shared_options);
-    buildSyscallsTests(b, std_target, std_mode);
-    buildHypervisorTests(b, std_target, std_mode);
-    buildExperiments(b, std_target, std_mode);
+    buildKernel(b, std_target, std_optimize, shared_options);
+    buildHypervisor(b, std_target, std_optimize, shared_options);
+    buildSyscallsTests(b, std_target, std_optimize);
+    buildHypervisorTests(b, std_target, std_optimize);
+    buildExperiments(b, std_target, std_optimize);
 }

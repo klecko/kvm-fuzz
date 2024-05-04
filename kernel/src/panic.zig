@@ -23,7 +23,7 @@ fn panicFmtErrorReturnTrace(comptime format: []const u8, args: anytype, error_re
         // Similar to std.debug.writeStackTrace
         print("dumping error return trace:\n", .{});
         var frame_index: usize = 0;
-        var frames_left: usize = std.math.min(trace.index, trace.instruction_addresses.len);
+        var frames_left: usize = @min(trace.index, trace.instruction_addresses.len);
 
         while (frames_left != 0) : ({
             frames_left -= 1;
