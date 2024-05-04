@@ -28,6 +28,9 @@ Available options:
   -h, --help                Print usage
 ```
 
+## Paper
+This project was part of my Bachelor's Thesis, which you can read [here](paper/kvm_fuzz_bachelors_thesis.pdf). I also wrote a paper about it in Spanish, which I presented at [JNIC 2023](https://2023.jnic.es).
+
 ## Dependencies
 Building requires Zig 0.12.0, which you can get from [here](https://ziglang.org/download/). Zig is in charge of compiling the kernel (in Zig) and the hypervisor and the tests (in C++). It also acts as build system. Other dependencies are `libdwarf`, `libelf` and `libssl`, which you can install from your package manager:
 ```
